@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "cloud_sync_lib",
+    "cloud_sync_daemon",
+]
+resolver = "2"

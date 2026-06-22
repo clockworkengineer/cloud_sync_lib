@@ -1,0 +1,13 @@
+[package]
+name = "cloud_sync_daemon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cloud_sync_lib = { path = "../cloud_sync_lib" }
+tokio = { version = "1", features = ["full"] }
+notify = "6.1"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

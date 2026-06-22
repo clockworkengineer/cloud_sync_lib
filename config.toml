@@ -1,0 +1,4 @@
+watch_directory = "./watched_folder"
+google_drive_root = "./cloud_simulation/google_drive"
+dropbox_root = "./cloud_simulation/dropbox"
+onedrive_root = "./cloud_simulation/onedrive"
