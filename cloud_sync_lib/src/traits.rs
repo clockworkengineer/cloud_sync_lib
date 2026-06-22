@@ -18,6 +18,9 @@ pub enum StorageError {
 
     #[error("Storage provider error: {0}")]
     Provider(String),
+
+    #[error("HTTP client error: {0}")]
+    Reqwest(#[from] reqwest::Error),
 }
 
 #[derive(Debug, Clone)]

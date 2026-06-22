@@ -1,4 +1,4 @@
-use cloud_sync_lib::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, StorageBackend};
+use cloud_sync_lib::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, StorageBackend, OAuthCredentials};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -15,6 +15,9 @@ struct AppConfig {
     google_drive_root: PathBuf,
     dropbox_root: PathBuf,
     onedrive_root: PathBuf,
+    google_credentials: Option<OAuthCredentials>,
+    dropbox_credentials: Option<OAuthCredentials>,
+    onedrive_credentials: Option<OAuthCredentials>,
 }
 
 impl Default for AppConfig {
@@ -24,6 +27,9 @@ impl Default for AppConfig {
             google_drive_root: PathBuf::from("./cloud_simulation/google_drive"),
             dropbox_root: PathBuf::from("./cloud_simulation/dropbox"),
             onedrive_root: PathBuf::from("./cloud_simulation/onedrive"),
+            google_credentials: None,
+            dropbox_credentials: None,
+            onedrive_credentials: None,
         }
     }
 }
@@ -62,9 +68,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Watching directory: {:?}", watch_dir);
 
     // Initialize Providers
-    let drive = Arc::new(GoogleDriveProvider::new(&config.google_drive_root).await?);
-    let dropbox = Arc::new(DropboxProvider::new(&config.dropbox_root).await?);
-    let onedrive = Arc::new(OneDriveProvider::new(&config.onedrive_root).await?);
+    let drive = Arc::new(GoogleDriveProvider::new(&config.google_drive_root, config.google_credentials.clone()).await?);
+    let dropbox = Arc::new(DropboxProvider::new(&config.dropbox_root, config.dropbox_credentials.clone()).await?);
+    let onedrive = Arc::new(OneDriveProvider::new(&config.onedrive_root, config.onedrive_credentials.clone()).await?);
 
     let backends: Vec<Arc<dyn StorageBackend>> = vec![drive, dropbox, onedrive];
     info!("Initialized cloud storage providers:");

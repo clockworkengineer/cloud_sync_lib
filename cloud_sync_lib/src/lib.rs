@@ -1,7 +1,7 @@
 pub mod providers;
 pub mod traits;
 
-pub use providers::{DropboxProvider, GoogleDriveProvider, OneDriveProvider};
+pub use providers::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, OAuthCredentials};
 pub use traits::{StorageBackend, StorageError, StorageItem};
 
 #[cfg(test)]
@@ -15,7 +15,7 @@ mod tests {
     async fn test_google_drive_provider_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("gdrive_root");
-        let provider = GoogleDriveProvider::new(&provider_root).await.unwrap();
+        let provider = GoogleDriveProvider::new(&provider_root, None).await.unwrap();
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
