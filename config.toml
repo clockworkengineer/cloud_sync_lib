@@ -2,3 +2,8 @@ watch_directory = "./watched_folder"
 google_drive_root = "./cloud_simulation/google_drive"
 dropbox_root = "./cloud_simulation/dropbox"
 onedrive_root = "./cloud_simulation/onedrive"
+
+[google_credentials]
+client_id = "PLACEHOLDER_CLIENT_ID"
+client_secret = "PLACEHOLDER_CLIENT_SECRET"
+refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
