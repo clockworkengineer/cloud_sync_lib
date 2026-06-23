@@ -14,4 +14,6 @@ serde_json = "1.0"
 
 [dev-dependencies]
 tempfile = "3"
+toml = "0.8"
+wiremock = "0.6"
 

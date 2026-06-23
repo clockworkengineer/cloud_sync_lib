@@ -18,6 +18,9 @@ pub struct GoogleDriveProvider {
     root_dir: PathBuf,
     client: reqwest::Client,
     credentials: Option<OAuthCredentials>,
+    auth_url: String,
+    api_url: String,
+    upload_url: String,
 }
 
 impl GoogleDriveProvider {
@@ -28,7 +31,18 @@ impl GoogleDriveProvider {
             root_dir,
             client: reqwest::Client::new(),
             credentials,
+            auth_url: "https://oauth2.googleapis.com/token".to_string(),
+            api_url: "https://www.googleapis.com/drive/v3/files".to_string(),
+            upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
         })
+    }
+
+    #[cfg(test)]
+    pub fn with_endpoints(mut self, auth_url: String, api_url: String, upload_url: String) -> Self {
+        self.auth_url = auth_url;
+        self.api_url = api_url;
+        self.upload_url = upload_url;
+        self
     }
 
     fn resolve(&self, remote_path: &str) -> PathBuf {
@@ -48,7 +62,7 @@ impl GoogleDriveProvider {
             ("grant_type", &"refresh_token".to_string()),
         ];
 
-        let res = self.client.post("https://oauth2.googleapis.com/token")
+        let res = self.client.post(&self.auth_url)
             .form(&params)
             .send()
             .await?
@@ -79,7 +93,7 @@ impl GoogleDriveProvider {
                 parent_id
             );
 
-            let res = self.client.get("https://www.googleapis.com/drive/v3/files")
+            let res = self.client.get(&self.api_url)
                 .bearer_auth(token)
                 .query(&[("q", &query), ("fields", &"files(id, mimeType)".to_string())])
                 .send()
@@ -107,7 +121,7 @@ impl GoogleDriveProvider {
                 "mimeType": mime_type
             });
 
-            let create_res = self.client.post("https://www.googleapis.com/drive/v3/files")
+            let create_res = self.client.post(&self.api_url)
                 .bearer_auth(token)
                 .json(&body)
                 .send()
@@ -148,7 +162,7 @@ impl StorageBackend for GoogleDriveProvider {
         info!("[{}] Real upload starting for '{}' (ID: {})", self.name(), remote_path, file_id);
         let file_content = fs::read(local_path).await?;
         
-        let upload_url = format!("https://www.googleapis.com/upload/drive/v3/files/{}?uploadType=media", file_id);
+        let upload_url = format!("{}/{}?uploadType=media", self.upload_url, file_id);
         let res = self.client.patch(&upload_url)
             .bearer_auth(&token)
             .header("Content-Type", "application/octet-stream")
@@ -180,7 +194,7 @@ impl StorageBackend for GoogleDriveProvider {
         let token = self.get_access_token().await?;
         let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
-        let download_url = format!("https://www.googleapis.com/drive/v3/files/{}?alt=media", file_id);
+        let download_url = format!("{}/{}?alt=media", self.api_url, file_id);
         let res = self.client.get(&download_url)
             .bearer_auth(&token)
             .send()
@@ -216,7 +230,7 @@ impl StorageBackend for GoogleDriveProvider {
         let token = self.get_access_token().await?;
         let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
-        let delete_url = format!("https://www.googleapis.com/drive/v3/files/{}", file_id);
+        let delete_url = format!("{}/{}", self.api_url, file_id);
         let res = self.client.delete(&delete_url)
             .bearer_auth(&token)
             .send()
@@ -254,7 +268,7 @@ impl StorageBackend for GoogleDriveProvider {
         let folder_id = self.get_or_create_file_id(&token, remote_path, true).await?;
 
         let query = format!("'{}' in parents and trashed = false", folder_id);
-        let res = self.client.get("https://www.googleapis.com/drive/v3/files")
+        let res = self.client.get(&self.api_url)
             .bearer_auth(&token)
             .query(&[("q", &query), ("fields", &"files(id, name, size, mimeType, modifiedTime)".to_string())])
             .send()
