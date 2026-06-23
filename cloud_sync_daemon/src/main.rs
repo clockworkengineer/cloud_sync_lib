@@ -1,11 +1,12 @@
 use cloud_sync_lib::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, StorageBackend, OAuthCredentials};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::fs;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -96,11 +97,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Daemon is listening for changes... Press Ctrl+C to exit.");
 
+    let active_syncs = Arc::new(Mutex::new(HashSet::new()));
+
     // Process events
     while let Some(res) = rx.recv().await {
         match res {
             Ok(event) => {
-                handle_event(event, &watch_dir, &backends).await;
+                handle_event(event, &watch_dir, &backends, active_syncs.clone()).await;
             }
             Err(e) => error!("Watcher error: {:?}", e),
         }
@@ -113,6 +116,7 @@ async fn handle_event(
     event: Event,
     watch_dir: &Path,
     backends: &[Arc<dyn StorageBackend>],
+    active_syncs: Arc<Mutex<HashSet<(String, PathBuf)>>>,
 ) {
     // Only respond to creation, modification (writes), and deletions
     match event.kind {
@@ -154,8 +158,22 @@ async fn handle_event(
                     let backend = backend.clone();
                     let local_path = path.clone();
                     let remote_path = remote_path_str.clone();
+                    let active_syncs = active_syncs.clone();
 
                     tokio::spawn(async move {
+                        // Debounce: wait briefly for concurrent writes/events to settle
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+
+                        // Check if this file is already being synced to this backend
+                        {
+                            let mut syncs = active_syncs.lock().await;
+                            let key = (backend.name().to_string(), local_path.clone());
+                            if syncs.contains(&key) {
+                                return; // Skip concurrent duplicate sync
+                            }
+                            syncs.insert(key);
+                        }
+
                         // Add minor delay/retry logic in case the file is still being written to by the OS/editor
                         let mut attempts = 3;
                         while attempts > 0 {
@@ -183,6 +201,10 @@ async fn handle_event(
                                 remote_path
                             );
                         }
+
+                        // Done syncing, remove from active syncs
+                        let mut syncs = active_syncs.lock().await;
+                        syncs.remove(&(backend.name().to_string(), local_path));
                     });
                 }
             }
