@@ -10,7 +10,7 @@ from pathlib import Path
 
 PORT = 8080
 REDIRECT_URI = f"http://localhost:{PORT}"
-CONFIG_PATH = Path("config.toml")
+CONFIG_PATH = Path(sys.argv[1] if len(sys.argv) > 1 else "config.toml")
 
 def read_config():
     if not CONFIG_PATH.exists():

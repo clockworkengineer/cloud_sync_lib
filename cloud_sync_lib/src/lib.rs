@@ -65,7 +65,7 @@ mod tests {
         // 2. Mock File Search / Listing endpoint
         Mock::given(method("GET"))
             .and(path("/files"))
-            .and(query_param("q", "name = 'hello.txt' and 'root' in parents and trashed = false"))
+            .and(query_param("q", "name = 'hello.txt' and 'root' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "files": [
                     {
@@ -122,6 +122,7 @@ mod tests {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
             refresh_token: "mock_refresh".to_string(),
+            destination_folder: None,
         };
 
         // Create provider and set endpoints to mock server

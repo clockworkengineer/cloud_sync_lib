@@ -2,3 +2,4 @@
 **/*.rs.bk
 # Local developer config
 # config.toml
+private_config.toml

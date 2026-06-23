@@ -10,6 +10,7 @@ pub struct OAuthCredentials {
     pub client_id: String,
     pub client_secret: String,
     pub refresh_token: String,
+    pub destination_folder: Option<String>,
 }
 
 /// A Google Drive storage provider that can sync either to a real API (if credentials are set)
@@ -76,62 +77,108 @@ impl GoogleDriveProvider {
         Ok(token.to_string())
     }
 
+    async fn get_or_create_folder_id(&self, token: &str, parent_id: &str, name: &str) -> Result<String, StorageError> {
+        let query = format!(
+            "name = '{}' and '{}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+            name.replace('\'', "\\'"),
+            parent_id
+        );
+
+        let res = self.client.get(&self.api_url)
+            .bearer_auth(token)
+            .query(&[("q", &query), ("fields", &"files(id)".to_string())])
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+
+        if let Some(files) = res["files"].as_array() {
+            if !files.is_empty() {
+                return Ok(files[0]["id"].as_str().unwrap().to_string());
+            }
+        }
+
+        let body = serde_json::json!({
+            "name": name,
+            "parents": [parent_id],
+            "mimeType": "application/vnd.google-apps.folder"
+        });
+
+        let create_res = self.client.post(&self.api_url)
+            .bearer_auth(token)
+            .json(&body)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+
+        let id = create_res["id"].as_str()
+            .ok_or_else(|| StorageError::Provider(format!("Failed to create folder '{}' in Google Drive: {:?}", name, create_res)))?
+            .to_string();
+
+        Ok(id)
+    }
+
     // Resolves a path (e.g. "a/b/c.txt") to a Google Drive file ID.
     // If create_parents is true, it will create any missing folders in the hierarchy.
     async fn get_or_create_file_id(&self, token: &str, path: &str, is_folder: bool) -> Result<String, StorageError> {
         let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
         let mut parent_id = "root".to_string();
 
+        if let Some(ref creds) = self.credentials {
+            if let Some(ref dest_folder) = creds.destination_folder {
+                if !dest_folder.is_empty() {
+                    parent_id = self.get_or_create_folder_id(token, &parent_id, dest_folder).await?;
+                }
+            }
+        }
+
         for (i, part) in parts.iter().enumerate() {
             let is_last = i == parts.len() - 1;
             let current_is_folder = !is_last || is_folder;
 
-            // Search for existing item with this name and parent
-            let query = format!(
-                "name = '{}' and '{}' in parents and trashed = false",
-                part.replace('\'', "\\'"),
-                parent_id
-            );
-
-            let res = self.client.get(&self.api_url)
-                .bearer_auth(token)
-                .query(&[("q", &query), ("fields", &"files(id, mimeType)".to_string())])
-                .send()
-                .await?
-                .json::<serde_json::Value>()
-                .await?;
-
-            if let Some(files) = res["files"].as_array() {
-                if !files.is_empty() {
-                    parent_id = files[0]["id"].as_str().unwrap().to_string();
-                    continue;
-                }
-            }
-
-            // Not found, create it
-            let mime_type = if current_is_folder {
-                "application/vnd.google-apps.folder"
+            if current_is_folder {
+                parent_id = self.get_or_create_folder_id(token, &parent_id, part).await?;
             } else {
-                "application/octet-stream"
-            };
+                let query = format!(
+                    "name = '{}' and '{}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
+                    part.replace('\'', "\\'"),
+                    parent_id
+                );
 
-            let body = serde_json::json!({
-                "name": part,
-                "parents": [parent_id],
-                "mimeType": mime_type
-            });
+                let res = self.client.get(&self.api_url)
+                    .bearer_auth(token)
+                    .query(&[("q", &query), ("fields", &"files(id)".to_string())])
+                    .send()
+                    .await?
+                    .json::<serde_json::Value>()
+                    .await?;
 
-            let create_res = self.client.post(&self.api_url)
-                .bearer_auth(token)
-                .json(&body)
-                .send()
-                .await?
-                .json::<serde_json::Value>()
-                .await?;
+                if let Some(files) = res["files"].as_array() {
+                    if !files.is_empty() {
+                        parent_id = files[0]["id"].as_str().unwrap().to_string();
+                        continue;
+                    }
+                }
 
-            parent_id = create_res["id"].as_str()
-                .ok_or_else(|| StorageError::Provider(format!("Failed to create item '{}' in Google Drive: {:?}", part, create_res)))?
-                .to_string();
+                let body = serde_json::json!({
+                    "name": part,
+                    "parents": [parent_id],
+                    "mimeType": "application/octet-stream"
+                });
+
+                let create_res = self.client.post(&self.api_url)
+                    .bearer_auth(token)
+                    .json(&body)
+                    .send()
+                    .await?
+                    .json::<serde_json::Value>()
+                    .await?;
+
+                parent_id = create_res["id"].as_str()
+                    .ok_or_else(|| StorageError::Provider(format!("Failed to create file '{}' in Google Drive: {:?}", part, create_res)))?
+                    .to_string();
+            }
         }
 
         Ok(parent_id)
