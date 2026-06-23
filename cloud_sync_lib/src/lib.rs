@@ -159,17 +159,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_google_drive_real_flow() {
-        // Try to load config.toml from parent directory (since tests run in cloud_sync_lib/)
-        let config_path = std::path::Path::new("../config.toml");
+        // Try to load private_config.toml first, then fall back to config.toml
+        let mut config_path = std::path::Path::new("../private_config.toml");
         if !config_path.exists() {
-            println!("Skipping real Google Drive test: config.toml not found at {:?}", config_path);
+            config_path = std::path::Path::new("../config.toml");
+        }
+        if !config_path.exists() {
+            println!("Skipping real Google Drive test: configuration file not found.");
             return;
         }
 
         let content = match std::fs::read_to_string(config_path) {
             Ok(c) => c,
             Err(_) => {
-                println!("Skipping real Google Drive test: failed to read config.toml");
+                println!("Skipping real Google Drive test: failed to read config file");
                 return;
             }
         };
@@ -182,21 +185,25 @@ mod tests {
         let config: TestConfig = match toml::from_str(&content) {
             Ok(cfg) => cfg,
             Err(e) => {
-                println!("Skipping real Google Drive test: failed to parse config.toml ({:?})", e);
+                println!("Skipping real Google Drive test: failed to parse config file ({:?})", e);
                 return;
             }
         };
 
         let credentials = match config.google_credentials {
             Some(creds) => {
-                if creds.client_secret.contains('*') || creds.client_id.is_empty() {
+                if creds.client_secret.contains('*') 
+                    || creds.client_secret.contains("PLACEHOLDER") 
+                    || creds.client_id.contains("PLACEHOLDER")
+                    || creds.client_id.is_empty() 
+                {
                     println!("Skipping real Google Drive test: Credentials contain placeholder or masked secret.");
                     return;
                 }
                 creds
             }
             None => {
-                println!("Skipping real Google Drive test: No google_credentials found in config.toml");
+                println!("Skipping real Google Drive test: No google_credentials found in config file");
                 return;
             }
         };
