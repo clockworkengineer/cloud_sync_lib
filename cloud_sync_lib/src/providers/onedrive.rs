@@ -5,47 +5,33 @@
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
-use crate::providers::local_sim::LocalSimulation;
 use crate::providers::utils::{refresh_oauth2_token, parse_response_error};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
-/// Storage provider client for Microsoft OneDrive.
-///
-/// If credentials are provided, connects to the Microsoft Graph API endpoints.
-/// If credentials are `None`, simulates behavior by reading/writing files
-/// inside the local directory specified by `root_dir`.
+/// Storage provider client for Microsoft OneDrive REST API.
 pub struct OneDriveProvider {
     client: reqwest::Client,
-    credentials: Option<OAuthCredentials>,
-    local_sim: LocalSimulation,
+    credentials: OAuthCredentials,
 }
 
 impl OneDriveProvider {
-    pub async fn new(root_dir: impl Into<PathBuf>, credentials: Option<OAuthCredentials>) -> Result<Self, std::io::Error> {
-        let root_dir = root_dir.into();
-        fs::create_dir_all(&root_dir).await?;
-        let local_sim = LocalSimulation::new(root_dir, "OneDrive".to_string());
-        Ok(Self {
+    pub fn new(credentials: OAuthCredentials) -> Self {
+        Self {
             client: reqwest::Client::new(),
             credentials,
-            local_sim,
-        })
+        }
     }
 
     async fn get_access_token(&self) -> Result<String, StorageError> {
-        let creds = self.credentials.as_ref().ok_or_else(|| {
-            StorageError::Authentication("No OneDrive credentials configured".into())
-        })?;
-
         refresh_oauth2_token(
             &self.client,
             "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-            &creds.client_id,
-            &creds.client_secret,
-            &creds.refresh_token,
+            &self.credentials.client_id,
+            &self.credentials.client_secret,
+            &self.credentials.refresh_token,
             self.name(),
         ).await
     }
@@ -58,10 +44,6 @@ impl StorageBackend for OneDriveProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.upload(local_path, remote_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let clean_path = remote_path.trim_start_matches('/');
 
@@ -84,10 +66,6 @@ impl StorageBackend for OneDriveProvider {
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.download(remote_path, local_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let clean_path = remote_path.trim_start_matches('/');
 
@@ -110,10 +88,6 @@ impl StorageBackend for OneDriveProvider {
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.delete(remote_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let clean_path = remote_path.trim_start_matches('/');
 
@@ -131,10 +105,6 @@ impl StorageBackend for OneDriveProvider {
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.list(remote_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let clean_path = remote_path.trim_start_matches('/');
 

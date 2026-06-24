@@ -5,40 +5,30 @@
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
-use crate::providers::local_sim::LocalSimulation;
 use crate::providers::utils::{refresh_oauth2_token, parse_response_error};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
-/// Storage provider client for Google Drive.
-///
-/// If credentials are provided, connects to the Google Drive v3 REST API.
-/// If credentials are `None`, simulates behavior by reading/writing files
-/// inside the local directory specified by `root_dir`.
+/// Storage provider client for Google Drive REST API.
 pub struct GoogleDriveProvider {
     client: reqwest::Client,
-    credentials: Option<OAuthCredentials>,
+    credentials: OAuthCredentials,
     auth_url: String,
     api_url: String,
     upload_url: String,
-    local_sim: LocalSimulation,
 }
 
 impl GoogleDriveProvider {
-    pub async fn new(root_dir: impl Into<PathBuf>, credentials: Option<OAuthCredentials>) -> Result<Self, std::io::Error> {
-        let root_dir = root_dir.into();
-        fs::create_dir_all(&root_dir).await?;
-        let local_sim = LocalSimulation::new(root_dir, "Google Drive".to_string());
-        Ok(Self {
+    pub fn new(credentials: OAuthCredentials) -> Self {
+        Self {
             client: reqwest::Client::new(),
             credentials,
             auth_url: "https://oauth2.googleapis.com/token".to_string(),
             api_url: "https://www.googleapis.com/drive/v3/files".to_string(),
             upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
-            local_sim,
-        })
+        }
     }
 
     #[cfg(test)]
@@ -50,16 +40,12 @@ impl GoogleDriveProvider {
     }
 
     async fn get_access_token(&self) -> Result<String, StorageError> {
-        let creds = self.credentials.as_ref().ok_or_else(|| {
-            StorageError::Authentication("No Google Drive credentials configured".into())
-        })?;
-
         refresh_oauth2_token(
             &self.client,
             &self.auth_url,
-            &creds.client_id,
-            &creds.client_secret,
-            &creds.refresh_token,
+            &self.credentials.client_id,
+            &self.credentials.client_secret,
+            &self.credentials.refresh_token,
             self.name(),
         ).await
     }
@@ -112,11 +98,9 @@ impl GoogleDriveProvider {
         let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
         let mut parent_id = "root".to_string();
 
-        if let Some(ref creds) = self.credentials {
-            if let Some(ref dest_folder) = creds.destination_folder {
-                if !dest_folder.is_empty() {
-                    parent_id = self.get_or_create_folder_id(token, &parent_id, dest_folder).await?;
-                }
+        if let Some(ref dest_folder) = self.credentials.destination_folder {
+            if !dest_folder.is_empty() {
+                parent_id = self.get_or_create_folder_id(token, &parent_id, dest_folder).await?;
             }
         }
 
@@ -179,10 +163,6 @@ impl StorageBackend for GoogleDriveProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.upload(local_path, remote_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
@@ -205,10 +185,6 @@ impl StorageBackend for GoogleDriveProvider {
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.download(remote_path, local_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
@@ -231,10 +207,6 @@ impl StorageBackend for GoogleDriveProvider {
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.delete(remote_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
@@ -252,10 +224,6 @@ impl StorageBackend for GoogleDriveProvider {
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.list(remote_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let folder_id = self.get_or_create_file_id(&token, remote_path, true).await?;
 

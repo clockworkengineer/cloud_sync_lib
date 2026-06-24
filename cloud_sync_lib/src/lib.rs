@@ -9,7 +9,7 @@
 pub mod providers;
 pub mod traits;
 
-pub use providers::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, OAuthCredentials};
+pub use providers::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, OAuthCredentials, SimulatedFallback, local_sim::LocalSimulation};
 pub use traits::{StorageBackend, StorageError, StorageItem};
 
 #[cfg(test)]
@@ -23,7 +23,8 @@ mod tests {
     async fn test_google_drive_provider_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("gdrive_root");
-        let provider = GoogleDriveProvider::new(&provider_root, None).await.unwrap();
+        let local_sim = LocalSimulation::new(provider_root.clone(), "Google Drive".to_string());
+        let provider = SimulatedFallback::<GoogleDriveProvider>::new(None, local_sim, "Google Drive");
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -135,14 +136,14 @@ mod tests {
         };
 
         // Create provider and set endpoints to mock server
-        let provider = GoogleDriveProvider::new(&provider_root, Some(creds))
-            .await
-            .unwrap()
+        let inner = GoogleDriveProvider::new(creds)
             .with_endpoints(
                 format!("{}/oauth", server.uri()),
                 format!("{}/files", server.uri()),
                 format!("{}/upload", server.uri()),
             );
+        let local_sim = LocalSimulation::new(provider_root.clone(), "Google Drive".to_string());
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "Google Drive");
 
         // Upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -220,7 +221,9 @@ mod tests {
         println!("Running real Google Drive integration test...");
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("gdrive_root");
-        let provider = GoogleDriveProvider::new(&provider_root, Some(credentials)).await.unwrap();
+        let inner = GoogleDriveProvider::new(credentials);
+        let local_sim = LocalSimulation::new(provider_root.clone(), "Google Drive".to_string());
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "Google Drive");
 
         // Create a local temporary file to upload
         let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
@@ -255,7 +258,8 @@ mod tests {
     async fn test_dropbox_provider_simulated_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("dropbox_root");
-        let provider = DropboxProvider::new(&provider_root, None).await.unwrap();
+        let local_sim = LocalSimulation::new(provider_root.clone(), "Dropbox".to_string());
+        let provider = SimulatedFallback::<DropboxProvider>::new(None, local_sim, "Dropbox");
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -360,14 +364,14 @@ mod tests {
         };
 
         // Create provider and set endpoints to mock server
-        let provider = DropboxProvider::new(&provider_root, Some(creds))
-            .await
-            .unwrap()
+        let inner = DropboxProvider::new(creds)
             .with_endpoints(
                 format!("{}/oauth", server.uri()),
                 format!("{}/files", server.uri()),
                 format!("{}/content", server.uri()),
             );
+        let local_sim = LocalSimulation::new(provider_root.clone(), "Dropbox".to_string());
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "Dropbox");
 
         // Upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -445,7 +449,9 @@ mod tests {
         println!("Running real Dropbox integration test...");
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("dropbox_root");
-        let provider = DropboxProvider::new(&provider_root, Some(credentials)).await.unwrap();
+        let inner = DropboxProvider::new(credentials);
+        let local_sim = LocalSimulation::new(provider_root.clone(), "Dropbox".to_string());
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "Dropbox");
 
         // Create a local temporary file to upload
         let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());

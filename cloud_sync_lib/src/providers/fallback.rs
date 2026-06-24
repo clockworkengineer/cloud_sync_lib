@@ -1,0 +1,67 @@
+//! Fallback wrapper for simulated storage provider logic.
+//!
+//! Route requests to either a real storage provider or local directory simulation
+//! depending on the presence of configured credentials.
+
+use crate::traits::{StorageBackend, StorageError, StorageItem};
+use crate::providers::local_sim::LocalSimulation;
+use async_trait::async_trait;
+use std::path::Path;
+
+/// Storage backend wrapper that transparently routes operations to either a real cloud provider
+/// or the shared `LocalSimulation` mock directory fallback.
+pub struct SimulatedFallback<B: StorageBackend> {
+    inner: Option<B>,
+    local_sim: LocalSimulation,
+    name: String,
+}
+
+impl<B: StorageBackend> SimulatedFallback<B> {
+    /// Creates a new `SimulatedFallback` wrapper around an optional inner provider backend.
+    pub fn new(inner: Option<B>, local_sim: LocalSimulation, name: &str) -> Self {
+        Self {
+            inner,
+            local_sim,
+            name: name.to_string(),
+        }
+    }
+}
+
+#[async_trait]
+impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        if let Some(ref inner) = self.inner {
+            inner.upload(local_path, remote_path).await
+        } else {
+            self.local_sim.upload(local_path, remote_path).await
+        }
+    }
+
+    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        if let Some(ref inner) = self.inner {
+            inner.download(remote_path, local_path).await
+        } else {
+            self.local_sim.download(remote_path, local_path).await
+        }
+    }
+
+    async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+        if let Some(ref inner) = self.inner {
+            inner.delete(remote_path).await
+        } else {
+            self.local_sim.delete(remote_path).await
+        }
+    }
+
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        if let Some(ref inner) = self.inner {
+            inner.list(remote_path).await
+        } else {
+            self.local_sim.list(remote_path).await
+        }
+    }
+}

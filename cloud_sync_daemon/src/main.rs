@@ -4,7 +4,7 @@
 //! creations, and deletions using the `notify` crate, and synchronizes those changes
 //! to all configured and enabled cloud storage providers.
 
-use cloud_sync_lib::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, StorageBackend, OAuthCredentials};
+use cloud_sync_lib::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, StorageBackend, OAuthCredentials, SimulatedFallback, LocalSimulation};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -106,21 +106,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
 
     if is_enabled(&config.google_credentials) {
-        let drive = Arc::new(GoogleDriveProvider::new(&config.google_drive_root, config.google_credentials.clone()).await?);
+        let inner = config.google_credentials.clone().map(GoogleDriveProvider::new);
+        let local_sim = LocalSimulation::new(config.google_drive_root.clone(), "Google Drive".to_string());
+        let drive = Arc::new(SimulatedFallback::new(inner, local_sim, "Google Drive"));
         backends.push(drive);
     } else {
         info!("Google Drive provider is disabled in configuration.");
     }
 
     if is_enabled(&config.dropbox_credentials) {
-        let dropbox = Arc::new(DropboxProvider::new(&config.dropbox_root, config.dropbox_credentials.clone()).await?);
+        let inner = config.dropbox_credentials.clone().map(DropboxProvider::new);
+        let local_sim = LocalSimulation::new(config.dropbox_root.clone(), "Dropbox".to_string());
+        let dropbox = Arc::new(SimulatedFallback::new(inner, local_sim, "Dropbox"));
         backends.push(dropbox);
     } else {
         info!("Dropbox provider is disabled in configuration.");
     }
 
     if is_enabled(&config.onedrive_credentials) {
-        let onedrive = Arc::new(OneDriveProvider::new(&config.onedrive_root, config.onedrive_credentials.clone()).await?);
+        let inner = config.onedrive_credentials.clone().map(OneDriveProvider::new);
+        let local_sim = LocalSimulation::new(config.onedrive_root.clone(), "OneDrive".to_string());
+        let onedrive = Arc::new(SimulatedFallback::new(inner, local_sim, "OneDrive"));
         backends.push(onedrive);
     } else {
         info!("OneDrive provider is disabled in configuration.");

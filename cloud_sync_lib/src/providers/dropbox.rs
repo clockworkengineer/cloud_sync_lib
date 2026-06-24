@@ -5,40 +5,30 @@
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
-use crate::providers::local_sim::LocalSimulation;
 use crate::providers::utils::{refresh_oauth2_token, parse_response_error};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
-/// Storage provider client for Dropbox.
-///
-/// If credentials are provided, connects to the Dropbox v2 API endpoints.
-/// If credentials are `None`, simulates behavior by reading/writing files
-/// inside the local directory specified by `root_dir`.
+/// Storage provider client for Dropbox REST API.
 pub struct DropboxProvider {
     client: reqwest::Client,
-    credentials: Option<OAuthCredentials>,
+    credentials: OAuthCredentials,
     auth_url: String,
     api_url: String,
     content_url: String,
-    local_sim: LocalSimulation,
 }
 
 impl DropboxProvider {
-    pub async fn new(root_dir: impl Into<PathBuf>, credentials: Option<OAuthCredentials>) -> Result<Self, std::io::Error> {
-        let root_dir = root_dir.into();
-        fs::create_dir_all(&root_dir).await?;
-        let local_sim = LocalSimulation::new(root_dir, "Dropbox".to_string());
-        Ok(Self {
+    pub fn new(credentials: OAuthCredentials) -> Self {
+        Self {
             client: reqwest::Client::new(),
             credentials,
             auth_url: "https://api.dropbox.com/oauth2/token".to_string(),
             api_url: "https://api.dropboxapi.com/2/files".to_string(),
             content_url: "https://content.dropboxapi.com/2/files".to_string(),
-            local_sim,
-        })
+        }
     }
 
     #[cfg(test)]
@@ -50,16 +40,12 @@ impl DropboxProvider {
     }
 
     async fn get_access_token(&self) -> Result<String, StorageError> {
-        let creds = self.credentials.as_ref().ok_or_else(|| {
-            StorageError::Authentication("No Dropbox credentials configured".into())
-        })?;
-
         refresh_oauth2_token(
             &self.client,
             &self.auth_url,
-            &creds.client_id,
-            &creds.client_secret,
-            &creds.refresh_token,
+            &self.credentials.client_id,
+            &self.credentials.client_secret,
+            &self.credentials.refresh_token,
             self.name(),
         ).await
     }
@@ -68,13 +54,11 @@ impl DropboxProvider {
         let clean_path = path.trim_start_matches('/');
         let mut full_path = String::new();
 
-        if let Some(ref creds) = self.credentials {
-            if let Some(ref dest_folder) = creds.destination_folder {
-                let clean_dest = dest_folder.trim_matches('/');
-                if !clean_dest.is_empty() {
-                    full_path.push_str("/");
-                    full_path.push_str(clean_dest);
-                }
+        if let Some(ref dest_folder) = self.credentials.destination_folder {
+            let clean_dest = dest_folder.trim_matches('/');
+            if !clean_dest.is_empty() {
+                full_path.push_str("/");
+                full_path.push_str(clean_dest);
             }
         }
 
@@ -94,10 +78,6 @@ impl StorageBackend for DropboxProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.upload(local_path, remote_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let dbx_path = self.format_path(remote_path);
 
@@ -129,10 +109,6 @@ impl StorageBackend for DropboxProvider {
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.download(remote_path, local_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let dbx_path = self.format_path(remote_path);
 
@@ -161,10 +137,6 @@ impl StorageBackend for DropboxProvider {
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.delete(remote_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let dbx_path = self.format_path(remote_path);
 
@@ -187,10 +159,6 @@ impl StorageBackend for DropboxProvider {
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        if self.credentials.is_none() {
-            return self.local_sim.list(remote_path).await;
-        }
-
         let token = self.get_access_token().await?;
         let dbx_path = self.format_path(remote_path);
 

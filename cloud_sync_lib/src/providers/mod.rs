@@ -28,7 +28,9 @@ pub mod dropbox;
 pub mod onedrive;
 pub mod local_sim;
 pub mod utils;
+pub mod fallback;
 
 pub use google_drive::GoogleDriveProvider;
 pub use dropbox::DropboxProvider;
 pub use onedrive::OneDriveProvider;
+pub use fallback::SimulatedFallback;
