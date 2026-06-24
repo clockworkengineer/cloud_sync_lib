@@ -46,4 +46,6 @@ You can easily enable or disable individual backends inside your credentials blo
 * **`enabled = true`** (or omitting the field): The backend is active. If credentials are correct, it syncs to the cloud; otherwise, it logs errors.
 * **`enabled = false`**: Bypasses the backend completely. The provider is not initialized, and no sync attempts are made.
 
+Under the hood, the daemon uses a unified helper function `is_enabled(credentials: &Option<OAuthCredentials>) -> bool` to deduplicate config verification. This prevents redundant pattern matching and config checking before initializing each provider instance.
+
 If a credentials section is omitted entirely, the daemon defaults to **Simulation Mode** for that provider, synchronizing to a folder inside the local directory.

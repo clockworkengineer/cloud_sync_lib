@@ -24,23 +24,25 @@ pub trait StorageBackend: Send + Sync {
 ## Crate Layout
 
 - **[`traits.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/traits.rs)**: Core trait definitions, list item metadata (`StorageItem`), and error types (`StorageError`).
-- **[`providers/`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/)**: Submodule housing specific client implementations:
+- **[`providers/`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/)**: Submodule housing specific client implementations and helpers:
   - [`google_drive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/google_drive.rs): Google Drive REST API integration.
   - [`dropbox.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/dropbox.rs): Dropbox REST API integration. Includes prefix `destination_folder` path handling.
   - [`onedrive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/onedrive.rs): Microsoft OneDrive Graph API integration.
+  - [`local_sim.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/local_sim.rs): Shared local fallback simulator (`LocalSimulation`) implementing local folder operations for offline testing.
+  - [`utils.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/utils.rs): Helper function `refresh_oauth2_token` for unified, form-encoded OAuth2 access token refresh POST requests.
 
 ---
 
 ## Local Simulation Fallback
 
-When `OAuthCredentials` are passed as `None` to a provider constructor, the client automatically defaults to **Simulation Mode**. 
+When `OAuthCredentials` are passed as `None` to a provider constructor, the client automatically defaults to **Simulation Mode**, which is powered by the shared `LocalSimulation` struct inside [`local_sim.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/local_sim.rs).
 
-Instead of connecting to remote web APIs, it simulates file operations (upload, download, listing, deletion) inside a local workspace folder:
+Instead of connecting to remote web APIs, the providers delegate file operations (upload, download, listing, deletion) to this helper. It maps and copies files inside the local simulation directories:
 * Google Drive simulated root: `./cloud_simulation/google_drive`
 * Dropbox simulated root: `./cloud_simulation/dropbox`
 * OneDrive simulated root: `./cloud_simulation/onedrive`
 
-This enables development and testing without internet access or valid tokens.
+This layout keeps all providers DRY (Don't Repeat Yourself) while allowing full development and testing without internet access or active cloud tokens.
 
 ---
 

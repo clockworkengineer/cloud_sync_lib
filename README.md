@@ -10,6 +10,8 @@ The project is split into two primary components:
 1. **[`cloud_sync_lib`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/README.md)**: The core library providing backend integrations, path prefix formatting, simulated/mocked behaviors, and the generic `StorageBackend` trait.
 2. **[`cloud_sync_daemon`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_daemon/README.md)**: The CLI daemon wrapper that watches a folder for filesystem events and coordinates synchronization across all enabled backends.
 
+For a detailed look at component interactions, design decisions, and system diagrams, refer to the **[Workspace Architecture Guide](file:///home/robt/projects/cloud_sync_lib/docs/architecture.md)**.
+
 ---
 
 ## Supported Backends
