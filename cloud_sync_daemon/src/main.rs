@@ -57,6 +57,10 @@ async fn load_or_create_config(path: &str) -> Result<AppConfig, Box<dyn std::err
     }
 }
 
+fn is_enabled(credentials: &Option<OAuthCredentials>) -> bool {
+    credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
@@ -85,24 +89,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize Providers
     let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
 
-    let drive_enabled = config.google_credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true));
-    if drive_enabled {
+    if is_enabled(&config.google_credentials) {
         let drive = Arc::new(GoogleDriveProvider::new(&config.google_drive_root, config.google_credentials.clone()).await?);
         backends.push(drive);
     } else {
         info!("Google Drive provider is disabled in configuration.");
     }
 
-    let dropbox_enabled = config.dropbox_credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true));
-    if dropbox_enabled {
+    if is_enabled(&config.dropbox_credentials) {
         let dropbox = Arc::new(DropboxProvider::new(&config.dropbox_root, config.dropbox_credentials.clone()).await?);
         backends.push(dropbox);
     } else {
         info!("Dropbox provider is disabled in configuration.");
     }
 
-    let onedrive_enabled = config.onedrive_credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true));
-    if onedrive_enabled {
+    if is_enabled(&config.onedrive_credentials) {
         let onedrive = Arc::new(OneDriveProvider::new(&config.onedrive_root, config.onedrive_credentials.clone()).await?);
         backends.push(onedrive);
     } else {

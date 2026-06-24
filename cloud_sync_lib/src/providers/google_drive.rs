@@ -5,6 +5,8 @@
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
+use crate::providers::local_sim::LocalSimulation;
+use crate::providers::utils::refresh_oauth2_token;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -16,25 +18,26 @@ use tracing::info;
 /// If credentials are `None`, simulates behavior by reading/writing files
 /// inside the local directory specified by `root_dir`.
 pub struct GoogleDriveProvider {
-    root_dir: PathBuf,
     client: reqwest::Client,
     credentials: Option<OAuthCredentials>,
     auth_url: String,
     api_url: String,
     upload_url: String,
+    local_sim: LocalSimulation,
 }
 
 impl GoogleDriveProvider {
     pub async fn new(root_dir: impl Into<PathBuf>, credentials: Option<OAuthCredentials>) -> Result<Self, std::io::Error> {
         let root_dir = root_dir.into();
         fs::create_dir_all(&root_dir).await?;
+        let local_sim = LocalSimulation::new(root_dir, "Google Drive".to_string());
         Ok(Self {
-            root_dir,
             client: reqwest::Client::new(),
             credentials,
             auth_url: "https://oauth2.googleapis.com/token".to_string(),
             api_url: "https://www.googleapis.com/drive/v3/files".to_string(),
             upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
+            local_sim,
         })
     }
 
@@ -46,35 +49,19 @@ impl GoogleDriveProvider {
         self
     }
 
-    fn resolve(&self, remote_path: &str) -> PathBuf {
-        let normalized = remote_path.trim_start_matches('/');
-        self.root_dir.join(normalized)
-    }
-
     async fn get_access_token(&self) -> Result<String, StorageError> {
         let creds = self.credentials.as_ref().ok_or_else(|| {
             StorageError::Authentication("No Google Drive credentials configured".into())
         })?;
 
-        let params = [
-            ("client_id", &creds.client_id),
-            ("client_secret", &creds.client_secret),
-            ("refresh_token", &creds.refresh_token),
-            ("grant_type", &"refresh_token".to_string()),
-        ];
-
-        let res = self.client.post(&self.auth_url)
-            .form(&params)
-            .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
-
-        let token = res["access_token"].as_str().ok_or_else(|| {
-            StorageError::Authentication(format!("Failed to retrieve access token: {:?}", res))
-        })?;
-
-        Ok(token.to_string())
+        refresh_oauth2_token(
+            &self.client,
+            &self.auth_url,
+            &creds.client_id,
+            &creds.client_secret,
+            &creds.refresh_token,
+            self.name(),
+        ).await
     }
 
     async fn get_or_create_folder_id(&self, token: &str, parent_id: &str, name: &str) -> Result<String, StorageError> {
@@ -193,14 +180,7 @@ impl StorageBackend for GoogleDriveProvider {
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         if self.credentials.is_none() {
-            // Local fallback simulation
-            let destination = self.resolve(remote_path);
-            info!("[{}] (Simulated) Uploading local file {:?} to remote path '{}'", self.name(), local_path, remote_path);
-            if let Some(parent) = destination.parent() {
-                fs::create_dir_all(parent).await?;
-            }
-            fs::copy(local_path, &destination).await?;
-            return Ok(());
+            return self.local_sim.upload(local_path, remote_path).await;
         }
 
         let token = self.get_access_token().await?;
@@ -226,16 +206,7 @@ impl StorageBackend for GoogleDriveProvider {
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         if self.credentials.is_none() {
-            let source = self.resolve(remote_path);
-            info!("[{}] (Simulated) Downloading remote path '{}' to local file {:?}", self.name(), remote_path, local_path);
-            if !source.exists() {
-                return Err(StorageError::NotFound(remote_path.to_string()));
-            }
-            if let Some(parent) = local_path.parent() {
-                fs::create_dir_all(parent).await?;
-            }
-            fs::copy(&source, local_path).await?;
-            return Ok(());
+            return self.local_sim.download(remote_path, local_path).await;
         }
 
         let token = self.get_access_token().await?;
@@ -261,17 +232,7 @@ impl StorageBackend for GoogleDriveProvider {
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         if self.credentials.is_none() {
-            let target = self.resolve(remote_path);
-            info!("[{}] (Simulated) Deleting remote path '{}'", self.name(), remote_path);
-            if !target.exists() {
-                return Err(StorageError::NotFound(remote_path.to_string()));
-            }
-            if target.is_dir() {
-                fs::remove_dir_all(&target).await?;
-            } else {
-                fs::remove_file(&target).await?;
-            }
-            return Ok(());
+            return self.local_sim.delete(remote_path).await;
         }
 
         let token = self.get_access_token().await?;
@@ -292,23 +253,7 @@ impl StorageBackend for GoogleDriveProvider {
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         if self.credentials.is_none() {
-            let target = self.resolve(remote_path);
-            info!("[{}] (Simulated) Listing contents of remote path '{}'", self.name(), remote_path);
-            if !target.exists() {
-                return Err(StorageError::NotFound(remote_path.to_string()));
-            }
-            let mut items = Vec::new();
-            let mut entries = fs::read_dir(&target).await?;
-            while let Some(entry) = entries.next_entry().await? {
-                let metadata = entry.metadata().await?;
-                items.push(StorageItem {
-                    path: entry.path().strip_prefix(&self.root_dir).unwrap_or(&entry.path()).to_path_buf(),
-                    size: metadata.len(),
-                    modified: metadata.modified().unwrap_or(std::time::SystemTime::now()),
-                    is_dir: metadata.is_dir(),
-                });
-            }
-            return Ok(items);
+            return self.local_sim.list(remote_path).await;
         }
 
         let token = self.get_access_token().await?;

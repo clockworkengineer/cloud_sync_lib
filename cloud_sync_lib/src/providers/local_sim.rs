@@ -1,0 +1,90 @@
+use crate::traits::{StorageItem, StorageError};
+use std::path::{Path, PathBuf};
+use tokio::fs;
+use tracing::info;
+
+/// Local folder fallback simulator.
+///
+/// Implements mock filesystem storage behavior for offline development and testing
+/// when cloud credentials are not configured.
+pub struct LocalSimulation {
+    root_dir: PathBuf,
+    provider_name: String,
+}
+
+impl LocalSimulation {
+    /// Creates a new `LocalSimulation` instance with a given root directory and provider name.
+    pub fn new(root_dir: PathBuf, provider_name: String) -> Self {
+        Self {
+            root_dir,
+            provider_name,
+        }
+    }
+
+    /// Maps a remote path to the local directory simulation structure.
+    pub fn resolve(&self, remote_path: &str) -> PathBuf {
+        let normalized = remote_path.trim_start_matches('/');
+        self.root_dir.join(normalized)
+    }
+
+    /// Simulates uploading a file by copying it to the local simulation folder.
+    pub async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        let destination = self.resolve(remote_path);
+        info!("[{}] (Simulated) Uploading local file {:?} to remote path '{}'", self.provider_name, local_path, remote_path);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        fs::copy(local_path, &destination).await?;
+        Ok(())
+    }
+
+    /// Simulates downloading a file by copying it from the local simulation folder.
+    pub async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        let source = self.resolve(remote_path);
+        info!("[{}] (Simulated) Downloading remote path '{}' to local file {:?}", self.provider_name, remote_path, local_path);
+        if !source.exists() {
+            return Err(StorageError::NotFound(remote_path.to_string()));
+        }
+        if let Some(parent) = local_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        fs::copy(&source, local_path).await?;
+        Ok(())
+    }
+
+    /// Simulates deleting a file or directory from the local simulation folder.
+    pub async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+        let target = self.resolve(remote_path);
+        info!("[{}] (Simulated) Deleting remote path '{}'", self.provider_name, remote_path);
+        if !target.exists() {
+            return Err(StorageError::NotFound(remote_path.to_string()));
+        }
+        if target.is_dir() {
+            fs::remove_dir_all(&target).await?;
+        } else {
+            fs::remove_file(&target).await?;
+        }
+        Ok(())
+    }
+
+    /// Simulates listing contents of the local simulation folder.
+    pub async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        let target = self.resolve(remote_path);
+        info!("[{}] (Simulated) Listing contents of remote path '{}'", self.provider_name, remote_path);
+        if !target.exists() {
+            return Err(StorageError::NotFound(remote_path.to_string()));
+        }
+        let mut items = Vec::new();
+        let mut entries = fs::read_dir(&target).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            let metadata = entry.metadata().await?;
+            items.push(StorageItem {
+                path: entry.path().strip_prefix(&self.root_dir).unwrap_or(&entry.path()).to_path_buf(),
+                size: metadata.len(),
+                modified: metadata.modified().unwrap_or(std::time::SystemTime::now()),
+                is_dir: metadata.is_dir(),
+            });
+        }
+        Ok(items)
+    }
+}

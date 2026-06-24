@@ -26,6 +26,8 @@ pub struct OAuthCredentials {
 pub mod google_drive;
 pub mod dropbox;
 pub mod onedrive;
+pub mod local_sim;
+pub mod utils;
 
 pub use google_drive::GoogleDriveProvider;
 pub use dropbox::DropboxProvider;
