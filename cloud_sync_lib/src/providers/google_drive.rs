@@ -6,7 +6,7 @@
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
 use crate::providers::local_sim::LocalSimulation;
-use crate::providers::utils::refresh_oauth2_token;
+use crate::providers::utils::{refresh_oauth2_token, parse_response_error};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -198,7 +198,7 @@ impl StorageBackend for GoogleDriveProvider {
             .await?;
 
         if !res.status().is_success() {
-            return Err(StorageError::Provider(format!("Failed to upload file content to Google Drive: {}", res.status())));
+            return Err(parse_response_error(res, self.name(), "upload").await);
         }
 
         Ok(())
@@ -219,7 +219,7 @@ impl StorageBackend for GoogleDriveProvider {
             .await?;
 
         if !res.status().is_success() {
-            return Err(StorageError::Provider(format!("Failed to download file from Google Drive: {}", res.status())));
+            return Err(parse_response_error(res, self.name(), "download").await);
         }
 
         if let Some(parent) = local_path.parent() {
@@ -245,7 +245,7 @@ impl StorageBackend for GoogleDriveProvider {
             .await?;
 
         if !res.status().is_success() {
-            return Err(StorageError::Provider(format!("Failed to delete file on Google Drive: {}", res.status())));
+            return Err(parse_response_error(res, self.name(), "delete").await);
         }
 
         Ok(())

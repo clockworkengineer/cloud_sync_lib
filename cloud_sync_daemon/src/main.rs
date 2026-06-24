@@ -61,6 +61,22 @@ fn is_enabled(credentials: &Option<OAuthCredentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 
+fn get_remote_path(path: &Path, watch_dir: &Path) -> Option<String> {
+    let relative_path = match path.strip_prefix(watch_dir) {
+        Ok(p) => p.to_path_buf(),
+        Err(_) => {
+            let path_str = path.to_string_lossy();
+            let watch_dir_str = watch_dir.to_string_lossy();
+            if path_str.starts_with(&*watch_dir_str) {
+                Path::new(&path_str[watch_dir_str.len()..]).to_path_buf()
+            } else {
+                return None;
+            }
+        }
+    };
+    Some(relative_path.to_string_lossy().replace('\\', "/"))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
@@ -178,17 +194,14 @@ async fn handle_event(
                 // Canonicalize event path
                 let abs_path = fs::canonicalize(&path).await.unwrap_or(path.clone());
 
-                // Compute relative path to map to remote path
-                let relative_path = match abs_path.strip_prefix(watch_dir) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        error!("Failed to strip prefix for {:?} (absolute: {:?}): {}", path, abs_path, e);
+                let remote_path_str = match get_remote_path(&abs_path, watch_dir) {
+                    Some(p) => p,
+                    None => {
+                        error!("Failed to strip prefix for {:?} (absolute: {:?})", path, abs_path);
                         continue;
                     }
                 };
-
-                let remote_path_str = relative_path.to_string_lossy().replace('\\', "/");
-                info!("File change detected: {:?}. Syncing to all cloud backends...", relative_path);
+                info!("File change detected: '{}'. Syncing to all cloud backends...", remote_path_str);
 
                 for backend in backends {
                     let backend = backend.clone();
@@ -241,29 +254,14 @@ async fn handle_event(
         }
         EventKind::Remove(_) => {
             for path in event.paths {
-                // Determine remote path based on watch directory
-                // Since path is already deleted, we might not be able to resolve strip_prefix if the event contains a relative or resolved path.
-                // Normally notify returns the absolute path that was deleted.
-                // Since path is already deleted, canonicalization of path won't work.
-                // We'll canonicalize the input path directly (which should match watch_dir formatting)
-                // or fall back to resolving relative paths manually if prefix stripping fails.
-                let relative_path = match path.strip_prefix(watch_dir) {
-                    Ok(p) => p.to_path_buf(),
-                    Err(_) => {
-                        // Attempt to strip using standard canonicalized watch directory string matches
-                        let path_str = path.to_string_lossy();
-                        let watch_dir_str = watch_dir.to_string_lossy();
-                        if path_str.starts_with(&*watch_dir_str) {
-                            Path::new(&path_str[watch_dir_str.len()..]).to_path_buf()
-                        } else {
-                            error!("Failed to strip prefix for deleted path {:?}", path);
-                            continue;
-                        }
+                let remote_path_str = match get_remote_path(&path, watch_dir) {
+                    Some(p) => p,
+                    None => {
+                        error!("Failed to strip prefix for deleted path {:?}", path);
+                        continue;
                     }
                 };
-
-                let remote_path_str = relative_path.to_string_lossy().replace('\\', "/");
-                info!("File deletion detected: {:?}. Deleting from all cloud backends...", relative_path);
+                info!("File deletion detected: '{}'. Deleting from all cloud backends...", remote_path_str);
 
                 for backend in backends {
                     let backend = backend.clone();

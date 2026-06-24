@@ -31,3 +31,15 @@ pub async fn refresh_oauth2_token(
 
     Ok(token.to_string())
 }
+
+/// Unified helper to parse error response from the provider REST API and map it to `StorageError`.
+pub async fn parse_response_error(res: reqwest::Response, provider_name: &str, action: &str) -> StorageError {
+    let status = res.status();
+    let body = res.text().await.unwrap_or_default();
+    let detail = if body.trim().is_empty() {
+        status.to_string()
+    } else {
+        body
+    };
+    StorageError::Provider(format!("Failed to {} on {}: {}", action, provider_name, detail))
+}
