@@ -123,6 +123,7 @@ mod tests {
             client_secret: "mock_secret".to_string(),
             refresh_token: "mock_refresh".to_string(),
             destination_folder: None,
+            enabled: None,
         };
 
         // Create provider and set endpoints to mock server
@@ -347,6 +348,7 @@ mod tests {
             client_secret: "mock_secret".to_string(),
             refresh_token: "mock_refresh".to_string(),
             destination_folder: None,
+            enabled: None,
         };
 
         // Create provider and set endpoints to mock server

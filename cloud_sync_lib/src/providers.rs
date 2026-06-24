@@ -11,6 +11,7 @@ pub struct OAuthCredentials {
     pub client_secret: String,
     pub refresh_token: String,
     pub destination_folder: Option<String>,
+    pub enabled: Option<bool>,
 }
 
 /// A Google Drive storage provider that can sync either to a real API (if credentials are set)

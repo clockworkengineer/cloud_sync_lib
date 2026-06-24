@@ -76,11 +76,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Watching directory: {:?}", watch_dir);
 
     // Initialize Providers
-    let drive = Arc::new(GoogleDriveProvider::new(&config.google_drive_root, config.google_credentials.clone()).await?);
-    let dropbox = Arc::new(DropboxProvider::new(&config.dropbox_root, config.dropbox_credentials.clone()).await?);
-    let onedrive = Arc::new(OneDriveProvider::new(&config.onedrive_root, config.onedrive_credentials.clone()).await?);
+    let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
 
-    let backends: Vec<Arc<dyn StorageBackend>> = vec![drive, dropbox, onedrive];
+    let drive_enabled = config.google_credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true));
+    if drive_enabled {
+        let drive = Arc::new(GoogleDriveProvider::new(&config.google_drive_root, config.google_credentials.clone()).await?);
+        backends.push(drive);
+    } else {
+        info!("Google Drive provider is disabled in configuration.");
+    }
+
+    let dropbox_enabled = config.dropbox_credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true));
+    if dropbox_enabled {
+        let dropbox = Arc::new(DropboxProvider::new(&config.dropbox_root, config.dropbox_credentials.clone()).await?);
+        backends.push(dropbox);
+    } else {
+        info!("Dropbox provider is disabled in configuration.");
+    }
+
+    let onedrive_enabled = config.onedrive_credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true));
+    if onedrive_enabled {
+        let onedrive = Arc::new(OneDriveProvider::new(&config.onedrive_root, config.onedrive_credentials.clone()).await?);
+        backends.push(onedrive);
+    } else {
+        info!("OneDrive provider is disabled in configuration.");
+    }
+
     info!("Initialized cloud storage providers:");
     for backend in &backends {
         info!(" - {}", backend.name());
