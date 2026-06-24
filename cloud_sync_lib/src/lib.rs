@@ -1,3 +1,11 @@
+//! # cloud_sync_lib
+//!
+//! A library providing abstractions and client implementations for syncing files
+//! with popular cloud storage backends, including Google Drive, Dropbox, and OneDrive.
+//!
+//! It supports both actual API clients (using OAuth2 refresh tokens) and a local
+//! folder fallback simulation for offline development and testing.
+
 pub mod providers;
 pub mod traits;
 

@@ -1,3 +1,8 @@
+//! Google Drive storage backend provider implementation.
+//!
+//! Handles interaction with the Google Drive API v3. Supports full OAuth2-based
+//! upload, download, delete, and list operations, with recursive directory resolution.
+
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
 use async_trait::async_trait;
@@ -5,8 +10,11 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
-/// A Google Drive storage provider that can sync either to a real API (if credentials are set)
-/// or fall back to a local folder simulation.
+/// Storage provider client for Google Drive.
+///
+/// If credentials are provided, connects to the Google Drive v3 REST API.
+/// If credentials are `None`, simulates behavior by reading/writing files
+/// inside the local directory specified by `root_dir`.
 pub struct GoogleDriveProvider {
     root_dir: PathBuf,
     client: reqwest::Client,

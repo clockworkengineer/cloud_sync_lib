@@ -1,3 +1,8 @@
+//! OneDrive storage backend provider implementation.
+//!
+//! Handles interaction with the Microsoft Graph REST API for OneDrive. Supports full OAuth2-based
+//! upload, download, delete, and list operations.
+
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
 use async_trait::async_trait;
@@ -5,8 +10,11 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
-/// A OneDrive storage provider that can sync either to a real API (if credentials are set)
-/// or fall back to a local folder simulation.
+/// Storage provider client for Microsoft OneDrive.
+///
+/// If credentials are provided, connects to the Microsoft Graph API endpoints.
+/// If credentials are `None`, simulates behavior by reading/writing files
+/// inside the local directory specified by `root_dir`.
 pub struct OneDriveProvider {
     root_dir: PathBuf,
     client: reqwest::Client,

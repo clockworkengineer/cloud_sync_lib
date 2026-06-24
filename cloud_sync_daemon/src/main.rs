@@ -1,3 +1,9 @@
+//! # Cloud Sync Daemon
+//!
+//! A background daemon that monitors a local watched directory for file modifications,
+//! creations, and deletions using the `notify` crate, and synchronizes those changes
+//! to all configured and enabled cloud storage providers.
+
 use cloud_sync_lib::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, StorageBackend, OAuthCredentials};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
@@ -10,6 +16,7 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+/// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct AppConfig {
     watch_directory: PathBuf,

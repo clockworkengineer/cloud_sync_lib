@@ -1,3 +1,8 @@
+//! Dropbox storage backend provider implementation.
+//!
+//! Handles interaction with the Dropbox v2 REST API. Supports full OAuth2-based
+//! upload, download, delete, and list operations, with custom prefix path resolution.
+
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
 use async_trait::async_trait;
@@ -5,8 +10,11 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
-/// A Dropbox storage provider that can sync either to a real API (if credentials are set)
-/// or fall back to a local folder simulation.
+/// Storage provider client for Dropbox.
+///
+/// If credentials are provided, connects to the Dropbox v2 API endpoints.
+/// If credentials are `None`, simulates behavior by reading/writing files
+/// inside the local directory specified by `root_dir`.
 pub struct DropboxProvider {
     root_dir: PathBuf,
     client: reqwest::Client,
