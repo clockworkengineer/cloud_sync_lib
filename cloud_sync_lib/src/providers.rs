@@ -350,6 +350,9 @@ pub struct DropboxProvider {
     root_dir: PathBuf,
     client: reqwest::Client,
     credentials: Option<OAuthCredentials>,
+    auth_url: String,
+    api_url: String,
+    content_url: String,
 }
 
 impl DropboxProvider {
@@ -360,7 +363,18 @@ impl DropboxProvider {
             root_dir,
             client: reqwest::Client::new(),
             credentials,
+            auth_url: "https://api.dropbox.com/oauth2/token".to_string(),
+            api_url: "https://api.dropboxapi.com/2/files".to_string(),
+            content_url: "https://content.dropboxapi.com/2/files".to_string(),
         })
+    }
+
+    #[cfg(test)]
+    pub fn with_endpoints(mut self, auth_url: String, api_url: String, content_url: String) -> Self {
+        self.auth_url = auth_url;
+        self.api_url = api_url;
+        self.content_url = content_url;
+        self
     }
 
     fn resolve(&self, remote_path: &str) -> PathBuf {
@@ -380,7 +394,7 @@ impl DropboxProvider {
             ("grant_type", &"refresh_token".to_string()),
         ];
 
-        let res = self.client.post("https://api.dropbox.com/oauth2/token")
+        let res = self.client.post(&self.auth_url)
             .form(&params)
             .send()
             .await?
@@ -395,12 +409,25 @@ impl DropboxProvider {
     }
 
     fn format_path(&self, path: &str) -> String {
-        let formatted = path.trim_start_matches('/');
-        if formatted.is_empty() {
-            "".to_string()
-        } else {
-            format!("/{}", formatted)
+        let clean_path = path.trim_start_matches('/');
+        let mut full_path = String::new();
+
+        if let Some(ref creds) = self.credentials {
+            if let Some(ref dest_folder) = creds.destination_folder {
+                let clean_dest = dest_folder.trim_matches('/');
+                if !clean_dest.is_empty() {
+                    full_path.push_str("/");
+                    full_path.push_str(clean_dest);
+                }
+            }
         }
+
+        if !clean_path.is_empty() {
+            full_path.push_str("/");
+            full_path.push_str(clean_path);
+        }
+
+        full_path
     }
 }
 
@@ -435,7 +462,8 @@ impl StorageBackend for DropboxProvider {
             "strict_conflict": false
         });
 
-        let res = self.client.post("https://content.dropboxapi.com/2/files/upload")
+        let upload_url = format!("{}/upload", self.content_url);
+        let res = self.client.post(&upload_url)
             .bearer_auth(&token)
             .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
             .header("Content-Type", "application/octet-stream")
@@ -472,7 +500,8 @@ impl StorageBackend for DropboxProvider {
             "path": dbx_path
         });
 
-        let res = self.client.post("https://content.dropboxapi.com/2/files/download")
+        let download_url = format!("{}/download", self.content_url);
+        let res = self.client.post(&download_url)
             .bearer_auth(&token)
             .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
             .header("Content-Type", "")
@@ -513,7 +542,8 @@ impl StorageBackend for DropboxProvider {
             "path": dbx_path
         });
 
-        let res = self.client.post("https://api.dropboxapi.com/2/files/delete_v2")
+        let delete_url = format!("{}/delete_v2", self.api_url);
+        let res = self.client.post(&delete_url)
             .bearer_auth(&token)
             .json(&body)
             .send()
@@ -555,7 +585,8 @@ impl StorageBackend for DropboxProvider {
             "recursive": false
         });
 
-        let res = self.client.post("https://api.dropboxapi.com/2/files/list_folder")
+        let list_url = format!("{}/list_folder", self.api_url);
+        let res = self.client.post(&list_url)
             .bearer_auth(&token)
             .json(&body)
             .send()
