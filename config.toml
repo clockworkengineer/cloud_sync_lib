@@ -11,3 +11,33 @@ client_secret = "PLACEHOLDER_CLIENT_SECRET"
 refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
 destination_folder = ""
 enabled = true
+
+[dropbox_credentials]
+client_id = "PLACEHOLDER_CLIENT_ID"
+client_secret = "PLACEHOLDER_CLIENT_SECRET"
+refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
+destination_folder = ""
+enabled = false
+
+[onedrive_credentials]
+client_id = "PLACEHOLDER_CLIENT_ID"
+client_secret = "PLACEHOLDER_CLIENT_SECRET"
+refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
+destination_folder = ""
+enabled = false
+
+[webdav_credentials]
+url = "http://127.0.0.1:8080"
+username = "PLACEHOLDER_USERNAME"
+password = "PLACEHOLDER_PASSWORD"
+destination_folder = ""
+enabled = false
+
+[s3_credentials]
+bucket = "PLACEHOLDER_BUCKET"
+region = "us-east-1"
+access_key_id = "PLACEHOLDER_ACCESS_KEY"
+secret_access_key = "PLACEHOLDER_SECRET_KEY"
+endpoint = "http://127.0.0.1:9000"
+destination_folder = ""
+enabled = false
