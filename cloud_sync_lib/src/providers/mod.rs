@@ -38,10 +38,30 @@ pub struct WebDAVCredentials {
     pub enabled: Option<bool>,
 }
 
+/// Credentials configuration for Amazon S3 and S3-Compatible backends.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct S3Credentials {
+    /// S3 Bucket name.
+    pub bucket: String,
+    /// S3 Region name.
+    pub region: String,
+    /// S3 Access Key ID.
+    pub access_key_id: String,
+    /// S3 Secret Access Key.
+    pub secret_access_key: String,
+    /// Custom endpoint URL (optional, required for S3-compatible providers).
+    pub endpoint: Option<String>,
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+}
+
 pub mod google_drive;
 pub mod dropbox;
 pub mod onedrive;
 pub mod webdav;
+pub mod s3;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -50,4 +70,5 @@ pub use google_drive::GoogleDriveProvider;
 pub use dropbox::DropboxProvider;
 pub use onedrive::OneDriveProvider;
 pub use webdav::WebDAVProvider;
+pub use s3::S3Provider;
 pub use fallback::SimulatedFallback;

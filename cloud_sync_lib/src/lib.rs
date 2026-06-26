@@ -9,7 +9,7 @@
 pub mod providers;
 pub mod traits;
 
-pub use providers::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, OAuthCredentials, WebDAVCredentials, SimulatedFallback, local_sim::LocalSimulation};
+pub use providers::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, OAuthCredentials, WebDAVCredentials, S3Credentials, SimulatedFallback, local_sim::LocalSimulation};
 pub use traits::{StorageBackend, StorageError, StorageItem};
 
 #[cfg(test)]
@@ -921,5 +921,216 @@ mod tests {
         let items_after = provider.list("").await.unwrap();
         let found_after = items_after.iter().any(|item| item.path.to_string_lossy() == file_name);
         assert!(!found_after, "File was not successfully deleted from WebDAV");
+    }
+
+    #[tokio::test]
+    async fn test_s3_provider_simulated_flow() {
+        let temp_dir = tempdir().unwrap();
+        let provider_root = temp_dir.path().join("s3_root");
+        let local_sim = LocalSimulation::new(provider_root.clone(), "S3".to_string());
+        let provider = SimulatedFallback::<S3Provider>::new(None, local_sim, "S3");
+
+        // Create a local temporary file to upload
+        let local_file_path = temp_dir.path().join("test.txt");
+        let mut file = File::create(&local_file_path).unwrap();
+        writeln!(file, "Hello simulated cloud storage!").unwrap();
+
+        // Upload
+        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+
+        // Verify remote file exists
+        let remote_file = provider_root.join("hello.txt");
+        assert!(remote_file.exists());
+        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated cloud storage!");
+
+        // List
+        let items = provider.list("").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
+
+        // Download
+        let download_path = temp_dir.path().join("downloaded.txt");
+        provider.download("hello.txt", &download_path).await.unwrap();
+        assert!(download_path.exists());
+        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated cloud storage!");
+
+        // Delete
+        provider.delete("hello.txt").await.unwrap();
+        assert!(!provider_root.join("hello.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_s3_mock_http_flow() {
+        use wiremock::matchers::{method, path, path_regex};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+
+        // 1. Mock Upload endpoint (PUT to /test-bucket/MySyncFolder/hello.txt)
+        Mock::given(method("PUT"))
+            .and(path("/test-bucket/MySyncFolder/hello.txt"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        // 2. Mock Download endpoint (GET to /test-bucket/MySyncFolder/hello.txt)
+        Mock::given(method("GET"))
+            .and(path("/test-bucket/MySyncFolder/hello.txt"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("Hello simulated S3 storage!"))
+            .mount(&server)
+            .await;
+
+        // 3. Mock List endpoint (GET to /test-bucket or /test-bucket/)
+        let list_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+    <Name>test-bucket</Name>
+    <Prefix>MySyncFolder/</Prefix>
+    <KeyCount>1</KeyCount>
+    <MaxKeys>1000</MaxKeys>
+    <IsTruncated>false</IsTruncated>
+    <Contents>
+        <Key>MySyncFolder/hello.txt</Key>
+        <LastModified>2026-06-26T12:00:00.000Z</LastModified>
+        <ETag>&quot;3a3f&quot;</ETag>
+        <Size>32</Size>
+        <StorageClass>STANDARD</StorageClass>
+    </Contents>
+</ListBucketResult>"#;
+
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/test-bucket/?$"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(list_xml))
+            .mount(&server)
+            .await;
+
+        // 4. Mock Delete endpoint (DELETE to /test-bucket/MySyncFolder/hello.txt)
+        Mock::given(method("DELETE"))
+            .and(path("/test-bucket/MySyncFolder/hello.txt"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+
+        let temp_dir = tempdir().unwrap();
+        let provider_root = temp_dir.path().join("s3_root");
+        
+        let creds = S3Credentials {
+            bucket: "test-bucket".to_string(),
+            region: "us-east-1".to_string(),
+            access_key_id: "access_key".to_string(),
+            secret_access_key: "secret_key".to_string(),
+            endpoint: Some(server.uri()),
+            destination_folder: Some("MySyncFolder".to_string()),
+            enabled: None,
+        };
+
+        // Create provider and set endpoints to mock server
+        let inner = S3Provider::new(creds).with_endpoints(server.uri());
+        let local_sim = LocalSimulation::new(provider_root.clone(), "S3".to_string());
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "S3");
+
+        // Upload
+        let local_file_path = temp_dir.path().join("test.txt");
+        let mut file = File::create(&local_file_path).unwrap();
+        writeln!(file, "Hello simulated S3 storage!").unwrap();
+
+        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+
+        // List
+        let items = provider.list("").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
+
+        // Download
+        let download_path = temp_dir.path().join("downloaded.txt");
+        provider.download("hello.txt", &download_path).await.unwrap();
+        assert!(download_path.exists());
+        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated S3 storage!");
+
+        // Delete
+        provider.delete("hello.txt").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_s3_real_flow() {
+        let mut config_path = std::path::Path::new("../private_config.toml");
+        if !config_path.exists() {
+            config_path = std::path::Path::new("../config.toml");
+        }
+        if !config_path.exists() {
+            println!("Skipping real S3 test: configuration file not found.");
+            return;
+        }
+
+        let content = match std::fs::read_to_string(config_path) {
+            Ok(c) => c,
+            Err(_) => {
+                println!("Skipping real S3 test: failed to read config file");
+                return;
+            }
+        };
+
+        #[derive(serde::Deserialize)]
+        struct TestConfig {
+            s3_credentials: Option<S3Credentials>,
+        }
+
+        let config: TestConfig = match toml::from_str(&content) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                println!("Skipping real S3 test: failed to parse config file ({:?})", e);
+                return;
+            }
+        };
+
+        let credentials = match config.s3_credentials {
+            Some(creds) => {
+                if creds.access_key_id.contains("PLACEHOLDER") 
+                    || creds.access_key_id.is_empty() 
+                {
+                    println!("Skipping real S3 test: Credentials contain placeholder or empty key.");
+                    return;
+                }
+                creds
+            }
+            None => {
+                println!("Skipping real S3 test: No s3_credentials found in config file");
+                return;
+            }
+        };
+
+        println!("Running real S3 integration test...");
+        let temp_dir = tempdir().unwrap();
+        let provider_root = temp_dir.path().join("s3_root");
+        let inner = S3Provider::new(credentials);
+        let local_sim = LocalSimulation::new(provider_root.clone(), "S3".to_string());
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "S3");
+
+        // Create a local temporary file to upload
+        let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
+        let local_file_path = temp_dir.path().join(&file_name);
+        let mut file = File::create(&local_file_path).unwrap();
+        writeln!(file, "Hello real S3!").unwrap();
+
+        // Upload
+        provider.upload(&local_file_path, &file_name).await.unwrap();
+
+        // List files to find it
+        let items = provider.list("").await.unwrap();
+        let found = items.iter().any(|item| item.path.to_string_lossy() == file_name);
+        assert!(found, "Uploaded file was not found in the file listing");
+
+        // Download
+        let download_path = temp_dir.path().join("downloaded_real.txt");
+        provider.download(&file_name, &download_path).await.unwrap();
+        assert!(download_path.exists());
+        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello real S3!");
+
+        // Delete
+        provider.delete(&file_name).await.unwrap();
+
+        // Verify it's deleted
+        let items_after = provider.list("").await.unwrap();
+        let found_after = items_after.iter().any(|item| item.path.to_string_lossy() == file_name);
+        assert!(!found_after, "File was not successfully deleted from S3");
     }
 }

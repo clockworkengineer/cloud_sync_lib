@@ -4,7 +4,7 @@
 //! creations, and deletions using the `notify` crate, and synchronizes those changes
 //! to all configured and enabled cloud storage providers.
 
-use cloud_sync_lib::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, StorageBackend, OAuthCredentials, WebDAVCredentials, SimulatedFallback, LocalSimulation};
+use cloud_sync_lib::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, StorageBackend, OAuthCredentials, WebDAVCredentials, S3Credentials, SimulatedFallback, LocalSimulation};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,10 +24,12 @@ struct AppConfig {
     dropbox_root: PathBuf,
     onedrive_root: PathBuf,
     webdav_root: PathBuf,
+    s3_root: PathBuf,
     google_credentials: Option<OAuthCredentials>,
     dropbox_credentials: Option<OAuthCredentials>,
     onedrive_credentials: Option<OAuthCredentials>,
     webdav_credentials: Option<WebDAVCredentials>,
+    s3_credentials: Option<S3Credentials>,
 }
 
 impl Default for AppConfig {
@@ -38,10 +40,12 @@ impl Default for AppConfig {
             dropbox_root: PathBuf::from("./cloud_simulation/dropbox"),
             onedrive_root: PathBuf::from("./cloud_simulation/onedrive"),
             webdav_root: PathBuf::from("./cloud_simulation/webdav"),
+            s3_root: PathBuf::from("./cloud_simulation/s3"),
             google_credentials: None,
             dropbox_credentials: None,
             onedrive_credentials: None,
             webdav_credentials: None,
+            s3_credentials: None,
         }
     }
 }
@@ -66,6 +70,10 @@ fn is_enabled(credentials: &Option<OAuthCredentials>) -> bool {
 }
 
 fn is_webdav_enabled(credentials: &Option<WebDAVCredentials>) -> bool {
+    credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
+}
+
+fn is_s3_enabled(credentials: &Option<S3Credentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 
@@ -154,6 +162,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         backends.push(webdav);
     } else {
         info!("WebDAV provider is disabled in configuration.");
+    }
+
+    if is_s3_enabled(&config.s3_credentials) {
+        let inner = config.s3_credentials.clone().map(S3Provider::new);
+        let local_sim = LocalSimulation::new(config.s3_root.clone(), "S3".to_string());
+        let s3_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "S3"));
+        backends.push(s3_backend);
+    } else {
+        info!("S3 provider is disabled in configuration.");
     }
 
     info!("Initialized cloud storage providers:");
@@ -302,6 +319,11 @@ async fn handle_control_command(
                         let inner = config.webdav_credentials.clone().map(WebDAVProvider::new);
                         let local_sim = LocalSimulation::new(config.webdav_root.clone(), "WebDAV".to_string());
                         backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "WebDAV")));
+                    }
+                    if is_s3_enabled(&config.s3_credentials) {
+                        let inner = config.s3_credentials.clone().map(S3Provider::new);
+                        let local_sim = LocalSimulation::new(config.s3_root.clone(), "S3".to_string());
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "S3")));
                     }
                     s.backends = backends;
                     info!("Configuration reloaded successfully. Active backends updated.");
