@@ -555,6 +555,10 @@
                     ⚡ Reload Configuration
                 </button>
                 
+                <button class="btn btn-start" id="btn-start" onclick="startDaemon()" style="background: var(--gradient-success); box-shadow: 0 4px 15px rgba(20, 184, 166, 0.25); display: none;">
+                    ▶ Start Daemon
+                </button>
+                
                 <button class="btn btn-stop" id="btn-stop" onclick="stopDaemon()">
                     🛑 Shutdown Daemon
                 </button>
@@ -601,26 +605,16 @@
         // Helper to update connection state UI
         function setConnected(connected) {
             isConnected = connected;
-            const pulse = document.getElementById('status-pulse');
-            const text = document.getElementById('status-text');
             const banner = document.getElementById('error-banner');
             const buttons = document.querySelectorAll('.btn');
 
-            if (connected) {
-                pulse.className = isSyncing ? 'status-dot syncing' : 'status-dot';
-                text.textContent = isPaused ? 'Paused' : (isSyncing ? 'Syncing...' : 'Connected');
-                banner.classList.remove('visible');
-                buttons.forEach(b => {
-                    if (b.id === 'btn-sync' && isSyncing) {
-                        b.disabled = true;
-                    } else {
-                        b.removeAttribute('disabled');
-                    }
-                });
-            } else {
+            if (!connected) {
+                const pulse = document.getElementById('status-pulse');
+                const text = document.getElementById('status-text');
                 pulse.className = 'status-dot disconnected';
-                text.textContent = 'Disconnected';
+                text.textContent = 'UI Server Disconnected';
                 banner.classList.add('visible');
+                banner.querySelector('span').textContent = 'Unable to connect to the UI backend server. Make sure the UI server is running.';
                 buttons.forEach(b => b.setAttribute('disabled', 'true'));
                 document.getElementById('daemon-run-state').textContent = 'Disconnected';
             }
@@ -643,51 +637,96 @@
             const data = await apiCall('/status');
             if (!data) return;
 
-            isPaused = data.paused;
-            isSyncing = data.syncing;
-            
-            const runStateText = isPaused ? 'Paused' : 'Active (Watching for changes)';
-            document.getElementById('daemon-run-state').textContent = runStateText;
+            const daemonRunning = data.daemon_running;
             
             const btnPause = document.getElementById('btn-pause');
-            if (isPaused) {
-                btnPause.className = 'btn btn-toggle-pause paused';
-                btnPause.innerHTML = '▶ Resume Syncing';
-                document.getElementById('status-text').textContent = 'Paused';
-            } else {
-                btnPause.className = 'btn btn-toggle-pause';
-                btnPause.innerHTML = '⏸ Pause Syncing';
-                document.getElementById('status-text').textContent = isSyncing ? 'Syncing...' : 'Connected';
-            }
-
             const btnSync = document.getElementById('btn-sync');
-            if (isSyncing) {
-                btnSync.innerHTML = '<span class="spinner"></span> Syncing...';
-                btnSync.disabled = true;
-                document.getElementById('status-pulse').className = 'status-dot syncing';
-            } else {
-                btnSync.innerHTML = '🔄 Sync Now (Full Scan)';
-                if (isConnected) {
-                    btnSync.disabled = false;
+            const btnReload = document.getElementById('btn-reload');
+            const btnStop = document.getElementById('btn-stop');
+            const btnStart = document.getElementById('btn-start');
+            const banner = document.getElementById('error-banner');
+            const pulse = document.getElementById('status-pulse');
+            const statusText = document.getElementById('status-text');
+            const runStateText = document.getElementById('daemon-run-state');
+
+            if (daemonRunning) {
+                isPaused = data.paused;
+                isSyncing = data.syncing;
+                
+                runStateText.textContent = isPaused ? 'Paused' : 'Active (Watching for changes)';
+                
+                if (isPaused) {
+                    btnPause.className = 'btn btn-toggle-pause paused';
+                    btnPause.innerHTML = '▶ Resume Syncing';
+                    statusText.textContent = 'Paused';
+                } else {
+                    btnPause.className = 'btn btn-toggle-pause';
+                    btnPause.innerHTML = '⏸ Pause Syncing';
+                    statusText.textContent = isSyncing ? 'Syncing...' : 'Connected';
                 }
-                document.getElementById('status-pulse').className = isPaused ? 'status-dot disconnected' : 'status-dot';
+
+                if (isSyncing) {
+                    btnSync.innerHTML = '<span class="spinner"></span> Syncing...';
+                    btnSync.disabled = true;
+                    pulse.className = 'status-dot syncing';
+                } else {
+                    btnSync.innerHTML = '🔄 Sync Now (Full Scan)';
+                    btnSync.disabled = false;
+                    pulse.className = isPaused ? 'status-dot disconnected' : 'status-dot';
+                }
+
+                btnPause.style.display = 'inline-flex';
+                btnSync.style.display = 'inline-flex';
+                btnReload.style.display = 'inline-flex';
+                btnStop.style.display = 'inline-flex';
+                btnStart.style.display = 'none';
+
+                btnPause.removeAttribute('disabled');
+                btnReload.removeAttribute('disabled');
+                btnStop.removeAttribute('disabled');
+                btnStop.innerHTML = '🛑 Shutdown Daemon';
+                
+                banner.classList.remove('visible');
+                
+                document.getElementById('watched-dir').textContent = data.watch_directory;
+                document.getElementById('config-file').textContent = data.config_file;
+
+                // Render Backends
+                const backendsList = document.getElementById('backends-list');
+                backendsList.innerHTML = '';
+                
+                const allProviders = ['Google Drive', 'Dropbox', 'OneDrive', 'WebDAV', 'S3'];
+                allProviders.forEach(prov => {
+                    const isActive = data.active_backends.includes(prov);
+                    const pill = document.createElement('div');
+                    pill.className = `backend-pill ${isActive ? 'active' : ''}`;
+                    pill.innerHTML = `<span class="backend-indicator"></span> ${prov}`;
+                    backendsList.appendChild(pill);
+                });
+            } else {
+                // Daemon is offline/stopped
+                runStateText.textContent = 'Stopped / Offline';
+                statusText.textContent = 'Offline';
+                pulse.className = 'status-dot disconnected';
+                
+                btnPause.style.display = 'none';
+                btnSync.style.display = 'none';
+                btnReload.style.display = 'none';
+                btnStop.style.display = 'none';
+                
+                btnStart.style.display = 'inline-flex';
+                btnStart.removeAttribute('disabled');
+                btnStart.innerHTML = '▶ Start Daemon';
+
+                banner.classList.add('visible');
+                banner.querySelector('span').textContent = 'The cloud sync daemon is offline. Click "Start Daemon" to launch it.';
+
+                document.getElementById('watched-dir').textContent = '-';
+                document.getElementById('config-file').textContent = '-';
+                
+                const backendsList = document.getElementById('backends-list');
+                backendsList.innerHTML = '<div style="color: var(--text-secondary); font-style: italic;">Daemon offline</div>';
             }
-
-            document.getElementById('watched-dir').textContent = data.watch_directory;
-            document.getElementById('config-file').textContent = data.config_file;
-
-            // Render Backends
-            const backendsList = document.getElementById('backends-list');
-            backendsList.innerHTML = '';
-            
-            const allProviders = ['Google Drive', 'Dropbox', 'OneDrive', 'WebDAV', 'S3'];
-            allProviders.forEach(prov => {
-                const isActive = data.active_backends.includes(prov);
-                const pill = document.createElement('div');
-                pill.className = `backend-pill ${isActive ? 'active' : ''}`;
-                pill.innerHTML = `<span class="backend-indicator"></span> ${prov}`;
-                backendsList.appendChild(pill);
-            });
         }
 
         function renderLogs() {
@@ -818,6 +857,23 @@
             btn.disabled = false;
         }
 
+        async function startDaemon() {
+            const btn = document.getElementById('btn-start');
+            btn.innerHTML = '<span class="spinner"></span> Starting...';
+            btn.disabled = true;
+            
+            addLogEntry('info', "Requesting daemon start...");
+            const res = await apiCall('/start', 'POST');
+            if (res && res.status) {
+                addLogEntry('info', `Daemon start request succeeded: ${res.status}`);
+                await pollStatus();
+            } else {
+                addLogEntry('error', "Failed to start daemon.");
+                btn.innerHTML = '▶ Start Daemon';
+                btn.disabled = false;
+            }
+        }
+
         async function stopDaemon() {
             if (confirm('Are you sure you want to stop the background sync daemon? The daemon process will exit.')) {
                 const btn = document.getElementById('btn-stop');
@@ -826,10 +882,10 @@
                 
                 addLogEntry('info', "Sending stop command to daemon...");
                 await apiCall('/stop', 'POST');
-                setTimeout(() => {
-                    addLogEntry('info', "Daemon socket connection closed.");
-                    setConnected(false);
-                }, 1000);
+                setTimeout(async () => {
+                    addLogEntry('info', "Daemon shutdown initiated.");
+                    await pollStatus();
+                }, 1500);
             }
         }
 

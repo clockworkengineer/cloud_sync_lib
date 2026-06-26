@@ -7,12 +7,15 @@ use tower_http::cors::CorsLayer;
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use tokio::net::TcpStream;
 use serde_json::json;
+use std::time::Duration;
+use std::process::Stdio;
 
 #[tokio::main]
 async fn main() {
     let router = Router::new()
         .route("/", get(serve_index))
         .route("/api/status", get(api_status))
+        .route("/api/start", post(api_start))
         .route("/api/pause", post(api_pause))
         .route("/api/resume", post(api_resume))
         .route("/api/sync", post(api_sync))
@@ -98,11 +101,54 @@ fn parse_status(raw: &str) -> serde_json::Value {
 
 async fn api_status() -> impl IntoResponse {
     match send_daemon_cmd("status").await {
-        Ok(raw) => Json(parse_status(&raw)).into_response(),
+        Ok(raw) => {
+            let mut val = parse_status(&raw);
+            val["daemon_running"] = serde_json::Value::Bool(true);
+            Json(val).into_response()
+        }
+        Err(_) => {
+            Json(json!({
+                "paused": false,
+                "watch_directory": "-",
+                "config_file": "-",
+                "active_backends": [],
+                "syncing": false,
+                "daemon_running": false
+            })).into_response()
+        }
+    }
+}
+
+async fn api_start() -> impl IntoResponse {
+    let config_file = if std::path::Path::new("private_config.toml").exists() {
+        "private_config.toml"
+    } else {
+        "config.toml"
+    };
+
+    println!("Starting cloud_sync_daemon with config: {}", config_file);
+
+    // Spawn cargo run --bin cloud_sync_daemon private_config.toml as a detached background command
+    let mut cmd = tokio::process::Command::new("cargo");
+    cmd.arg("run")
+       .arg("--bin")
+       .arg("cloud_sync_daemon")
+       .arg("--")
+       .arg(config_file)
+       .stdout(Stdio::null())
+       .stderr(Stdio::null())
+       .stdin(Stdio::null());
+
+    match cmd.spawn() {
+        Ok(_) => {
+            // Give it 1.5 seconds to build (if needed) and bind to its TCP socket
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            Json(json!({ "status": "Daemon started successfully" })).into_response()
+        }
         Err(e) => {
             (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": format!("Could not connect to daemon socket: {}", e) }))
+                Json(json!({ "error": format!("Failed to spawn daemon: {}", e) }))
             ).into_response()
         }
     }
