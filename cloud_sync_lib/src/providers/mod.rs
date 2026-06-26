@@ -23,9 +23,25 @@ pub struct OAuthCredentials {
     pub enabled: Option<bool>,
 }
 
+/// Credentials and URL configuration for WebDAV servers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebDAVCredentials {
+    /// WebDAV Server Base URL.
+    pub url: String,
+    /// WebDAV Username.
+    pub username: String,
+    /// WebDAV Password.
+    pub password: String,
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+}
+
 pub mod google_drive;
 pub mod dropbox;
 pub mod onedrive;
+pub mod webdav;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -33,4 +49,5 @@ pub mod fallback;
 pub use google_drive::GoogleDriveProvider;
 pub use dropbox::DropboxProvider;
 pub use onedrive::OneDriveProvider;
+pub use webdav::WebDAVProvider;
 pub use fallback::SimulatedFallback;
