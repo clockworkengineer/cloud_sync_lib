@@ -77,6 +77,13 @@ fn get_remote_path(path: &Path, watch_dir: &Path) -> Option<String> {
     Some(relative_path.to_string_lossy().replace('\\', "/"))
 }
 
+struct DaemonState {
+    paused: bool,
+    backends: Vec<Arc<dyn StorageBackend>>,
+    watch_dir: PathBuf,
+    config_file: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
@@ -137,6 +144,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!(" - {}", backend.name());
     }
 
+    // Wrap state in Mutex/Arc
+    let state = Arc::new(Mutex::new(DaemonState {
+        paused: false,
+        backends,
+        watch_dir: watch_dir.clone(),
+        config_file: config_file.clone(),
+    }));
+
     // Set up mpsc channel for events
     let (tx, mut rx) = mpsc::channel::<notify::Result<Event>>(100);
 
@@ -155,27 +170,196 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Daemon is listening for changes... Press Ctrl+C to exit.");
 
+    // Setup channel for shutdown command control
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+
+    // Spawn TCP control command listener
+    let state_clone = state.clone();
+    let shutdown_tx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        let listener = match tokio::net::TcpListener::bind("127.0.0.1:8081").await {
+            Ok(l) => l,
+            Err(e) => {
+                error!("Failed to bind TCP control socket: {}", e);
+                return;
+            }
+        };
+        info!("Control command TCP socket listening on 127.0.0.1:8081");
+
+        loop {
+            tokio::select! {
+                conn = listener.accept() => {
+                    if let Ok((mut socket, _)) = conn {
+                        let state = state_clone.clone();
+                        let shutdown_tx = shutdown_tx_clone.clone();
+                        tokio::spawn(async move {
+                            use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+                            let (reader, mut writer) = socket.split();
+                            let mut reader = BufReader::new(reader);
+                            let mut line = String::new();
+                            if reader.read_line(&mut line).await.is_ok() {
+                                let cmd = line.trim();
+                                let response = handle_control_command(cmd, &state, &shutdown_tx).await;
+                                let _ = writer.write_all(response.as_bytes()).await;
+                                let _ = writer.flush().await;
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    });
+
     let active_locks = Arc::new(Mutex::new(HashMap::new()));
 
-    // Process events
-    while let Some(res) = rx.recv().await {
-        match res {
-            Ok(event) => {
-                handle_event(event, &watch_dir, &backends, active_locks.clone()).await;
+    // Process events or handle shutdown signal
+    loop {
+        tokio::select! {
+            Some(res) = rx.recv() => {
+                match res {
+                    Ok(event) => {
+                        handle_event(event, state.clone(), active_locks.clone()).await;
+                    }
+                    Err(e) => error!("Watcher error: {:?}", e),
+                }
             }
-            Err(e) => error!("Watcher error: {:?}", e),
+            _ = shutdown_rx.recv() => {
+                info!("Shutdown command received. Stopping daemon gracefully...");
+                break;
+            }
+            else => break,
         }
     }
 
     Ok(())
 }
 
+async fn handle_control_command(
+    cmd: &str,
+    state: &Arc<Mutex<DaemonState>>,
+    shutdown_tx: &mpsc::Sender<()>,
+) -> String {
+    match cmd {
+        "status" => {
+            let s = state.lock().await;
+            let backend_names: Vec<String> = s.backends.iter().map(|b| b.name().to_string()).collect();
+            format!(
+                "Status: OK\nPaused: {}\nWatch Directory: {:?}\nConfig File: {}\nActive Backends: {:?}\n",
+                s.paused, s.watch_dir, s.config_file, backend_names
+            )
+        }
+        "pause" => {
+            let mut s = state.lock().await;
+            s.paused = true;
+            info!("Daemon synchronization paused.");
+            "Status: Paused\n".to_string()
+        }
+        "resume" => {
+            let mut s = state.lock().await;
+            s.paused = false;
+            info!("Daemon synchronization resumed.");
+            "Status: Resumed\n".to_string()
+        }
+        "reload" => {
+            let mut s = state.lock().await;
+            info!("Reloading configuration file: {}...", s.config_file);
+            match load_or_create_config(&s.config_file).await {
+                Ok(config) => {
+                    let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
+                    if is_enabled(&config.google_credentials) {
+                        let inner = config.google_credentials.clone().map(GoogleDriveProvider::new);
+                        let local_sim = LocalSimulation::new(config.google_drive_root.clone(), "Google Drive".to_string());
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Google Drive")));
+                    }
+                    if is_enabled(&config.dropbox_credentials) {
+                        let inner = config.dropbox_credentials.clone().map(DropboxProvider::new);
+                        let local_sim = LocalSimulation::new(config.dropbox_root.clone(), "Dropbox".to_string());
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Dropbox")));
+                    }
+                    if is_enabled(&config.onedrive_credentials) {
+                        let inner = config.onedrive_credentials.clone().map(OneDriveProvider::new);
+                        let local_sim = LocalSimulation::new(config.onedrive_root.clone(), "OneDrive".to_string());
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "OneDrive")));
+                    }
+                    s.backends = backends;
+                    info!("Configuration reloaded successfully. Active backends updated.");
+                    "Status: Config reloaded successfully\n".to_string()
+                }
+                Err(e) => {
+                    error!("Failed to reload config: {}", e);
+                    format!("Error: Failed to reload config: {}\n", e)
+                }
+            }
+        }
+        "sync" => {
+            let s = state.lock().await;
+            let watch_dir = s.watch_dir.clone();
+            let backends = s.backends.clone();
+            tokio::spawn(async move {
+                info!("Manual sync triggered via control command. Scanning watch directory...");
+                if let Err(e) = trigger_full_sync(&watch_dir, &backends).await {
+                    error!("Manual sync failed: {}", e);
+                } else {
+                    info!("Manual sync completed successfully!");
+                }
+            });
+            "Status: Sync triggered in background\n".to_string()
+        }
+        "stop" => {
+            let _ = shutdown_tx.send(()).await;
+            "Status: Stopping daemon...\n".to_string()
+        }
+        _ => "Error: Unknown command. Supported: status, pause, resume, reload, sync, stop\n".to_string(),
+    }
+}
+
+async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>]) -> std::io::Result<()> {
+    let mut dir_entries = vec![watch_dir.to_path_buf()];
+    while let Some(current_dir) = dir_entries.pop() {
+        let mut entries = fs::read_dir(current_dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            let metadata = fs::metadata(&path).await?;
+            if metadata.is_dir() {
+                dir_entries.push(path);
+            } else if metadata.is_file() {
+                if let Some(remote_path_str) = get_remote_path(&path, watch_dir) {
+                    for backend in backends {
+                        let backend = backend.clone();
+                        let local_path = path.clone();
+                        let remote_path = remote_path_str.clone();
+                        tokio::spawn(async move {
+                            info!("[{}] Syncing '{}' via manual trigger", backend.name(), remote_path);
+                            if let Err(e) = backend.upload(&local_path, &remote_path).await {
+                                error!("[{}] Failed to sync '{}': {}", backend.name(), remote_path, e);
+                            } else {
+                                info!("[{}] Successfully synced '{}'", backend.name(), remote_path);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn handle_event(
     event: Event,
-    watch_dir: &Path,
-    backends: &[Arc<dyn StorageBackend>],
+    state: Arc<Mutex<DaemonState>>,
     active_locks: Arc<Mutex<HashMap<(String, PathBuf), Arc<tokio::sync::Mutex<()>>>>>,
 ) {
+    // Read current state
+    let (paused, backends, watch_dir) = {
+        let s = state.lock().await;
+        (s.paused, s.backends.clone(), s.watch_dir.clone())
+    };
+
+    if paused {
+        info!("Daemon is paused. Skipping file change event.");
+        return;
+    }
+
     // Only respond to creation, modification (writes), and deletions
     match event.kind {
         EventKind::Create(_) | EventKind::Modify(notify::event::ModifyKind::Data(_)) | EventKind::Modify(notify::event::ModifyKind::Any) => {
@@ -200,7 +384,7 @@ async fn handle_event(
                 // Canonicalize event path
                 let abs_path = fs::canonicalize(&path).await.unwrap_or(path.clone());
 
-                let remote_path_str = match get_remote_path(&abs_path, watch_dir) {
+                let remote_path_str = match get_remote_path(&abs_path, &watch_dir) {
                     Some(p) => p,
                     None => {
                         error!("Failed to strip prefix for {:?} (absolute: {:?})", path, abs_path);
@@ -209,7 +393,7 @@ async fn handle_event(
                 };
                 info!("File change detected: '{}'. Syncing to all cloud backends...", remote_path_str);
 
-                for backend in backends {
+                for backend in &backends {
                     let backend = backend.clone();
                     let local_path = path.clone();
                     let remote_path = remote_path_str.clone();
@@ -260,7 +444,7 @@ async fn handle_event(
         }
         EventKind::Remove(_) => {
             for path in event.paths {
-                let remote_path_str = match get_remote_path(&path, watch_dir) {
+                let remote_path_str = match get_remote_path(&path, &watch_dir) {
                     Some(p) => p,
                     None => {
                         error!("Failed to strip prefix for deleted path {:?}", path);
@@ -269,7 +453,7 @@ async fn handle_event(
                 };
                 info!("File deletion detected: '{}'. Deleting from all cloud backends...", remote_path_str);
 
-                for backend in backends {
+                for backend in &backends {
                     let backend = backend.clone();
                     let remote_path = remote_path_str.clone();
 
