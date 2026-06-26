@@ -15,6 +15,8 @@ use tracing::info;
 pub struct OneDriveProvider {
     client: reqwest::Client,
     credentials: OAuthCredentials,
+    auth_url: String,
+    api_url: String,
 }
 
 impl OneDriveProvider {
@@ -22,13 +24,22 @@ impl OneDriveProvider {
         Self {
             client: reqwest::Client::new(),
             credentials,
+            auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token".to_string(),
+            api_url: "https://graph.microsoft.com/v1.0".to_string(),
         }
+    }
+
+    #[cfg(test)]
+    pub fn with_endpoints(mut self, auth_url: String, api_url: String) -> Self {
+        self.auth_url = auth_url;
+        self.api_url = api_url;
+        self
     }
 
     async fn get_access_token(&self) -> Result<String, StorageError> {
         refresh_oauth2_token(
             &self.client,
-            "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+            &self.auth_url,
             &self.credentials.client_id,
             &self.credentials.client_secret,
             &self.credentials.refresh_token,
@@ -50,7 +61,7 @@ impl StorageBackend for OneDriveProvider {
         info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
         let file_content = fs::read(local_path).await?;
 
-        let upload_url = format!("https://graph.microsoft.com/v1.0/me/drive/root:/{}:/content", clean_path);
+        let upload_url = format!("{}/me/drive/root:/{}:/content", self.api_url, clean_path);
         let res = self.client.put(&upload_url)
             .bearer_auth(&token)
             .header("Content-Type", "application/octet-stream")
@@ -69,7 +80,7 @@ impl StorageBackend for OneDriveProvider {
         let token = self.get_access_token().await?;
         let clean_path = remote_path.trim_start_matches('/');
 
-        let download_url = format!("https://graph.microsoft.com/v1.0/me/drive/root:/{}:/content", clean_path);
+        let download_url = format!("{}/me/drive/root:/{}:/content", self.api_url, clean_path);
         let res = self.client.get(&download_url)
             .bearer_auth(&token)
             .send()
@@ -91,7 +102,7 @@ impl StorageBackend for OneDriveProvider {
         let token = self.get_access_token().await?;
         let clean_path = remote_path.trim_start_matches('/');
 
-        let delete_url = format!("https://graph.microsoft.com/v1.0/me/drive/root:/{}", clean_path);
+        let delete_url = format!("{}/me/drive/root:/{}", self.api_url, clean_path);
         let res = self.client.delete(&delete_url)
             .bearer_auth(&token)
             .send()
@@ -109,9 +120,9 @@ impl StorageBackend for OneDriveProvider {
         let clean_path = remote_path.trim_start_matches('/');
 
         let list_url = if clean_path.is_empty() {
-            "https://graph.microsoft.com/v1.0/me/drive/root/children".to_string()
+            format!("{}/me/drive/root/children", self.api_url)
         } else {
-            format!("https://graph.microsoft.com/v1.0/me/drive/root:/{}:/children", clean_path)
+            format!("{}/me/drive/root:/{}:/children", self.api_url, clean_path)
         };
 
         let res = self.client.get(&list_url)
