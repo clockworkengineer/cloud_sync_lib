@@ -46,6 +46,21 @@ impl OneDriveProvider {
             self.name(),
         ).await
     }
+
+    fn format_path(&self, remote_path: &str) -> String {
+        let clean_path = remote_path.trim_start_matches('/');
+        if let Some(ref dest_folder) = self.credentials.destination_folder {
+            let clean_dest = dest_folder.trim_matches('/');
+            if !clean_dest.is_empty() {
+                if clean_path.is_empty() {
+                    return clean_dest.to_string();
+                } else {
+                    return format!("{}/{}", clean_dest, clean_path);
+                }
+            }
+        }
+        clean_path.to_string()
+    }
 }
 
 #[async_trait]
@@ -56,7 +71,7 @@ impl StorageBackend for OneDriveProvider {
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let token = self.get_access_token().await?;
-        let clean_path = remote_path.trim_start_matches('/');
+        let clean_path = self.format_path(remote_path);
 
         info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
         let file_content = fs::read(local_path).await?;
@@ -78,7 +93,7 @@ impl StorageBackend for OneDriveProvider {
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         let token = self.get_access_token().await?;
-        let clean_path = remote_path.trim_start_matches('/');
+        let clean_path = self.format_path(remote_path);
 
         let download_url = format!("{}/me/drive/root:/{}:/content", self.api_url, clean_path);
         let res = self.client.get(&download_url)
@@ -100,7 +115,7 @@ impl StorageBackend for OneDriveProvider {
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         let token = self.get_access_token().await?;
-        let clean_path = remote_path.trim_start_matches('/');
+        let clean_path = self.format_path(remote_path);
 
         let delete_url = format!("{}/me/drive/root:/{}", self.api_url, clean_path);
         let res = self.client.delete(&delete_url)
@@ -117,7 +132,7 @@ impl StorageBackend for OneDriveProvider {
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         let token = self.get_access_token().await?;
-        let clean_path = remote_path.trim_start_matches('/');
+        let clean_path = self.format_path(remote_path);
 
         let list_url = if clean_path.is_empty() {
             format!("{}/me/drive/root/children", self.api_url)
