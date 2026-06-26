@@ -2,6 +2,8 @@ watch_directory = "./watched_folder"
 google_drive_root = "./cloud_simulation/google_drive"
 dropbox_root = "./cloud_simulation/dropbox"
 onedrive_root = "./cloud_simulation/onedrive"
+webdav_root = "./cloud_simulation/webdav"
+s3_root = "./cloud_simulation/s3"
 
 [google_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"
