@@ -98,6 +98,7 @@ struct DaemonState {
     backends: Vec<Arc<dyn StorageBackend>>,
     watch_dir: PathBuf,
     config_file: String,
+    syncing: bool,
 }
 
 #[tokio::main]
@@ -184,6 +185,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         backends,
         watch_dir: watch_dir.clone(),
         config_file: config_file.clone(),
+        syncing: false,
     }));
 
     // Set up mpsc channel for events
@@ -278,8 +280,8 @@ async fn handle_control_command(
             let s = state.lock().await;
             let backend_names: Vec<String> = s.backends.iter().map(|b| b.name().to_string()).collect();
             format!(
-                "Status: OK\nPaused: {}\nWatch Directory: {:?}\nConfig File: {}\nActive Backends: {:?}\n",
-                s.paused, s.watch_dir, s.config_file, backend_names
+                "Status: OK\nPaused: {}\nWatch Directory: {:?}\nConfig File: {}\nActive Backends: {:?}\nSyncing: {}\n",
+                s.paused, s.watch_dir, s.config_file, backend_names, s.syncing
             )
         }
         "pause" => {
@@ -336,18 +338,25 @@ async fn handle_control_command(
             }
         }
         "sync" => {
-            let s = state.lock().await;
-            let watch_dir = s.watch_dir.clone();
-            let backends = s.backends.clone();
-            tokio::spawn(async move {
-                info!("Manual sync triggered via control command. Scanning watch directory...");
-                if let Err(e) = trigger_full_sync(&watch_dir, &backends).await {
-                    error!("Manual sync failed: {}", e);
-                } else {
-                    info!("Manual sync completed successfully!");
-                }
-            });
-            "Status: Sync triggered in background\n".to_string()
+            let mut s = state.lock().await;
+            if s.syncing {
+                "Error: Sync already in progress\n".to_string()
+            } else {
+                s.syncing = true;
+                let watch_dir = s.watch_dir.clone();
+                let backends = s.backends.clone();
+                let state_clone = state.clone();
+                tokio::spawn(async move {
+                    info!("Manual sync triggered via control command. Scanning watch directory...");
+                    if let Err(e) = trigger_full_sync(&watch_dir, &backends).await {
+                        error!("Manual sync failed: {}", e);
+                    } else {
+                        info!("Manual sync completed successfully!");
+                    }
+                    state_clone.lock().await.syncing = false;
+                });
+                "Status: Sync triggered in background\n".to_string()
+            }
         }
         "stop" => {
             let _ = shutdown_tx.send(()).await;

@@ -610,7 +610,13 @@
                 pulse.className = isSyncing ? 'status-dot syncing' : 'status-dot';
                 text.textContent = isPaused ? 'Paused' : (isSyncing ? 'Syncing...' : 'Connected');
                 banner.classList.remove('visible');
-                buttons.forEach(b => b.removeAttribute('disabled'));
+                buttons.forEach(b => {
+                    if (b.id === 'btn-sync' && isSyncing) {
+                        b.disabled = true;
+                    } else {
+                        b.removeAttribute('disabled');
+                    }
+                });
             } else {
                 pulse.className = 'status-dot disconnected';
                 text.textContent = 'Disconnected';
@@ -638,6 +644,8 @@
             if (!data) return;
 
             isPaused = data.paused;
+            isSyncing = data.syncing;
+            
             const runStateText = isPaused ? 'Paused' : 'Active (Watching for changes)';
             document.getElementById('daemon-run-state').textContent = runStateText;
             
@@ -650,6 +658,19 @@
                 btnPause.className = 'btn btn-toggle-pause';
                 btnPause.innerHTML = '⏸ Pause Syncing';
                 document.getElementById('status-text').textContent = isSyncing ? 'Syncing...' : 'Connected';
+            }
+
+            const btnSync = document.getElementById('btn-sync');
+            if (isSyncing) {
+                btnSync.innerHTML = '<span class="spinner"></span> Syncing...';
+                btnSync.disabled = true;
+                document.getElementById('status-pulse').className = 'status-dot syncing';
+            } else {
+                btnSync.innerHTML = '🔄 Sync Now (Full Scan)';
+                if (isConnected) {
+                    btnSync.disabled = false;
+                }
+                document.getElementById('status-pulse').className = isPaused ? 'status-dot disconnected' : 'status-dot';
             }
 
             document.getElementById('watched-dir').textContent = data.watch_directory;
@@ -755,7 +776,6 @@
 
         async function triggerSync() {
             const btn = document.getElementById('btn-sync');
-            const originalText = btn.innerHTML;
             btn.innerHTML = '<span class="spinner"></span> Syncing...';
             btn.disabled = true;
             isSyncing = true;
@@ -766,14 +786,11 @@
             const res = await apiCall('/sync', 'POST');
             if (res && res.status) {
                 addLogEntry('info', `Daemon response: ${res.status}`);
-                setTimeout(async () => {
-                    isSyncing = false;
-                    await pollStatus();
-                }, 2000);
+                await pollStatus();
             } else {
                 isSyncing = false;
                 addLogEntry('error', "Failed to trigger sync scan.");
-                btn.innerHTML = originalText;
+                btn.innerHTML = '🔄 Sync Now (Full Scan)';
                 btn.disabled = false;
                 await pollStatus();
             }

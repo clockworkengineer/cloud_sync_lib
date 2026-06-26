@@ -54,6 +54,7 @@ fn parse_status(raw: &str) -> serde_json::Value {
     let mut watch_directory = String::new();
     let mut config_file = String::new();
     let mut active_backends = Vec::new();
+    let mut syncing = false;
 
     for line in raw.lines() {
         if line.starts_with("Paused: ") {
@@ -81,6 +82,8 @@ fn parse_status(raw: &str) -> serde_json::Value {
                     }
                 }
             }
+        } else if line.starts_with("Syncing: ") {
+            syncing = line.trim_start_matches("Syncing: ").trim() == "true";
         }
     }
 
@@ -89,6 +92,7 @@ fn parse_status(raw: &str) -> serde_json::Value {
         "watch_directory": watch_directory,
         "config_file": config_file,
         "active_backends": active_backends,
+        "syncing": syncing,
     })
 }
 
