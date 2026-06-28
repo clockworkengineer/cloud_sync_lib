@@ -1,3 +1,8 @@
+//! # Cloud Sync UI Backend
+//!
+//! A lightweight HTTP API server built with Axum that routes commands from the web UI
+//! to the background daemon via TCP sockets.
+
 use axum::{
     routing::{get, post},
     response::{Html, IntoResponse},
@@ -38,10 +43,18 @@ async fn main() {
     }
 }
 
+/// Serves the static HTML user interface dashboard.
 async fn serve_index() -> Html<&'static str> {
     Html(include_str!("index.html"))
 }
 
+/// Helper function to transmit a control command to the daemon via local TCP socket.
+///
+/// # Arguments
+/// * `cmd` - The command string to transmit.
+///
+/// # Returns
+/// The raw response string returned by the daemon.
 async fn send_daemon_cmd(cmd: &str) -> Result<String, std::io::Error> {
     let mut stream = TcpStream::connect("127.0.0.1:8081").await?;
     stream.write_all(format!("{}\n", cmd).as_bytes()).await?;
@@ -52,6 +65,13 @@ async fn send_daemon_cmd(cmd: &str) -> Result<String, std::io::Error> {
     Ok(response)
 }
 
+/// Parses the daemon's raw status response into a structured JSON value.
+///
+/// # Arguments
+/// * `raw` - Raw multi-line string output from the daemon's status command.
+///
+/// # Returns
+/// A `serde_json::Value` object containing status details.
 fn parse_status(raw: &str) -> serde_json::Value {
     let mut paused = false;
     let mut watch_directory = String::new();
@@ -99,6 +119,7 @@ fn parse_status(raw: &str) -> serde_json::Value {
     })
 }
 
+/// HTTP Endpoint: Returns the current status of the daemon.
 async fn api_status() -> impl IntoResponse {
     match send_daemon_cmd("status").await {
         Ok(raw) => {
@@ -119,6 +140,7 @@ async fn api_status() -> impl IntoResponse {
     }
 }
 
+/// HTTP Endpoint: Spawns the background daemon as a detached process if not running.
 async fn api_start() -> impl IntoResponse {
     let config_file = if std::path::Path::new("private_config.toml").exists() {
         "private_config.toml"
@@ -154,6 +176,7 @@ async fn api_start() -> impl IntoResponse {
     }
 }
 
+/// HTTP Endpoint: Commands the daemon to pause synchronization operations.
 async fn api_pause() -> impl IntoResponse {
     match send_daemon_cmd("pause").await {
         Ok(raw) => Json(json!({ "status": raw.trim() })).into_response(),
@@ -166,6 +189,7 @@ async fn api_pause() -> impl IntoResponse {
     }
 }
 
+/// HTTP Endpoint: Commands the daemon to resume synchronization operations.
 async fn api_resume() -> impl IntoResponse {
     match send_daemon_cmd("resume").await {
         Ok(raw) => Json(json!({ "status": raw.trim() })).into_response(),
@@ -178,6 +202,7 @@ async fn api_resume() -> impl IntoResponse {
     }
 }
 
+/// HTTP Endpoint: Triggers a manual full synchronization across all enabled backends.
 async fn api_sync() -> impl IntoResponse {
     match send_daemon_cmd("sync").await {
         Ok(raw) => Json(json!({ "status": raw.trim() })).into_response(),
@@ -190,6 +215,7 @@ async fn api_sync() -> impl IntoResponse {
     }
 }
 
+/// HTTP Endpoint: Reloads the daemon configuration.
 async fn api_reload() -> impl IntoResponse {
     match send_daemon_cmd("reload").await {
         Ok(raw) => {
@@ -209,6 +235,7 @@ async fn api_reload() -> impl IntoResponse {
     }
 }
 
+/// HTTP Endpoint: Requests the daemon to stop executing and terminate gracefully.
 async fn api_stop() -> impl IntoResponse {
     match send_daemon_cmd("stop").await {
         Ok(raw) => Json(json!({ "status": raw.trim() })).into_response(),

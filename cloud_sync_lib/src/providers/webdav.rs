@@ -15,12 +15,22 @@ use quick_xml::Reader;
 
 /// Storage provider client for WebDAV storage servers.
 pub struct WebDAVProvider {
+    /// The HTTP client for making API requests.
     client: reqwest::Client,
+    /// Credentials configuration (server URL, username, password).
     credentials: WebDAVCredentials,
+    /// Active base URL of the WebDAV server.
     url: String,
 }
 
 impl WebDAVProvider {
+    /// Creates a new `WebDAVProvider` using the provided WebDAV credentials.
+    ///
+    /// # Arguments
+    /// * `credentials` - WebDAV credentials and server configuration.
+    ///
+    /// # Returns
+    /// A new instance of `WebDAVProvider`.
     pub fn new(credentials: WebDAVCredentials) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -29,12 +39,26 @@ impl WebDAVProvider {
         }
     }
 
+    /// Configures custom endpoints, useful for mocking during tests.
+    ///
+    /// # Arguments
+    /// * `url` - Custom WebDAV server URL.
+    ///
+    /// # Returns
+    /// The modified `WebDAVProvider` instance.
     #[cfg(test)]
     pub fn with_endpoints(mut self, url: String) -> Self {
         self.url = url;
         self
     }
 
+    /// Formats the remote path, incorporating the optional destination folder prefix.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The relative destination path.
+    ///
+    /// # Returns
+    /// The fully-resolved WebDAV absolute path string (prefixed with `/`).
     fn format_path(&self, remote_path: &str) -> String {
         let clean_path = remote_path.trim_start_matches('/');
         if let Some(ref dest_folder) = self.credentials.destination_folder {
@@ -54,6 +78,15 @@ impl WebDAVProvider {
         }
     }
 
+    /// Ensures that parent directories exist on the WebDAV server for a given remote path.
+    ///
+    /// Performs MKCOL requests sequentially down the directory tree.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The destination path of the file we want to upload.
+    ///
+    /// # Returns
+    /// An empty `Result`, or a `StorageError` if directory creation fails.
     async fn ensure_parent_dirs(&self, remote_path: &str) -> Result<(), StorageError> {
         let parts: Vec<&str> = remote_path.split('/').filter(|s| !s.is_empty()).collect();
         if parts.len() <= 1 {
@@ -80,6 +113,13 @@ impl WebDAVProvider {
     }
 }
 
+/// Percent-decodes a URL-encoded string.
+///
+/// # Arguments
+/// * `s` - The URL-encoded string slice.
+///
+/// # Returns
+/// The decoded String.
 fn percent_decode(s: &str) -> String {
     let mut decoded = String::new();
     let mut bytes = s.as_bytes().iter();

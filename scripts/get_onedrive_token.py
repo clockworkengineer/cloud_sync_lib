@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+get_onedrive_token.py
+
+Automates retrieving a Microsoft OneDrive OAuth2 refresh token by spinning up
+a temporary local HTTP redirect server and opening the authorization page.
+"""
+
 import http.server
 import socketserver
 import webbrowser
@@ -13,6 +21,12 @@ REDIRECT_URI = f"http://localhost:{PORT}"
 CONFIG_PATH = Path(sys.argv[1] if len(sys.argv) > 1 else "private_config.toml")
 
 def read_config():
+    """
+    Reads the configuration file and extracts the OneDrive client ID and client secret.
+
+    Returns:
+        tuple: A tuple containing (client_id, client_secret).
+    """
     if not CONFIG_PATH.exists():
         print(f"Error: {CONFIG_PATH} not found.")
         sys.exit(1)
@@ -48,6 +62,12 @@ def read_config():
     return client_id, client_secret
 
 def update_config(refresh_token):
+    """
+    Updates the configuration file with the new OneDrive refresh token and sets enabled = true.
+
+    Args:
+        refresh_token (str): The newly retrieved refresh token.
+    """
     content = CONFIG_PATH.read_text()
     
     # We want to replace refresh_token specifically within the [onedrive_credentials] section
@@ -83,6 +103,17 @@ def update_config(refresh_token):
         print("\n[-] Error: Failed to find and update [onedrive_credentials] in private_config.toml")
 
 def exchange_code_for_token(code, client_id, client_secret):
+    """
+    Exchanges the authorization code for a long-lived refresh token.
+
+    Args:
+        code (str): The authorization code.
+        client_id (str): Microsoft Application Client ID.
+        client_secret (str): Microsoft Application Client Secret.
+
+    Returns:
+        str: The retrieved refresh token, or None if failed.
+    """
     url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
     
     data = urllib.parse.urlencode({
@@ -107,9 +138,15 @@ def exchange_code_for_token(code, client_id, client_secret):
         sys.exit(1)
 
 class OAuthHandler(http.server.SimpleHTTPRequestHandler):
+    """
+    HTTP Request Handler to receive the OAuth2 authorization code callback.
+    """
     auth_code = None
 
     def do_GET(self):
+        """
+        Handles the HTTP GET request containing the OAuth2 callback query params.
+        """
         query = urllib.parse.urlparse(self.path).query
         params = urllib.parse.parse_qs(query)
         
@@ -126,9 +163,18 @@ class OAuthHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(b"<html><body><h1>Failed to authorize</h1></body></html>")
 
     def log_message(self, format, *args):
+        """
+        Suppresses log messages for local redirect requests.
+        """
         pass # Suppress server logs
 
 def run_server():
+    """
+    Runs a temporary local socket server to wait for the OAuth2 redirect callback.
+
+    Returns:
+        str: The retrieved authorization code.
+    """
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), OAuthHandler) as httpd:
         print(f"[*] Temporary server listening on {REDIRECT_URI}...")
@@ -138,6 +184,9 @@ def run_server():
     return OAuthHandler.auth_code
 
 def main():
+    """
+    Executes the OneDrive OAuth2 refresh token retrieval flow.
+    """
     client_id, client_secret = read_config()
     
     # Build OneDrive OAuth URL

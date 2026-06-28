@@ -12,11 +12,20 @@ use tracing::info;
 
 /// Storage provider client for S3 and S3-Compatible storage servers.
 pub struct S3Provider {
+    /// The underlying S3 bucket client from the `s3` crate.
     bucket: s3::Bucket,
+    /// Credentials configuration (bucket, access keys, endpoint).
     credentials: S3Credentials,
 }
 
 impl S3Provider {
+    /// Creates a new `S3Provider` using the provided credentials.
+    ///
+    /// # Arguments
+    /// * `credentials` - S3 credentials and bucket configuration.
+    ///
+    /// # Returns
+    /// A new instance of `S3Provider`.
     pub fn new(credentials: S3Credentials) -> Self {
         let region = if let Some(ref ep) = credentials.endpoint {
             s3::Region::Custom {
@@ -47,6 +56,13 @@ impl S3Provider {
         }
     }
 
+    /// Configures custom endpoints, useful for mocking during tests.
+    ///
+    /// # Arguments
+    /// * `url` - Custom S3 endpoint URL.
+    ///
+    /// # Returns
+    /// The modified `S3Provider` instance.
     #[cfg(test)]
     pub fn with_endpoints(mut self, url: String) -> Self {
         // Construct region pointing to mock server URL
@@ -67,6 +83,13 @@ impl S3Provider {
         self
     }
 
+    /// Formats the remote path, incorporating the optional destination folder prefix.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The relative destination path.
+    ///
+    /// # Returns
+    /// The fully-resolved S3 object key string.
     fn format_path(&self, remote_path: &str) -> String {
         let clean_path = remote_path.trim_start_matches('/');
         if let Some(ref dest_folder) = self.credentials.destination_folder {

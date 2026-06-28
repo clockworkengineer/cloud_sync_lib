@@ -50,6 +50,13 @@ impl Default for AppConfig {
     }
 }
 
+/// Load configuration from a TOML file. If the file doesn't exist, a default config is created and saved.
+///
+/// # Arguments
+/// * `path` - The path to the config file.
+///
+/// # Returns
+/// The loaded config or an error if file I/O or parsing fails.
 async fn load_or_create_config(path: &str) -> Result<AppConfig, Box<dyn std::error::Error>> {
     let config_path = Path::new(path);
     if config_path.exists() {
@@ -65,18 +72,47 @@ async fn load_or_create_config(path: &str) -> Result<AppConfig, Box<dyn std::err
     }
 }
 
+/// Helper function to check if a provider is enabled based on its credentials config.
+///
+/// # Arguments
+/// * `credentials` - OAuth credentials configuration options.
+///
+/// # Returns
+/// True if the provider is enabled or no enabled flag is explicitly set to false, false otherwise.
 fn is_enabled(credentials: &Option<OAuthCredentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 
+/// Helper function to check if WebDAV provider is enabled.
+///
+/// # Arguments
+/// * `credentials` - WebDAV credentials configuration options.
+///
+/// # Returns
+/// True if the provider is enabled, false otherwise.
 fn is_webdav_enabled(credentials: &Option<WebDAVCredentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 
+/// Helper function to check if S3 provider is enabled.
+///
+/// # Arguments
+/// * `credentials` - S3 credentials configuration options.
+///
+/// # Returns
+/// True if the provider is enabled, false otherwise.
 fn is_s3_enabled(credentials: &Option<S3Credentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 
+/// Helper function to strip prefix from the watch directory path to get the relative remote path.
+///
+/// # Arguments
+/// * `path` - Path of the file being synced.
+/// * `watch_dir` - The watched root directory path.
+///
+/// # Returns
+/// The normalized remote path string, or None if prefix stripping fails.
 fn get_remote_path(path: &Path, watch_dir: &Path) -> Option<String> {
     let relative_path = match path.strip_prefix(watch_dir) {
         Ok(p) => p.to_path_buf(),
@@ -93,11 +129,17 @@ fn get_remote_path(path: &Path, watch_dir: &Path) -> Option<String> {
     Some(relative_path.to_string_lossy().replace('\\', "/"))
 }
 
+/// Internal state of the daemon.
 struct DaemonState {
+    /// True if the sync operations are temporarily paused.
     paused: bool,
+    /// Loaded list of active cloud storage backends.
     backends: Vec<Arc<dyn StorageBackend>>,
+    /// Path of the watched directory.
     watch_dir: PathBuf,
+    /// Path of the configuration TOML file.
     config_file: String,
+    /// True if a manual or automatic synchronization is actively running.
     syncing: bool,
 }
 
@@ -270,6 +312,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Handles a string command sent from the daemon controller via TCP.
+///
+/// # Arguments
+/// * `cmd` - Command string (e.g., "status", "pause", "resume", "reload", "sync", "stop").
+/// * `state` - The daemon's internal state.
+/// * `shutdown_tx` - Send channel for shutdown signals.
+///
+/// # Returns
+/// A response string to be sent back to the TCP client.
 async fn handle_control_command(
     cmd: &str,
     state: &Arc<Mutex<DaemonState>>,
@@ -366,6 +417,14 @@ async fn handle_control_command(
     }
 }
 
+/// Scans the watch directory recursively and uploads all files to active backends.
+///
+/// # Arguments
+/// * `watch_dir` - The local directory root to scan.
+/// * `backends` - Slice of active storage backends.
+///
+/// # Returns
+/// `std::io::Result` indicating scanning success/failure.
 async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>]) -> std::io::Result<()> {
     let mut dir_entries = vec![watch_dir.to_path_buf()];
     while let Some(current_dir) = dir_entries.pop() {
@@ -397,6 +456,14 @@ async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>
     Ok(())
 }
 
+/// Processes a filesystem notification event from `notify`.
+///
+/// Automatically creates, updates, or deletes files on remote backends based on local events.
+///
+/// # Arguments
+/// * `event` - The filesystem event detail.
+/// * `state` - The daemon's internal state.
+/// * `active_locks` - Concurrent sync locking map for active files/backends.
 async fn handle_event(
     event: Event,
     state: Arc<Mutex<DaemonState>>,

@@ -13,14 +13,26 @@ use tracing::info;
 
 /// Storage provider client for Dropbox REST API.
 pub struct DropboxProvider {
+    /// The HTTP client for making API requests.
     client: reqwest::Client,
+    /// Credentials configuration (client id/secret, refresh token).
     credentials: OAuthCredentials,
+    /// The authentication/token URL.
     auth_url: String,
+    /// The base API URL.
     api_url: String,
+    /// The base content API URL.
     content_url: String,
 }
 
 impl DropboxProvider {
+    /// Creates a new `DropboxProvider` using the provided OAuth credentials.
+    ///
+    /// # Arguments
+    /// * `credentials` - OAuth credentials and sync configuration.
+    ///
+    /// # Returns
+    /// A new instance of `DropboxProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -31,6 +43,15 @@ impl DropboxProvider {
         }
     }
 
+    /// Configures custom endpoints, useful for mocking during tests.
+    ///
+    /// # Arguments
+    /// * `auth_url` - Custom authorization URL.
+    /// * `api_url` - Custom API URL.
+    /// * `content_url` - Custom content API URL.
+    ///
+    /// # Returns
+    /// The modified `DropboxProvider` instance.
     #[cfg(test)]
     pub fn with_endpoints(mut self, auth_url: String, api_url: String, content_url: String) -> Self {
         self.auth_url = auth_url;
@@ -39,6 +60,10 @@ impl DropboxProvider {
         self
     }
 
+    /// Helper to retrieve a valid OAuth access token, refreshing it if necessary.
+    ///
+    /// # Returns
+    /// The access token string, or a `StorageError` if authorization fails.
     async fn get_access_token(&self) -> Result<String, StorageError> {
         refresh_oauth2_token(
             &self.client,
@@ -50,6 +75,13 @@ impl DropboxProvider {
         ).await
     }
 
+    /// Formats the remote path, incorporating the optional destination folder prefix.
+    ///
+    /// # Arguments
+    /// * `path` - The relative destination path.
+    ///
+    /// # Returns
+    /// The fully-resolved Dropbox absolute path string.
     fn format_path(&self, path: &str) -> String {
         let clean_path = path.trim_start_matches('/');
         let mut full_path = String::new();

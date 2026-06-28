@@ -13,13 +13,24 @@ use tracing::info;
 
 /// Storage provider client for Microsoft OneDrive REST API.
 pub struct OneDriveProvider {
+    /// The HTTP client for making API requests.
     client: reqwest::Client,
+    /// Credentials configuration (client id/secret, refresh token).
     credentials: OAuthCredentials,
+    /// The authentication/token URL.
     auth_url: String,
+    /// The base API URL.
     api_url: String,
 }
 
 impl OneDriveProvider {
+    /// Creates a new `OneDriveProvider` using the provided OAuth credentials.
+    ///
+    /// # Arguments
+    /// * `credentials` - OAuth credentials and sync configuration.
+    ///
+    /// # Returns
+    /// A new instance of `OneDriveProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -29,6 +40,14 @@ impl OneDriveProvider {
         }
     }
 
+    /// Configures custom endpoints, useful for mocking during tests.
+    ///
+    /// # Arguments
+    /// * `auth_url` - Custom authorization URL.
+    /// * `api_url` - Custom API URL.
+    ///
+    /// # Returns
+    /// The modified `OneDriveProvider` instance.
     #[cfg(test)]
     pub fn with_endpoints(mut self, auth_url: String, api_url: String) -> Self {
         self.auth_url = auth_url;
@@ -36,6 +55,10 @@ impl OneDriveProvider {
         self
     }
 
+    /// Helper to retrieve a valid OAuth access token, refreshing it if necessary.
+    ///
+    /// # Returns
+    /// The access token string, or a `StorageError` if authorization fails.
     async fn get_access_token(&self) -> Result<String, StorageError> {
         refresh_oauth2_token(
             &self.client,
@@ -47,6 +70,13 @@ impl OneDriveProvider {
         ).await
     }
 
+    /// Formats the remote path, incorporating the optional destination folder prefix.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The relative destination path.
+    ///
+    /// # Returns
+    /// The fully-resolved OneDrive absolute path string.
     fn format_path(&self, remote_path: &str) -> String {
         let clean_path = remote_path.trim_start_matches('/');
         if let Some(ref dest_folder) = self.credentials.destination_folder {

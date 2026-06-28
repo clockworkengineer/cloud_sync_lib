@@ -1,3 +1,7 @@
+//! Local folder fallback simulator.
+//!
+//! Provides an implementation of storage simulation on the local filesystem.
+
 use crate::traits::{StorageItem, StorageError};
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -8,12 +12,21 @@ use tracing::info;
 /// Implements mock filesystem storage behavior for offline development and testing
 /// when cloud credentials are not configured.
 pub struct LocalSimulation {
+    /// The root directory representing the simulated remote storage.
     root_dir: PathBuf,
+    /// The name of the provider we are simulating (e.g. "Dropbox").
     provider_name: String,
 }
 
 impl LocalSimulation {
     /// Creates a new `LocalSimulation` instance with a given root directory and provider name.
+    ///
+    /// # Arguments
+    /// * `root_dir` - The root path to use for simulation.
+    /// * `provider_name` - The provider name to mock.
+    ///
+    /// # Returns
+    /// A new instance of `LocalSimulation`.
     pub fn new(root_dir: PathBuf, provider_name: String) -> Self {
         Self {
             root_dir,
@@ -22,12 +35,25 @@ impl LocalSimulation {
     }
 
     /// Maps a remote path to the local directory simulation structure.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The remote path to resolve.
+    ///
+    /// # Returns
+    /// The resolved absolute/relative `PathBuf` under `root_dir`.
     pub fn resolve(&self, remote_path: &str) -> PathBuf {
         let normalized = remote_path.trim_start_matches('/');
         self.root_dir.join(normalized)
     }
 
     /// Simulates uploading a file by copying it to the local simulation folder.
+    ///
+    /// # Arguments
+    /// * `local_path` - The path to the file on the local machine.
+    /// * `remote_path` - The simulated destination path.
+    ///
+    /// # Returns
+    /// An empty `Result`, or a `StorageError` if copying fails.
     pub async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let destination = self.resolve(remote_path);
         info!("[{}] (Simulated) Uploading local file {:?} to remote path '{}'", self.provider_name, local_path, remote_path);
@@ -39,6 +65,13 @@ impl LocalSimulation {
     }
 
     /// Simulates downloading a file by copying it from the local simulation folder.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The simulated source path to download from.
+    /// * `local_path` - The destination path on the local machine.
+    ///
+    /// # Returns
+    /// An empty `Result`, or a `StorageError` if the file doesn't exist or copying fails.
     pub async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         let source = self.resolve(remote_path);
         info!("[{}] (Simulated) Downloading remote path '{}' to local file {:?}", self.provider_name, remote_path, local_path);
@@ -53,6 +86,12 @@ impl LocalSimulation {
     }
 
     /// Simulates deleting a file or directory from the local simulation folder.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The simulated path to delete.
+    ///
+    /// # Returns
+    /// An empty `Result`, or a `StorageError` if the file doesn't exist or deletion fails.
     pub async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         let target = self.resolve(remote_path);
         info!("[{}] (Simulated) Deleting remote path '{}'", self.provider_name, remote_path);
@@ -68,6 +107,12 @@ impl LocalSimulation {
     }
 
     /// Simulates listing contents of the local simulation folder.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The simulated directory path to list.
+    ///
+    /// # Returns
+    /// A vector of `StorageItem` containing metadata for files/folders in the directory, or a `StorageError`.
     pub async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         let target = self.resolve(remote_path);
         info!("[{}] (Simulated) Listing contents of remote path '{}'", self.provider_name, remote_path);

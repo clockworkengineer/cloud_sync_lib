@@ -11,13 +11,24 @@ use std::path::Path;
 /// Storage backend wrapper that transparently routes operations to either a real cloud provider
 /// or the shared `LocalSimulation` mock directory fallback.
 pub struct SimulatedFallback<B: StorageBackend> {
+    /// The real cloud provider client, if configured.
     inner: Option<B>,
+    /// The local directory simulation mock fallback.
     local_sim: LocalSimulation,
+    /// The user-friendly name of the storage backend.
     name: String,
 }
 
 impl<B: StorageBackend> SimulatedFallback<B> {
     /// Creates a new `SimulatedFallback` wrapper around an optional inner provider backend.
+    ///
+    /// # Arguments
+    /// * `inner` - The optional real storage backend to route operations to.
+    /// * `local_sim` - The simulation backend to use as a fallback.
+    /// * `name` - The user-friendly name of the storage backend.
+    ///
+    /// # Returns
+    /// A new instance of `SimulatedFallback`.
     pub fn new(inner: Option<B>, local_sim: LocalSimulation, name: &str) -> Self {
         Self {
             inner,

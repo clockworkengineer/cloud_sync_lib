@@ -13,14 +13,26 @@ use tracing::info;
 
 /// Storage provider client for Google Drive REST API.
 pub struct GoogleDriveProvider {
+    /// The HTTP client for making API requests.
     client: reqwest::Client,
+    /// Credentials configuration (client id/secret, refresh token).
     credentials: OAuthCredentials,
+    /// The authentication/token URL.
     auth_url: String,
+    /// The base API URL.
     api_url: String,
+    /// The base upload API URL.
     upload_url: String,
 }
 
 impl GoogleDriveProvider {
+    /// Creates a new `GoogleDriveProvider` using the provided OAuth credentials.
+    ///
+    /// # Arguments
+    /// * `credentials` - OAuth credentials and sync configuration.
+    ///
+    /// # Returns
+    /// A new instance of `GoogleDriveProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -31,6 +43,15 @@ impl GoogleDriveProvider {
         }
     }
 
+    /// Configures custom endpoints, useful for mocking during tests.
+    ///
+    /// # Arguments
+    /// * `auth_url` - Custom authorization URL.
+    /// * `api_url` - Custom API URL.
+    /// * `upload_url` - Custom upload API URL.
+    ///
+    /// # Returns
+    /// The modified `GoogleDriveProvider` instance.
     #[cfg(test)]
     pub fn with_endpoints(mut self, auth_url: String, api_url: String, upload_url: String) -> Self {
         self.auth_url = auth_url;
@@ -39,6 +60,10 @@ impl GoogleDriveProvider {
         self
     }
 
+    /// Helper to retrieve a valid OAuth access token, refreshing it if necessary.
+    ///
+    /// # Returns
+    /// The access token string, or a `StorageError` if authorization fails.
     async fn get_access_token(&self) -> Result<String, StorageError> {
         refresh_oauth2_token(
             &self.client,
@@ -50,6 +75,15 @@ impl GoogleDriveProvider {
         ).await
     }
 
+    /// Retrieves or creates a Google Drive folder ID for a folder of the given name under `parent_id`.
+    ///
+    /// # Arguments
+    /// * `token` - The active OAuth2 access token.
+    /// * `parent_id` - The ID of the parent folder in Google Drive.
+    /// * `name` - The name of the folder to resolve/create.
+    ///
+    /// # Returns
+    /// The folder's ID, or a `StorageError`.
     async fn get_or_create_folder_id(&self, token: &str, parent_id: &str, name: &str) -> Result<String, StorageError> {
         let query = format!(
             "name = '{}' and '{}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
@@ -92,8 +126,17 @@ impl GoogleDriveProvider {
         Ok(id)
     }
 
-    // Resolves a path (e.g. "a/b/c.txt") to a Google Drive file ID.
-    // If create_parents is true, it will create any missing folders in the hierarchy.
+    /// Resolves a path (e.g. "a/b/c.txt") to a Google Drive file ID.
+    ///
+    /// If directories in the path do not exist, they will be automatically created.
+    ///
+    /// # Arguments
+    /// * `token` - The active OAuth2 access token.
+    /// * `path` - The relative destination/source file path.
+    /// * `is_folder` - True if we are resolving a folder path, false for a file.
+    ///
+    /// # Returns
+    /// The ID of the target file/folder in Google Drive, or a `StorageError`.
     async fn get_or_create_file_id(&self, token: &str, path: &str, is_folder: bool) -> Result<String, StorageError> {
         let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
         let mut parent_id = "root".to_string();
