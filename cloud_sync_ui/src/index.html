@@ -591,6 +591,7 @@
         let isConnected = false;
         let currentFilter = 'all';
         let localLogs = [];
+        let isStartingDaemon = false;
 
         function addLogEntry(level, message) {
             const now = new Date();
@@ -650,6 +651,7 @@
             const runStateText = document.getElementById('daemon-run-state');
 
             if (daemonRunning) {
+                isStartingDaemon = false;
                 isPaused = data.paused;
                 isSyncing = data.syncing;
                 
@@ -704,6 +706,7 @@
                     backendsList.appendChild(pill);
                 });
             } else {
+                if (isStartingDaemon) return;
                 // Daemon is offline/stopped
                 runStateText.textContent = 'Stopped / Offline';
                 statusText.textContent = 'Offline';
@@ -861,6 +864,7 @@
             const btn = document.getElementById('btn-start');
             btn.innerHTML = '<span class="spinner"></span> Starting...';
             btn.disabled = true;
+            isStartingDaemon = true;
             
             addLogEntry('info', "Requesting daemon start...");
             const res = await apiCall('/start', 'POST');
@@ -871,6 +875,7 @@
                 addLogEntry('error', "Failed to start daemon.");
                 btn.innerHTML = '▶ Start Daemon';
                 btn.disabled = false;
+                isStartingDaemon = false;
             }
         }
 
