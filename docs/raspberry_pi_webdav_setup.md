@@ -106,9 +106,42 @@ enabled = true
 ### If using Native Apache (Method 2):
 ```toml
 [webdav_credentials]
-url = "http://<raspberry-pi-ip>/webdav"
+url = "http://<raspberry-pi-ip>/webdav/"  # Trailing slash prevents redirect lookups
 username = "your_username"
 password = "your_password"
 destination_folder = "MySyncFolder"
 enabled = true
 ```
+
+---
+
+## Troubleshooting & Tips
+
+### 1. Handling Port Conflicts
+If you have other services running on your Raspberry Pi (such as Jenkins on port `8080` or Pi-hole on port `80`), you can change the WebDAV port.
+
+* **Docker (Method 1)**: Change the port mapping parameter from `-p 8080:80` to a custom port (e.g., `-p 8085:80`).
+* **Native Apache (Method 2)**:
+  1. Edit the Apache ports configuration:
+     ```bash
+     sudo nano /etc/apache2/ports.conf
+     ```
+     Change `Listen 80` to `Listen 8085`.
+  2. Edit the site VirtualHost configuration:
+     ```bash
+     sudo nano /etc/apache2/sites-available/000-default.conf
+     ```
+     Change `<VirtualHost *:80>` at the top of the file to `<VirtualHost *:8085>`.
+  3. Restart Apache:
+     ```bash
+     sudo systemctl restart apache2
+     ```
+  4. Access WebDAV via `http://<raspberry-pi-ip>:8085/webdav/`.
+
+### 2. Write Permission Errors
+If the daemon fails to synchronize or create folders on the server, ensure the Apache user has full ownership of the storage root:
+```bash
+sudo chown -R www-data:www-data /var/www/webdav
+sudo chmod -R 755 /var/www/webdav
+```
+
