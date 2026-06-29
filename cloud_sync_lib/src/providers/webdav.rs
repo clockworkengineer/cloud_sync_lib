@@ -98,7 +98,7 @@ impl WebDAVProvider {
             current_path.push('/');
             current_path.push_str(part);
 
-            let url = format!("{}{}", self.url.trim_end_matches('/'), self.format_path(&current_path));
+            let url = format!("{}{}", self.url.trim_end_matches('/'), current_path);
             let res = self.client.request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &url)
                 .basic_auth(&self.credentials.username, Some(&self.credentials.password))
                 .send()
@@ -202,7 +202,7 @@ impl StorageBackend for WebDAVProvider {
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let clean_path = self.format_path(remote_path);
-        self.ensure_parent_dirs(remote_path).await?;
+        self.ensure_parent_dirs(&clean_path).await?;
 
         info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
         let file_content = fs::read(local_path).await?;
