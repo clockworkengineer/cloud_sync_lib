@@ -606,3 +606,47 @@ async fn handle_event(
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests that `is_enabled` helper correctly returns true/false based on OAuth credentials status.
+    #[test]
+    fn test_is_enabled() {
+        let creds_none: Option<OAuthCredentials> = None;
+        assert!(is_enabled(&creds_none));
+
+        let creds_disabled = Some(OAuthCredentials {
+            client_id: "id".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "token".to_string(),
+            destination_folder: None,
+            enabled: Some(false),
+        });
+        assert!(!is_enabled(&creds_disabled));
+
+        let creds_enabled = Some(OAuthCredentials {
+            client_id: "id".to_string(),
+            client_secret: "secret".to_string(),
+            refresh_token: "token".to_string(),
+            destination_folder: None,
+            enabled: Some(true),
+        });
+        assert!(is_enabled(&creds_enabled));
+    }
+
+    /// Tests that `get_remote_path` maps watched local file paths correctly and bounds-checks unrelated files.
+    #[test]
+    fn test_get_remote_path() {
+        let watch_dir = Path::new("/home/user/watch");
+        let file_path = Path::new("/home/user/watch/docs/report.pdf");
+        assert_eq!(
+            get_remote_path(file_path, watch_dir),
+            Some("docs/report.pdf".to_string())
+        );
+
+        let unrelated_path = Path::new("/home/user/other/report.pdf");
+        assert_eq!(get_remote_path(unrelated_path, watch_dir), None);
+    }
+}

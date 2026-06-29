@@ -257,3 +257,21 @@ async fn api_stop() -> impl IntoResponse {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests that the daemon TCP response parser maps raw lines correctly to a JSON status payload.
+    #[test]
+    fn test_parse_status() {
+        let raw_status = "Status: OK\nPaused: false\nWatch Directory: \"/watch/dir\"\nConfig File: \"private.toml\"\nActive Backends: [\"Google Drive\",\"Dropbox\"]\nSyncing: false\nWeb UI Address: \"127.0.0.1:8082\"\n";
+        let parsed = parse_status(raw_status);
+        assert_eq!(parsed["paused"], false);
+        assert_eq!(parsed["watch_directory"], "/watch/dir");
+        assert_eq!(parsed["config_file"], "private.toml");
+        assert_eq!(parsed["active_backends"], serde_json::json!(["Google Drive", "Dropbox"]));
+        assert_eq!(parsed["syncing"], false);
+        assert_eq!(parsed["web_ui_address"], "127.0.0.1:8082");
+    }
+}
