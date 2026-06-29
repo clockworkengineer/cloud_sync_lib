@@ -262,7 +262,10 @@ impl StorageBackend for WebDAVProvider {
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         let clean_path = self.format_path(remote_path);
 
-        let list_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
+        let mut list_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
+        if !list_url.ends_with('/') {
+            list_url.push('/');
+        }
         let res = self.client.request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &list_url)
             .basic_auth(&self.credentials.username, Some(&self.credentials.password))
             .header("Depth", "1")

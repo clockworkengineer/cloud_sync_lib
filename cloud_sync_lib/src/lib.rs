@@ -789,7 +789,7 @@ mod tests {
 </d:multistatus>"#;
 
         Mock::given(method("PROPFIND"))
-            .and(path("/MySyncFolder"))
+            .and(path("/MySyncFolder/"))
             .respond_with(ResponseTemplate::new(207).set_body_string(propfind_xml))
             .mount(&server)
             .await;
