@@ -78,6 +78,7 @@ fn parse_status(raw: &str) -> serde_json::Value {
     let mut config_file = String::new();
     let mut active_backends = Vec::new();
     let mut syncing = false;
+    let mut web_ui_address = String::new();
 
     for line in raw.lines() {
         if line.starts_with("Paused: ") {
@@ -107,6 +108,11 @@ fn parse_status(raw: &str) -> serde_json::Value {
             }
         } else if line.starts_with("Syncing: ") {
             syncing = line.trim_start_matches("Syncing: ").trim() == "true";
+        } else if line.starts_with("Web UI Address: ") {
+            let addr = line.trim_start_matches("Web UI Address: ").trim();
+            let addr = addr.strip_prefix('"').unwrap_or(addr);
+            let addr = addr.strip_suffix('"').unwrap_or(addr);
+            web_ui_address = addr.to_string();
         }
     }
 
@@ -116,6 +122,7 @@ fn parse_status(raw: &str) -> serde_json::Value {
         "config_file": config_file,
         "active_backends": active_backends,
         "syncing": syncing,
+        "web_ui_address": web_ui_address,
     })
 }
 
@@ -134,7 +141,8 @@ async fn api_status() -> impl IntoResponse {
                 "config_file": "-",
                 "active_backends": [],
                 "syncing": false,
-                "daemon_running": false
+                "daemon_running": false,
+                "web_ui_address": "-",
             })).into_response()
         }
     }
@@ -157,6 +165,8 @@ async fn api_start() -> impl IntoResponse {
        .arg("cloud_sync_daemon")
        .arg("--")
        .arg(config_file)
+       .arg("--ui-addr")
+       .arg("127.0.0.1:8082")
        .stdout(Stdio::null())
        .stderr(Stdio::null())
        .stdin(Stdio::null());

@@ -530,6 +530,11 @@
                 </div>
 
                 <div class="info-item">
+                    <span class="info-label">Web UI Address</span>
+                    <span class="info-value mono-text" id="web-ui-address">-</span>
+                </div>
+
+                <div class="info-item">
                     <span class="info-label">Active Storage Backends</span>
                     <div class="backends-container" id="backends-list">
                         <!-- Populated dynamically -->
@@ -692,6 +697,7 @@
                 
                 document.getElementById('watched-dir').textContent = data.watch_directory;
                 document.getElementById('config-file').textContent = data.config_file;
+                document.getElementById('web-ui-address').textContent = data.web_ui_address || '-';
 
                 // Render Backends
                 const backendsList = document.getElementById('backends-list');
@@ -726,6 +732,7 @@
 
                 document.getElementById('watched-dir').textContent = '-';
                 document.getElementById('config-file').textContent = '-';
+                document.getElementById('web-ui-address').textContent = '-';
                 
                 const backendsList = document.getElementById('backends-list');
                 backendsList.innerHTML = '<div style="color: var(--text-secondary); font-style: italic;">Daemon offline</div>';

@@ -141,6 +141,8 @@ struct DaemonState {
     config_file: String,
     /// True if a manual or automatic synchronization is actively running.
     syncing: bool,
+    /// The address of the Web UI server, if provided.
+    ui_addr: Option<String>,
 }
 
 #[tokio::main]
@@ -152,13 +154,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
-    let config_file = if args.len() > 1 {
-        args[1].clone()
-    } else {
-        "config.toml".to_string()
-    };
+    let mut config_file = "config.toml".to_string();
+    let mut ui_addr = None;
+
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--ui-addr" && i + 1 < args.len() {
+            ui_addr = Some(args[i + 1].clone());
+            i += 2;
+        } else {
+            config_file = args[i].clone();
+            i += 1;
+        }
+    }
 
     info!("Starting Cloud Sync Daemon using config: {}...", config_file);
+    if let Some(ref addr) = ui_addr {
+        info!("Web UI server address: {}", addr);
+    }
 
     // Load configuration
     let config = load_or_create_config(&config_file).await?;
@@ -228,6 +241,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         watch_dir: watch_dir.clone(),
         config_file: config_file.clone(),
         syncing: false,
+        ui_addr,
     }));
 
     // Set up mpsc channel for events
@@ -331,8 +345,8 @@ async fn handle_control_command(
             let s = state.lock().await;
             let backend_names: Vec<String> = s.backends.iter().map(|b| b.name().to_string()).collect();
             format!(
-                "Status: OK\nPaused: {}\nWatch Directory: {:?}\nConfig File: {}\nActive Backends: {:?}\nSyncing: {}\n",
-                s.paused, s.watch_dir, s.config_file, backend_names, s.syncing
+                "Status: OK\nPaused: {}\nWatch Directory: {:?}\nConfig File: {}\nActive Backends: {:?}\nSyncing: {}\nWeb UI Address: {}\n",
+                s.paused, s.watch_dir, s.config_file, backend_names, s.syncing, s.ui_addr.as_deref().unwrap_or("-")
             )
         }
         "pause" => {
