@@ -16,6 +16,18 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+const DAEMON_BIND_ADDR: &str = "127.0.0.1:8081";
+const DEBOUNCE_DELAY_MS: u64 = 150;
+const RETRY_DELAY_MS: u64 = 500;
+const MAX_SYNC_ATTEMPTS: u32 = 3;
+const DEFAULT_CONFIG_FILE: &str = "config.toml";
+const DEFAULT_WATCH_DIR: &str = "./watched_folder";
+const DEFAULT_GOOGLE_DRIVE_ROOT: &str = "./cloud_simulation/google_drive";
+const DEFAULT_DROPBOX_ROOT: &str = "./cloud_simulation/dropbox";
+const DEFAULT_ONEDRIVE_ROOT: &str = "./cloud_simulation/onedrive";
+const DEFAULT_WEBDAV_ROOT: &str = "./cloud_simulation/webdav";
+const DEFAULT_S3_ROOT: &str = "./cloud_simulation/s3";
+
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct AppConfig {
@@ -35,12 +47,12 @@ struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            watch_directory: PathBuf::from("./watched_folder"),
-            google_drive_root: PathBuf::from("./cloud_simulation/google_drive"),
-            dropbox_root: PathBuf::from("./cloud_simulation/dropbox"),
-            onedrive_root: PathBuf::from("./cloud_simulation/onedrive"),
-            webdav_root: PathBuf::from("./cloud_simulation/webdav"),
-            s3_root: PathBuf::from("./cloud_simulation/s3"),
+            watch_directory: PathBuf::from(DEFAULT_WATCH_DIR),
+            google_drive_root: PathBuf::from(DEFAULT_GOOGLE_DRIVE_ROOT),
+            dropbox_root: PathBuf::from(DEFAULT_DROPBOX_ROOT),
+            onedrive_root: PathBuf::from(DEFAULT_ONEDRIVE_ROOT),
+            webdav_root: PathBuf::from(DEFAULT_WEBDAV_ROOT),
+            s3_root: PathBuf::from(DEFAULT_S3_ROOT),
             google_credentials: None,
             dropbox_credentials: None,
             onedrive_credentials: None,
@@ -154,7 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
-    let mut config_file = "config.toml".to_string();
+    let mut config_file = DEFAULT_CONFIG_FILE.to_string();
     let mut ui_addr = None;
 
     let mut i = 1;
@@ -269,14 +281,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state_clone = state.clone();
     let shutdown_tx_clone = shutdown_tx.clone();
     tokio::spawn(async move {
-        let listener = match tokio::net::TcpListener::bind("127.0.0.1:8081").await {
+        let listener = match tokio::net::TcpListener::bind(DAEMON_BIND_ADDR).await {
             Ok(l) => l,
             Err(e) => {
-                error!("Failed to bind TCP control socket: {}", e);
+                error!("Failed to bind TCP control socket on {}: {}", DAEMON_BIND_ADDR, e);
                 return;
             }
         };
-        info!("Control command TCP socket listening on 127.0.0.1:8081");
+        info!("Control command TCP socket listening on {}", DAEMON_BIND_ADDR);
 
         loop {
             tokio::select! {
@@ -543,10 +555,10 @@ async fn handle_event(
                         let _guard = file_mutex.lock().await;
 
                         // Debounce: wait briefly for concurrent writes/events to settle
-                        tokio::time::sleep(Duration::from_millis(150)).await;
+                        tokio::time::sleep(Duration::from_millis(DEBOUNCE_DELAY_MS)).await;
 
                         // Add minor delay/retry logic in case the file is still being written to by the OS/editor
-                        let mut attempts = 3;
+                        let mut attempts = MAX_SYNC_ATTEMPTS;
                         while attempts > 0 {
                             match backend.upload(&local_path, &remote_path).await {
                                 Ok(_) => {
@@ -555,12 +567,13 @@ async fn handle_event(
                                 }
                                 Err(e) => {
                                     warn!(
-                                        "[{}] Attempt failed to sync '{}': {}. Retrying in 500ms...",
+                                        "[{}] Attempt failed to sync '{}': {}. Retrying in {}ms...",
                                         backend.name(),
                                         remote_path,
-                                        e
+                                        e,
+                                        RETRY_DELAY_MS
                                     );
-                                    tokio::time::sleep(Duration::from_millis(500)).await;
+                                    tokio::time::sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
                                     attempts -= 1;
                                 }
                             }

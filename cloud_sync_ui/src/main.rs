@@ -15,6 +15,12 @@ use serde_json::json;
 use std::time::Duration;
 use std::process::Stdio;
 
+const UI_BIND_ADDR: &str = "127.0.0.1:8082";
+const DAEMON_CONTROL_ADDR: &str = "127.0.0.1:8081";
+const DAEMON_SPAWN_DELAY_MS: u64 = 1500;
+const DEFAULT_CONFIG_FILE: &str = "config.toml";
+const PRIVATE_CONFIG_FILE: &str = "private_config.toml";
+
 #[tokio::main]
 async fn main() {
     let router = Router::new()
@@ -28,15 +34,15 @@ async fn main() {
         .route("/api/stop", post(api_stop))
         .layer(CorsLayer::permissive());
 
-    let listener = match tokio::net::TcpListener::bind("127.0.0.1:8082").await {
+    let listener = match tokio::net::TcpListener::bind(UI_BIND_ADDR).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("Failed to bind UI HTTP server to 127.0.0.1:8082: {}", e);
+            eprintln!("Failed to bind UI HTTP server to {}: {}", UI_BIND_ADDR, e);
             return;
         }
     };
 
-    println!("Decoupled UI server is running on http://127.0.0.1:8082");
+    println!("Decoupled UI server is running on http://{}", UI_BIND_ADDR);
 
     if let Err(e) = axum::serve(listener, router).await {
         eprintln!("UI server crashed: {}", e);
@@ -56,7 +62,7 @@ async fn serve_index() -> Html<&'static str> {
 /// # Returns
 /// The raw response string returned by the daemon.
 async fn send_daemon_cmd(cmd: &str) -> Result<String, std::io::Error> {
-    let mut stream = TcpStream::connect("127.0.0.1:8081").await?;
+    let mut stream = TcpStream::connect(DAEMON_CONTROL_ADDR).await?;
     stream.write_all(format!("{}\n", cmd).as_bytes()).await?;
     stream.flush().await?;
     
@@ -150,10 +156,10 @@ async fn api_status() -> impl IntoResponse {
 
 /// HTTP Endpoint: Spawns the background daemon as a detached process if not running.
 async fn api_start() -> impl IntoResponse {
-    let config_file = if std::path::Path::new("private_config.toml").exists() {
-        "private_config.toml"
+    let config_file = if std::path::Path::new(PRIVATE_CONFIG_FILE).exists() {
+        PRIVATE_CONFIG_FILE
     } else {
-        "config.toml"
+        DEFAULT_CONFIG_FILE
     };
 
     println!("Starting cloud_sync_daemon with config: {}", config_file);
@@ -166,15 +172,15 @@ async fn api_start() -> impl IntoResponse {
        .arg("--")
        .arg(config_file)
        .arg("--ui-addr")
-       .arg("127.0.0.1:8082")
+       .arg(UI_BIND_ADDR)
        .stdout(Stdio::null())
        .stderr(Stdio::null())
        .stdin(Stdio::null());
 
     match cmd.spawn() {
         Ok(_) => {
-            // Give it 1.5 seconds to build (if needed) and bind to its TCP socket
-            tokio::time::sleep(Duration::from_millis(1500)).await;
+            // Give it some time to build (if needed) and bind to its TCP socket
+            tokio::time::sleep(Duration::from_millis(DAEMON_SPAWN_DELAY_MS)).await;
             Json(json!({ "status": "Daemon started successfully" })).into_response()
         }
         Err(e) => {
