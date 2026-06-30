@@ -21,6 +21,8 @@ pub struct OAuthCredentials {
     pub destination_folder: Option<String>,
     /// Optional toggle to enable/disable the provider backend.
     pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
 }
 
 /// Credentials and URL configuration for WebDAV servers.
@@ -36,6 +38,8 @@ pub struct WebDAVCredentials {
     pub destination_folder: Option<String>,
     /// Optional toggle to enable/disable the provider backend.
     pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
 }
 
 /// Credentials configuration for Amazon S3 and S3-Compatible backends.
@@ -55,6 +59,8 @@ pub struct S3Credentials {
     pub destination_folder: Option<String>,
     /// Optional toggle to enable/disable the provider backend.
     pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
 }
 
 pub mod google_drive;

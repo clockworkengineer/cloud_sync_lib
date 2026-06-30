@@ -89,45 +89,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
 
     if is_enabled(&config.google_credentials) {
+        let sync = config.google_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
         let inner = config.google_credentials.clone().map(GoogleDriveProvider::new);
         let local_sim = LocalSimulation::new(config.google_drive_root.clone(), "Google Drive".to_string());
-        let drive = Arc::new(SimulatedFallback::new(inner, local_sim, "Google Drive"));
+        let drive = Arc::new(SimulatedFallback::new(inner, local_sim, "Google Drive", sync));
         backends.push(drive);
     } else {
         info!("Google Drive provider is disabled in configuration.");
     }
 
     if is_enabled(&config.dropbox_credentials) {
+        let sync = config.dropbox_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
         let inner = config.dropbox_credentials.clone().map(DropboxProvider::new);
         let local_sim = LocalSimulation::new(config.dropbox_root.clone(), "Dropbox".to_string());
-        let dropbox = Arc::new(SimulatedFallback::new(inner, local_sim, "Dropbox"));
+        let dropbox = Arc::new(SimulatedFallback::new(inner, local_sim, "Dropbox", sync));
         backends.push(dropbox);
     } else {
         info!("Dropbox provider is disabled in configuration.");
     }
 
     if is_enabled(&config.onedrive_credentials) {
+        let sync = config.onedrive_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
         let inner = config.onedrive_credentials.clone().map(OneDriveProvider::new);
         let local_sim = LocalSimulation::new(config.onedrive_root.clone(), "OneDrive".to_string());
-        let onedrive = Arc::new(SimulatedFallback::new(inner, local_sim, "OneDrive"));
+        let onedrive = Arc::new(SimulatedFallback::new(inner, local_sim, "OneDrive", sync));
         backends.push(onedrive);
     } else {
         info!("OneDrive provider is disabled in configuration.");
     }
 
     if is_webdav_enabled(&config.webdav_credentials) {
+        let sync = config.webdav_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
         let inner = config.webdav_credentials.clone().map(WebDAVProvider::new);
         let local_sim = LocalSimulation::new(config.webdav_root.clone(), "WebDAV".to_string());
-        let webdav = Arc::new(SimulatedFallback::new(inner, local_sim, "WebDAV"));
+        let webdav = Arc::new(SimulatedFallback::new(inner, local_sim, "WebDAV", sync));
         backends.push(webdav);
     } else {
         info!("WebDAV provider is disabled in configuration.");
     }
 
     if is_s3_enabled(&config.s3_credentials) {
+        let sync = config.s3_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
         let inner = config.s3_credentials.clone().map(S3Provider::new);
         let local_sim = LocalSimulation::new(config.s3_root.clone(), "S3".to_string());
-        let s3_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "S3"));
+        let s3_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "S3", sync));
         backends.push(s3_backend);
     } else {
         info!("S3 provider is disabled in configuration.");

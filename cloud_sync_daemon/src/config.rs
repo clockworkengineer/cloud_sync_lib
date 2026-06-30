@@ -118,6 +118,7 @@ mod tests {
             refresh_token: "token".to_string(),
             destination_folder: None,
             enabled: Some(false),
+            sync: None,
         });
         assert!(!is_enabled(&creds_disabled));
 
@@ -127,6 +128,7 @@ mod tests {
             refresh_token: "token".to_string(),
             destination_folder: None,
             enabled: Some(true),
+            sync: None,
         });
         assert!(is_enabled(&creds_enabled));
     }

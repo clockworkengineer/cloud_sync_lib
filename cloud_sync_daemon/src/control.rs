@@ -56,29 +56,34 @@ pub async fn handle_control_command(
                 Ok(config) => {
                     let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
                     if is_enabled(&config.google_credentials) {
+                        let sync = config.google_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
                         let inner = config.google_credentials.clone().map(GoogleDriveProvider::new);
                         let local_sim = LocalSimulation::new(config.google_drive_root.clone(), "Google Drive".to_string());
-                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Google Drive")));
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Google Drive", sync)));
                     }
                     if is_enabled(&config.dropbox_credentials) {
+                        let sync = config.dropbox_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
                         let inner = config.dropbox_credentials.clone().map(DropboxProvider::new);
                         let local_sim = LocalSimulation::new(config.dropbox_root.clone(), "Dropbox".to_string());
-                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Dropbox")));
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Dropbox", sync)));
                     }
                     if is_enabled(&config.onedrive_credentials) {
+                        let sync = config.onedrive_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
                         let inner = config.onedrive_credentials.clone().map(OneDriveProvider::new);
                         let local_sim = LocalSimulation::new(config.onedrive_root.clone(), "OneDrive".to_string());
-                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "OneDrive")));
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "OneDrive", sync)));
                     }
                     if is_webdav_enabled(&config.webdav_credentials) {
+                        let sync = config.webdav_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
                         let inner = config.webdav_credentials.clone().map(WebDAVProvider::new);
                         let local_sim = LocalSimulation::new(config.webdav_root.clone(), "WebDAV".to_string());
-                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "WebDAV")));
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "WebDAV", sync)));
                     }
                     if is_s3_enabled(&config.s3_credentials) {
+                        let sync = config.s3_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
                         let inner = config.s3_credentials.clone().map(S3Provider::new);
                         let local_sim = LocalSimulation::new(config.s3_root.clone(), "S3".to_string());
-                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "S3")));
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "S3", sync)));
                     }
                     s.backends = backends;
                     info!("Configuration reloaded successfully. Active backends updated.");

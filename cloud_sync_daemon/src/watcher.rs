@@ -195,6 +195,10 @@ pub async fn handle_event(
                 info!("File deletion detected: '{}'. Deleting from all cloud backends...", remote_path_str);
 
                 for backend in &backends {
+                    if !backend.sync() {
+                        info!("[{}] Skipping remote deletion for '{}' because sync (deletions) is disabled.", backend.name(), remote_path_str);
+                        continue;
+                    }
                     let backend = backend.clone();
                     let remote_path = remote_path_str.clone();
 
@@ -230,5 +234,75 @@ mod tests {
 
         let unrelated_path = Path::new("/home/user/other/report.pdf");
         assert_eq!(get_remote_path(unrelated_path, watch_dir), None);
+    }
+
+    #[tokio::test]
+    async fn test_watcher_deletions_sync_flag() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct TestBackend {
+            name: String,
+            sync: bool,
+            delete_called: Arc<AtomicBool>,
+        }
+
+        #[async_trait::async_trait]
+        impl StorageBackend for TestBackend {
+            fn name(&self) -> &str {
+                &self.name
+            }
+            async fn upload(&self, _local_path: &Path, _remote_path: &str) -> Result<(), cloud_sync_lib::StorageError> {
+                Ok(())
+            }
+            async fn download(&self, _remote_path: &str, _local_path: &Path) -> Result<(), cloud_sync_lib::StorageError> {
+                Ok(())
+            }
+            async fn delete(&self, _remote_path: &str) -> Result<(), cloud_sync_lib::StorageError> {
+                self.delete_called.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+            async fn list(&self, _remote_path: &str) -> Result<Vec<cloud_sync_lib::StorageItem>, cloud_sync_lib::StorageError> {
+                Ok(vec![])
+            }
+            fn sync(&self) -> bool {
+                self.sync
+            }
+        }
+
+        let delete_called_sync_true = Arc::new(AtomicBool::new(false));
+        let delete_called_sync_false = Arc::new(AtomicBool::new(false));
+
+        let backend_true = Arc::new(TestBackend {
+            name: "BackendTrue".to_string(),
+            sync: true,
+            delete_called: delete_called_sync_true.clone(),
+        });
+        let backend_false = Arc::new(TestBackend {
+            name: "BackendFalse".to_string(),
+            sync: false,
+            delete_called: delete_called_sync_false.clone(),
+        });
+
+        let backends: Vec<Arc<dyn StorageBackend>> = vec![backend_true, backend_false];
+        let state = Arc::new(Mutex::new(DaemonState {
+            paused: false,
+            backends,
+            watch_dir: PathBuf::from("/home/user/watch"),
+            config_file: "config.toml".to_string(),
+            syncing: false,
+            ui_addr: None,
+        }));
+
+        let active_locks = Arc::new(Mutex::new(HashMap::new()));
+        let event = Event::new(EventKind::Remove(notify::event::RemoveKind::Any))
+            .add_path(PathBuf::from("/home/user/watch/test.txt"));
+
+        handle_event(event, state, active_locks).await;
+
+        // Give any tokio spawns a short moment to execute
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert!(delete_called_sync_true.load(Ordering::SeqCst), "Backend with sync=true should have delete called");
+        assert!(!delete_called_sync_false.load(Ordering::SeqCst), "Backend with sync=false should NOT have delete called");
     }
 }
