@@ -703,7 +703,7 @@
                 const backendsList = document.getElementById('backends-list');
                 backendsList.innerHTML = '';
                 
-                const allProviders = ['Google Drive', 'Dropbox', 'OneDrive', 'WebDAV', 'S3'];
+                const allProviders = ['Google Drive', 'Dropbox', 'OneDrive', 'WebDAV', 'S3', 'SFTP'];
                 allProviders.forEach(prov => {
                     const isActive = data.active_backends.includes(prov);
                     const pill = document.createElement('div');
