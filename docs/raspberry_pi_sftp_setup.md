@@ -86,7 +86,7 @@ Identify your Raspberry Pi's local IP address by running `hostname -I` on the Pi
 
 ```toml
 [sftp_credentials]
-host = "192.168.1.50"             # Your Raspberry Pi IP Address
+host = "192.168.1.150"             # Your Raspberry Pi IP Address
 port = 22
 username = "syncuser"
 password = "syncuser_password"
