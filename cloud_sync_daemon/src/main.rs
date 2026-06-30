@@ -9,7 +9,7 @@ pub mod control;
 pub mod watcher;
 
 use cloud_sync_lib::{
-    DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, SFTPProvider,
+    DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, SFTPProvider, NextcloudProvider,
     StorageBackend, SimulatedFallback, LocalSimulation
 };
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
@@ -22,7 +22,7 @@ use tracing::{error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, load_or_create_config,
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, load_or_create_config,
     DEFAULT_CONFIG_FILE
 };
 use watcher::handle_event;
@@ -146,6 +146,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         backends.push(sftp_backend);
     } else {
         info!("SFTP provider is disabled in configuration.");
+    }
+
+    if is_nextcloud_enabled(&config.nextcloud_credentials) {
+        let sync = config.nextcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+        let inner = config.nextcloud_credentials.clone().map(NextcloudProvider::new);
+        let local_sim = LocalSimulation::new(config.nextcloud_root.clone(), "Nextcloud".to_string());
+        let nextcloud_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "Nextcloud", sync));
+        backends.push(nextcloud_backend);
+    } else {
+        info!("Nextcloud provider is disabled in configuration.");
     }
 
     info!("Initialized cloud storage providers:");

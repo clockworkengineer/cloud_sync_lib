@@ -84,12 +84,30 @@ pub struct SFTPCredentials {
     pub sync: Option<bool>,
 }
 
+/// Credentials configuration for Nextcloud WebDAV and OCS services.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NextcloudCredentials {
+    /// Nextcloud Server URL (e.g. https://nextcloud.example.com)
+    pub url: String,
+    /// Nextcloud Username.
+    pub username: String,
+    /// Nextcloud App Password.
+    pub app_password: String,
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
+}
+
 pub mod google_drive;
 pub mod dropbox;
 pub mod onedrive;
 pub mod webdav;
 pub mod s3;
 pub mod sftp;
+pub mod nextcloud;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -100,4 +118,5 @@ pub use onedrive::OneDriveProvider;
 pub use webdav::WebDAVProvider;
 pub use s3::S3Provider;
 pub use sftp::SFTPProvider;
+pub use nextcloud::NextcloudProvider;
 pub use fallback::SimulatedFallback;

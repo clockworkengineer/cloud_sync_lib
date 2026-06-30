@@ -4,13 +4,13 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info};
 use cloud_sync_lib::{
-    DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, SFTPProvider,
+    DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, SFTPProvider, NextcloudProvider,
     StorageBackend, SimulatedFallback, LocalSimulation
 };
 
 use crate::DaemonState;
 use crate::config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, load_or_create_config
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, load_or_create_config
 };
 use crate::watcher::trigger_full_sync;
 
@@ -90,6 +90,12 @@ pub async fn handle_control_command(
                         let inner = config.sftp_credentials.clone().map(SFTPProvider::new);
                         let local_sim = LocalSimulation::new(config.sftp_root.clone(), "SFTP".to_string());
                         backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "SFTP", sync)));
+                    }
+                    if is_nextcloud_enabled(&config.nextcloud_credentials) {
+                        let sync = config.nextcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+                        let inner = config.nextcloud_credentials.clone().map(NextcloudProvider::new);
+                        let local_sim = LocalSimulation::new(config.nextcloud_root.clone(), "Nextcloud".to_string());
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Nextcloud", sync)));
                     }
                     s.backends = backends;
                     info!("Configuration reloaded successfully. Active backends updated.");

@@ -9,7 +9,7 @@
 pub mod providers;
 pub mod traits;
 
-pub use providers::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, SFTPProvider, OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, SimulatedFallback, local_sim::LocalSimulation};
+pub use providers::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, SFTPProvider, NextcloudProvider, OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, SimulatedFallback, local_sim::LocalSimulation};
 pub use traits::{StorageBackend, StorageError, StorageItem};
 
 #[cfg(test)]
@@ -1169,6 +1169,42 @@ mod tests {
         provider.download("hello.txt", &download_path).await.unwrap();
         assert!(download_path.exists());
         assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated SFTP cloud storage!");
+
+        // Delete
+        provider.delete("hello.txt").await.unwrap();
+        assert!(!provider_root.join("hello.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_nextcloud_provider_simulated_flow() {
+        let temp_dir = tempdir().unwrap();
+        let provider_root = temp_dir.path().join("nextcloud_root");
+        let local_sim = LocalSimulation::new(provider_root.clone(), "Nextcloud".to_string());
+        let provider = SimulatedFallback::<NextcloudProvider>::new(None, local_sim, "Nextcloud", true);
+
+        // Create a local temporary file to upload
+        let local_file_path = temp_dir.path().join("test.txt");
+        let mut file = File::create(&local_file_path).unwrap();
+        writeln!(file, "Hello simulated Nextcloud storage!").unwrap();
+
+        // Upload
+        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+
+        // Verify remote file exists
+        let remote_file = provider_root.join("hello.txt");
+        assert!(remote_file.exists());
+        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated Nextcloud storage!");
+
+        // List
+        let items = provider.list("").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
+
+        // Download
+        let download_path = temp_dir.path().join("downloaded.txt");
+        provider.download("hello.txt", &download_path).await.unwrap();
+        assert!(download_path.exists());
+        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated Nextcloud storage!");
 
         // Delete
         provider.delete("hello.txt").await.unwrap();
