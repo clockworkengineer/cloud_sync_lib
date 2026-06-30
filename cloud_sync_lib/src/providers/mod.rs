@@ -101,22 +101,36 @@ pub struct NextcloudCredentials {
     pub sync: Option<bool>,
 }
 
+#[cfg(feature = "google_drive")]
 pub mod google_drive;
+#[cfg(feature = "dropbox")]
 pub mod dropbox;
+#[cfg(feature = "onedrive")]
 pub mod onedrive;
+#[cfg(feature = "webdav")]
 pub mod webdav;
+#[cfg(feature = "s3")]
 pub mod s3;
+#[cfg(feature = "sftp")]
 pub mod sftp;
+#[cfg(feature = "nextcloud")]
 pub mod nextcloud;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
 
+#[cfg(feature = "google_drive")]
 pub use google_drive::GoogleDriveProvider;
+#[cfg(feature = "dropbox")]
 pub use dropbox::DropboxProvider;
+#[cfg(feature = "onedrive")]
 pub use onedrive::OneDriveProvider;
+#[cfg(feature = "webdav")]
 pub use webdav::WebDAVProvider;
+#[cfg(feature = "s3")]
 pub use s3::S3Provider;
+#[cfg(feature = "sftp")]
 pub use sftp::SFTPProvider;
+#[cfg(feature = "nextcloud")]
 pub use nextcloud::NextcloudProvider;
 pub use fallback::SimulatedFallback;

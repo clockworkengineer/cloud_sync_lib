@@ -1,15 +1,22 @@
 //! Standalone diagnostic utility to verify SFTP client connection status.
 
+#[cfg(feature = "sftp")]
 use std::fs::File;
+#[cfg(feature = "sftp")]
 use std::io::Write;
+#[cfg(feature = "sftp")]
 use std::path::Path;
+#[cfg(feature = "sftp")]
 use cloud_sync_lib::{SFTPProvider, StorageBackend};
 
+#[cfg(feature = "sftp")]
 #[path = "../config.rs"]
 pub mod config;
 
+#[cfg(feature = "sftp")]
 use config::load_or_create_config;
 
+#[cfg(feature = "sftp")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("SFTP Connection Verifier");
@@ -98,4 +105,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n🎉 All SFTP connectivity tests passed successfully!");
     Ok(())
+}
+
+#[cfg(not(feature = "sftp"))]
+fn main() {
+    println!("SFTP provider feature is not enabled. Recompile with --features sftp to use this verifier.");
 }

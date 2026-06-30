@@ -1,15 +1,22 @@
 //! Standalone diagnostic utility to verify WebDAV client connection status.
 
+#[cfg(feature = "webdav")]
 use std::fs::File;
+#[cfg(feature = "webdav")]
 use std::io::Write;
+#[cfg(feature = "webdav")]
 use std::path::Path;
+#[cfg(feature = "webdav")]
 use cloud_sync_lib::{WebDAVProvider, StorageBackend};
 
+#[cfg(feature = "webdav")]
 #[path = "../config.rs"]
 pub mod config;
 
+#[cfg(feature = "webdav")]
 use config::load_or_create_config;
 
+#[cfg(feature = "webdav")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("WebDAV Connection Verifier");
@@ -98,4 +105,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n🎉 All WebDAV connectivity tests passed successfully!");
     Ok(())
+}
+
+#[cfg(not(feature = "webdav"))]
+fn main() {
+    println!("WebDAV provider feature is not enabled. Recompile with --features webdav to use this verifier.");
 }

@@ -12,8 +12,18 @@ reqwest = { version = "0.11", features = ["json", "multipart", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 quick-xml = { version = "0.31", features = ["serialize"] }
-rust-s3 = { version = "0.33", default-features = false, features = ["tokio-rustls-tls"] }
-ssh2 = "0.9"
+rust-s3 = { version = "0.33", default-features = false, features = ["tokio-rustls-tls"], optional = true }
+ssh2 = { version = "0.9", optional = true }
+
+[features]
+default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud"]
+google_drive = []
+dropbox = []
+onedrive = []
+webdav = []
+s3 = ["dep:rust-s3"]
+sftp = ["dep:ssh2"]
+nextcloud = []
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,15 +1,22 @@
 //! Standalone diagnostic utility to verify S3 client connection status.
 
+#[cfg(feature = "s3")]
 use std::fs::File;
+#[cfg(feature = "s3")]
 use std::io::Write;
+#[cfg(feature = "s3")]
 use std::path::Path;
+#[cfg(feature = "s3")]
 use cloud_sync_lib::{S3Provider, StorageBackend};
 
+#[cfg(feature = "s3")]
 #[path = "../config.rs"]
 pub mod config;
 
+#[cfg(feature = "s3")]
 use config::load_or_create_config;
 
+#[cfg(feature = "s3")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("S3 Connection Verifier");
@@ -99,4 +106,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n🎉 All S3 connectivity tests passed successfully!");
     Ok(())
+}
+
+#[cfg(not(feature = "s3"))]
+fn main() {
+    println!("S3 provider feature is not enabled. Recompile with --features s3 to use this verifier.");
 }

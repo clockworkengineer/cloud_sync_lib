@@ -9,7 +9,21 @@
 pub mod providers;
 pub mod traits;
 
-pub use providers::{DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, SFTPProvider, NextcloudProvider, OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, SimulatedFallback, local_sim::LocalSimulation};
+pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, SimulatedFallback, local_sim::LocalSimulation};
+#[cfg(feature = "google_drive")]
+pub use providers::GoogleDriveProvider;
+#[cfg(feature = "dropbox")]
+pub use providers::DropboxProvider;
+#[cfg(feature = "onedrive")]
+pub use providers::OneDriveProvider;
+#[cfg(feature = "webdav")]
+pub use providers::WebDAVProvider;
+#[cfg(feature = "s3")]
+pub use providers::S3Provider;
+#[cfg(feature = "sftp")]
+pub use providers::SFTPProvider;
+#[cfg(feature = "nextcloud")]
+pub use providers::NextcloudProvider;
 pub use traits::{StorageBackend, StorageError, StorageItem};
 
 #[cfg(test)]
@@ -20,6 +34,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[tokio::test]
+    #[cfg(feature = "google_drive")]
     async fn test_google_drive_provider_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("gdrive_root");
@@ -56,6 +71,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "google_drive")]
     async fn test_google_drive_mock_http_flow() {
         use wiremock::matchers::{method, path, query_param};
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -169,6 +185,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "google_drive")]
     async fn test_google_drive_real_flow() {
         // Try to load private_config.toml first, then fall back to config.toml
         let mut config_path = std::path::Path::new("../private_config.toml");
@@ -256,6 +273,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "dropbox")]
     async fn test_dropbox_provider_simulated_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("dropbox_root");
@@ -292,6 +310,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "dropbox")]
     async fn test_dropbox_mock_http_flow() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -398,6 +417,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "dropbox")]
     async fn test_dropbox_real_flow() {
         // Try to load private_config.toml first, then fall back to config.toml
         let mut config_path = std::path::Path::new("../private_config.toml");
@@ -485,6 +505,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "onedrive")]
     async fn test_onedrive_provider_simulated_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("onedrive_root");
@@ -521,6 +542,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "onedrive")]
     async fn test_onedrive_mock_http_flow() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -617,6 +639,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "onedrive")]
     async fn test_onedrive_real_flow() {
         // Try to load private_config.toml first, then fall back to config.toml
         let mut config_path = std::path::Path::new("../private_config.toml");
@@ -704,6 +727,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "webdav")]
     async fn test_webdav_provider_simulated_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("webdav_root");
@@ -740,6 +764,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "webdav")]
     async fn test_webdav_mock_http_flow() {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -844,6 +869,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "webdav")]
     async fn test_webdav_real_flow() {
         let mut config_path = std::path::Path::new("../private_config.toml");
         if !config_path.exists() {
@@ -928,6 +954,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "s3")]
     async fn test_s3_provider_simulated_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("s3_root");
@@ -964,6 +991,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "s3")]
     async fn test_s3_mock_http_flow() {
         use wiremock::matchers::{method, path, path_regex};
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1056,6 +1084,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "s3")]
     async fn test_s3_real_flow() {
         let mut config_path = std::path::Path::new("../private_config.toml");
         if !config_path.exists() {
@@ -1140,6 +1169,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "sftp")]
     async fn test_sftp_provider_simulated_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("sftp_root");
@@ -1176,6 +1206,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "nextcloud")]
     async fn test_nextcloud_provider_simulated_flow() {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("nextcloud_root");
