@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::info;
-use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials};
+use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials};
 
 pub const DEFAULT_CONFIG_FILE: &str = "config.toml";
 pub const DEFAULT_WATCH_DIR: &str = "./watched_folder";
@@ -12,6 +12,7 @@ pub const DEFAULT_DROPBOX_ROOT: &str = "./cloud_simulation/dropbox";
 pub const DEFAULT_ONEDRIVE_ROOT: &str = "./cloud_simulation/onedrive";
 pub const DEFAULT_WEBDAV_ROOT: &str = "./cloud_simulation/webdav";
 pub const DEFAULT_S3_ROOT: &str = "./cloud_simulation/s3";
+pub const DEFAULT_SFTP_ROOT: &str = "./cloud_simulation/sftp";
 
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -22,11 +23,13 @@ pub struct AppConfig {
     pub onedrive_root: PathBuf,
     pub webdav_root: PathBuf,
     pub s3_root: PathBuf,
+    pub sftp_root: PathBuf,
     pub google_credentials: Option<OAuthCredentials>,
     pub dropbox_credentials: Option<OAuthCredentials>,
     pub onedrive_credentials: Option<OAuthCredentials>,
     pub webdav_credentials: Option<WebDAVCredentials>,
     pub s3_credentials: Option<S3Credentials>,
+    pub sftp_credentials: Option<SFTPCredentials>,
 }
 
 impl Default for AppConfig {
@@ -38,11 +41,13 @@ impl Default for AppConfig {
             onedrive_root: PathBuf::from(DEFAULT_ONEDRIVE_ROOT),
             webdav_root: PathBuf::from(DEFAULT_WEBDAV_ROOT),
             s3_root: PathBuf::from(DEFAULT_S3_ROOT),
+            sftp_root: PathBuf::from(DEFAULT_SFTP_ROOT),
             google_credentials: None,
             dropbox_credentials: None,
             onedrive_credentials: None,
             webdav_credentials: None,
             s3_credentials: None,
+            sftp_credentials: None,
         }
     }
 }
@@ -99,6 +104,17 @@ pub fn is_webdav_enabled(credentials: &Option<WebDAVCredentials>) -> bool {
 /// # Returns
 /// True if the provider is enabled, false otherwise.
 pub fn is_s3_enabled(credentials: &Option<S3Credentials>) -> bool {
+    credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
+}
+
+/// Helper function to check if SFTP provider is enabled.
+///
+/// # Arguments
+/// * `credentials` - SFTP credentials configuration options.
+///
+/// # Returns
+/// True if the provider is enabled, false otherwise.
+pub fn is_sftp_enabled(credentials: &Option<SFTPCredentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 

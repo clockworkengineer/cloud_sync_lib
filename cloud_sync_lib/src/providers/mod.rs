@@ -63,11 +63,33 @@ pub struct S3Credentials {
     pub sync: Option<bool>,
 }
 
+/// Credentials configuration for SFTP.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SFTPCredentials {
+    /// SFTP Host address.
+    pub host: String,
+    /// SFTP Port (defaults to 22 if None).
+    pub port: Option<u16>,
+    /// SFTP Username.
+    pub username: String,
+    /// SFTP Password (optional if using key-based auth).
+    pub password: Option<String>,
+    /// Path to the SSH private key (optional).
+    pub private_key_path: Option<String>,
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
+}
+
 pub mod google_drive;
 pub mod dropbox;
 pub mod onedrive;
 pub mod webdav;
 pub mod s3;
+pub mod sftp;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -77,4 +99,5 @@ pub use dropbox::DropboxProvider;
 pub use onedrive::OneDriveProvider;
 pub use webdav::WebDAVProvider;
 pub use s3::S3Provider;
+pub use sftp::SFTPProvider;
 pub use fallback::SimulatedFallback;

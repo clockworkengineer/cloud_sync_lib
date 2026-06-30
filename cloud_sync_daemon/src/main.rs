@@ -9,7 +9,7 @@ pub mod control;
 pub mod watcher;
 
 use cloud_sync_lib::{
-    DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider,
+    DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, SFTPProvider,
     StorageBackend, SimulatedFallback, LocalSimulation
 };
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
@@ -22,7 +22,7 @@ use tracing::{error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, load_or_create_config,
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, load_or_create_config,
     DEFAULT_CONFIG_FILE
 };
 use watcher::handle_event;
@@ -136,6 +136,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         backends.push(s3_backend);
     } else {
         info!("S3 provider is disabled in configuration.");
+    }
+
+    if is_sftp_enabled(&config.sftp_credentials) {
+        let sync = config.sftp_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+        let inner = config.sftp_credentials.clone().map(SFTPProvider::new);
+        let local_sim = LocalSimulation::new(config.sftp_root.clone(), "SFTP".to_string());
+        let sftp_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "SFTP", sync));
+        backends.push(sftp_backend);
+    } else {
+        info!("SFTP provider is disabled in configuration.");
     }
 
     info!("Initialized cloud storage providers:");

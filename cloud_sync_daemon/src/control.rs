@@ -4,13 +4,13 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info};
 use cloud_sync_lib::{
-    DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider,
+    DropboxProvider, GoogleDriveProvider, OneDriveProvider, WebDAVProvider, S3Provider, SFTPProvider,
     StorageBackend, SimulatedFallback, LocalSimulation
 };
 
 use crate::DaemonState;
 use crate::config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, load_or_create_config
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, load_or_create_config
 };
 use crate::watcher::trigger_full_sync;
 
@@ -84,6 +84,12 @@ pub async fn handle_control_command(
                         let inner = config.s3_credentials.clone().map(S3Provider::new);
                         let local_sim = LocalSimulation::new(config.s3_root.clone(), "S3".to_string());
                         backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "S3", sync)));
+                    }
+                    if is_sftp_enabled(&config.sftp_credentials) {
+                        let sync = config.sftp_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+                        let inner = config.sftp_credentials.clone().map(SFTPProvider::new);
+                        let local_sim = LocalSimulation::new(config.sftp_root.clone(), "SFTP".to_string());
+                        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "SFTP", sync)));
                     }
                     s.backends = backends;
                     info!("Configuration reloaded successfully. Active backends updated.");
