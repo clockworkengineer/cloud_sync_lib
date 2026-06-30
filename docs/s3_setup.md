@@ -98,3 +98,25 @@ endpoint = "http://localhost:9000"
 destination_folder = "MySyncFolder"
 enabled = true
 ```
+
+---
+
+## Viewing S3 Storage Contents
+
+To view your S3 storage contents, you have several options:
+
+### 1. Web Browser (No installation needed)
+Sign in to the **[AWS Management Console](https://console.aws.amazon.com/s3)**, search for **S3**, and click on your bucket name. You can browse, upload, download, and delete files directly in your browser.
+
+### 2. Desktop GUI Clients (Windows / macOS)
+If you prefer a dedicated desktop application, the following free tools allow you to manage S3 storage easily:
+
+* **[Cyberduck](https://cyberduck.io/)** (Free, Open Source): Clean interface. Create a connection, choose **Amazon S3** as the protocol, and input your `Access Key ID` and `Secret Access Key`.
+* **[WinSCP](https://winscp.net/)** (Free, Windows only): Select **Amazon S3** as the session protocol and enter your credentials.
+* **[S3 Browser](https://s3browser.com/)** (Free for personal use, Windows only): A dedicated, lightweight S3 desktop client.
+
+### 3. Command Line (AWS CLI)
+If the AWS CLI is installed and configured on your machine, you can run:
+```bash
+aws s3 ls s3://<your-bucket-name> --recursive
+```
