@@ -10,11 +10,22 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 authorization_code = None
 
 class OAuthCallbackHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # Suppress logging to keep output clean
+        pass
+
     def do_GET(self):
         global authorization_code
-        query = urllib.parse.urlparse(self.path).query
+        parsed_url = urllib.parse.urlparse(self.path)
+        query = parsed_url.query
         params = urllib.parse.parse_qs(query)
         
+        # Ignore favicon probes
+        if parsed_url.path == "/favicon.ico":
+            self.send_response(404)
+            self.end_headers()
+            return
+
         if 'code' in params:
             authorization_code = params['code'][0]
             self.send_response(200)
@@ -22,15 +33,16 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"<h1>Authorization Successful!</h1><p>You can close this tab and return to the terminal.</p>")
         else:
-            self.send_response(400)
+            self.send_response(200)
             self.send_header('Content-Type', 'text/html')
             self.end_headers()
-            self.wfile.write(b"<h1>Authorization Failed</h1><p>No authorization code found in the callback.</p>")
+            self.wfile.write(b"<h1>OAuth Server Active</h1><p>Waiting for callback code...</p>")
 
 def run_local_server(port):
     server = HTTPServer(('localhost', port), OAuthCallbackHandler)
     print(f"Temporary server listening on http://localhost:{port}...")
-    server.handle_request() # Wait for exactly one callback request
+    while authorization_code is None:
+        server.handle_request()
 
 def exchange_code_for_token(client_id, client_secret, redirect_uri, code):
     url = "https://api.box.com/oauth2/token"
