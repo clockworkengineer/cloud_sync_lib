@@ -198,7 +198,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if is_enabled(&config.box_credentials) {
             let sync = config.box_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
             let inner = config.box_credentials.clone().map(BoxProvider::new);
-            let local_sim = LocalSimulation::new(config.box_root.clone(), "Box".to_string());
+            let box_root = config.box_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_BOX_ROOT));
+            let local_sim = LocalSimulation::new(box_root, "Box".to_string());
             let box_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "Box", sync));
             backends.push(box_backend);
         } else {
