@@ -19,6 +19,8 @@ For a detailed look at component interactions, design decisions, and system diag
 * **Google Drive**: Full REST API v3 integration with folders support.
 * **Dropbox**: Full API v2 integration with custom prefix folders support.
 * **OneDrive**: Microsoft Graph REST API integration.
+* **Box**: Custom app integration via OAuth 2.0 with access token rotation/caching and auto-persistence.
+* **MEGA**: Client-side encrypted sync utilizing the `mega` library.
 
 ---
 
@@ -35,6 +37,8 @@ For a detailed look at component interactions, design decisions, and system diag
    * Refer to the [Google Drive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/google_drive_setup.md)
    * Refer to the [Dropbox API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/dropbox_setup.md)
    * Refer to the [OneDrive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/onedrive_setup.md)
+   * Refer to the [Box API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/box_setup.md)
+   * Refer to the [MEGA Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/mega_setup.md)
 
 ---
 
