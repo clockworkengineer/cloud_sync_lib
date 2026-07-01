@@ -27,6 +27,7 @@ impl MegaProvider {
     async fn resolve_node(
         client: &mega::Client,
         path_str: &str,
+        destination_folder: Option<&str>,
         create_folders: bool,
     ) -> Result<mega::Node, StorageError> {
         let nodes = client.fetch_own_nodes().await
@@ -38,13 +39,26 @@ impl MegaProvider {
             .cloned()
             .ok_or_else(|| StorageError::NotFound("MEGA root folder not found".to_string()))?;
 
-        if path_str.is_empty() {
-            return Ok(current_node);
+        let mut segments = Vec::new();
+        if let Some(dest) = destination_folder {
+            let clean_dest = dest.trim_matches('/');
+            if !clean_dest.is_empty() {
+                for seg in clean_dest.split('/') {
+                    segments.push(seg);
+                }
+            }
         }
 
-        let segments: Vec<&str> = path_str.split('/')
-            .filter(|s| !s.is_empty())
-            .collect();
+        let clean_path = path_str.trim_start_matches('/');
+        if !clean_path.is_empty() {
+            for seg in clean_path.split('/') {
+                segments.push(seg);
+            }
+        }
+
+        if segments.is_empty() {
+            return Ok(current_node);
+        }
 
         for (i, segment) in segments.iter().enumerate() {
             let is_last = i == segments.len() - 1;
@@ -99,6 +113,7 @@ impl StorageBackend for MegaProvider {
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let email = self.credentials.email.clone();
         let password = self.credentials.password.clone();
+        let dest_folder = self.credentials.destination_folder.clone();
         let local_path = local_path.to_path_buf();
         let remote_path = remote_path.to_string();
 
@@ -127,8 +142,8 @@ impl StorageBackend for MegaProvider {
                     .and_then(|p| p.to_str())
                     .unwrap_or("");
 
-                // Resolve parent directory
-                let parent_node = Self::resolve_node(&client, parent_path, true).await?;
+                // Resolve parent directory (incorporating destination_folder prefix)
+                let parent_node = Self::resolve_node(&client, parent_path, dest_folder.as_deref(), true).await?;
 
                 // If file already exists, delete it first to prevent duplicates
                 let nodes = client.fetch_own_nodes().await
@@ -162,6 +177,7 @@ impl StorageBackend for MegaProvider {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         let email = self.credentials.email.clone();
         let password = self.credentials.password.clone();
+        let dest_folder = self.credentials.destination_folder.clone();
         let local_path = local_path.to_path_buf();
         let remote_path = remote_path.to_string();
 
@@ -179,7 +195,7 @@ impl StorageBackend for MegaProvider {
                 client.login(&email, &password, None).await
                     .map_err(|e| StorageError::Authentication(e.to_string()))?;
 
-                let node = Self::resolve_node(&client, &remote_path, false).await?;
+                let node = Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false).await?;
                 if node.kind() != mega::NodeKind::File {
                     return Err(StorageError::Provider("Cannot download a directory".to_string()));
                 }
@@ -200,6 +216,7 @@ impl StorageBackend for MegaProvider {
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         let email = self.credentials.email.clone();
         let password = self.credentials.password.clone();
+        let dest_folder = self.credentials.destination_folder.clone();
         let remote_path = remote_path.to_string();
 
         tokio::task::spawn_blocking(move || {
@@ -216,7 +233,7 @@ impl StorageBackend for MegaProvider {
                 client.login(&email, &password, None).await
                     .map_err(|e| StorageError::Authentication(e.to_string()))?;
 
-                let node = Self::resolve_node(&client, &remote_path, false).await?;
+                let node = Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false).await?;
                 client.delete_node(&node).await
                     .map_err(|e| StorageError::Provider(e.to_string()))?;
                 Ok(())
@@ -229,6 +246,7 @@ impl StorageBackend for MegaProvider {
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         let email = self.credentials.email.clone();
         let password = self.credentials.password.clone();
+        let dest_folder = self.credentials.destination_folder.clone();
         let remote_path = remote_path.to_string();
 
         tokio::task::spawn_blocking(move || {
@@ -245,7 +263,7 @@ impl StorageBackend for MegaProvider {
                 client.login(&email, &password, None).await
                     .map_err(|e| StorageError::Authentication(e.to_string()))?;
 
-                let folder_node = Self::resolve_node(&client, &remote_path, false).await?;
+                let folder_node = Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false).await?;
                 
                 let nodes = client.fetch_own_nodes().await
                     .map_err(|e| StorageError::Provider(e.to_string()))?;
