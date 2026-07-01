@@ -30,19 +30,19 @@ We will deploy Nextcloud along with an SQLite database (suitable for personal ba
 ### Run the Container Command:
 ```bash
 docker run -d --name nextcloud-pi \
-  -p 8080:80 \
+  -p 9090:80 \
   -v nextcloud_data:/var/www/html \
   --restart unless-stopped \
   nextcloud
 ```
 
-*Note: Nextcloud will now be running on port `8080` of your Raspberry Pi.*
+*Note: Nextcloud will now be running on port `9090` of your Raspberry Pi.*
 
 ---
 
 ## 3. Initial Nextcloud Setup
 
-1. Open your web browser and navigate to your Raspberry Pi's IP address on port `8080` (e.g. `http://192.168.1.150:8080`).
+1. Open your web browser and navigate to your Raspberry Pi's IP address on port `9090` (e.g. `http://192.168.1.150:9090`).
 2. Create an **admin** username and password.
 3. Click **Install**.
 4. Once loaded, go to **Personal Settings** > **Security** > **Devices & sessions** (at the bottom) to create an **App Password** (e.g. `PiSyncClient`). Copy the generated password.
@@ -55,7 +55,7 @@ Identify your Raspberry Pi's local IP address by running `hostname -I` on the Pi
 
 ```toml
 [nextcloud_credentials]
-url = "http://192.168.1.150:8080"    # Your Raspberry Pi Nextcloud URL
+url = "http://192.168.1.150:9090"    # Your Raspberry Pi Nextcloud URL
 username = "admin"                  # Your admin username
 app_password = "xxxx-xxxx-xxxx-xxxx" # The generated App Password
 destination_folder = "Backups"      # Folder name under Files in Nextcloud

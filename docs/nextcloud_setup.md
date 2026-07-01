@@ -39,11 +39,11 @@ sync = true
 To test Nextcloud synchronization locally without hitting a remote server, you can spin up a local instance using Docker.
 
 ### 1. Start Nextcloud via Docker
-Run the following command to start a Nextcloud container listening on port `8080` with default admin credentials:
+Run the following command to start a Nextcloud container listening on port `9090` with default admin credentials:
 
 ```bash
 docker run -d --name local-nextcloud \
-  -p 8080:80 \
+  -p 9090:80 \
   -e NEXTCLOUD_ADMIN_USER=admin \
   -e NEXTCLOUD_ADMIN_PASSWORD=admin \
   nextcloud
@@ -54,7 +54,7 @@ Configure your `private_config.toml` to connect to the local container:
 
 ```toml
 [nextcloud_credentials]
-url = "http://127.0.0.1:8080"
+url = "http://127.0.0.1:9090"
 username = "admin"
 app_password = "admin"                    # Or generate an app password via dashboard
 destination_folder = "Backups"
