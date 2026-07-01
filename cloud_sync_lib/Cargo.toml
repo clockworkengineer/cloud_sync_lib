@@ -16,7 +16,7 @@ rust-s3 = { version = "0.33", default-features = false, features = ["tokio-rustl
 ssh2 = { version = "0.9", optional = true }
 
 [features]
-default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud"]
+default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box"]
 google_drive = []
 dropbox = []
 onedrive = []
@@ -24,6 +24,7 @@ webdav = []
 s3 = ["dep:rust-s3"]
 sftp = ["dep:ssh2"]
 nextcloud = []
+box = []
 
 [dev-dependencies]
 tempfile = "3"

@@ -24,6 +24,8 @@ pub use providers::S3Provider;
 pub use providers::SFTPProvider;
 #[cfg(feature = "nextcloud")]
 pub use providers::NextcloudProvider;
+#[cfg(feature = "box")]
+pub use providers::BoxProvider;
 pub use traits::{StorageBackend, StorageError, StorageItem};
 
 #[cfg(test)]
@@ -1236,6 +1238,43 @@ mod tests {
         provider.download("hello.txt", &download_path).await.unwrap();
         assert!(download_path.exists());
         assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated Nextcloud storage!");
+
+        // Delete
+        provider.delete("hello.txt").await.unwrap();
+        assert!(!provider_root.join("hello.txt").exists());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "box")]
+    async fn test_box_provider_simulated_flow() {
+        let temp_dir = tempdir().unwrap();
+        let provider_root = temp_dir.path().join("box_root");
+        let local_sim = LocalSimulation::new(provider_root.clone(), "Box".to_string());
+        let provider = SimulatedFallback::<BoxProvider>::new(None, local_sim, "Box", true);
+
+        // Create a local temporary file to upload
+        let local_file_path = temp_dir.path().join("test.txt");
+        let mut file = File::create(&local_file_path).unwrap();
+        writeln!(file, "Hello simulated Box storage!").unwrap();
+
+        // Upload
+        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+
+        // Verify remote file exists
+        let remote_file = provider_root.join("hello.txt");
+        assert!(remote_file.exists());
+        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated Box storage!");
+
+        // List
+        let items = provider.list("").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
+
+        // Download
+        let download_path = temp_dir.path().join("downloaded.txt");
+        provider.download("hello.txt", &download_path).await.unwrap();
+        assert!(download_path.exists());
+        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated Box storage!");
 
         // Delete
         provider.delete("hello.txt").await.unwrap();

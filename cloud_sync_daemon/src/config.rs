@@ -14,6 +14,7 @@ pub const DEFAULT_WEBDAV_ROOT: &str = "./cloud_simulation/webdav";
 pub const DEFAULT_S3_ROOT: &str = "./cloud_simulation/s3";
 pub const DEFAULT_SFTP_ROOT: &str = "./cloud_simulation/sftp";
 pub const DEFAULT_NEXTCLOUD_ROOT: &str = "./cloud_simulation/nextcloud";
+pub const DEFAULT_BOX_ROOT: &str = "./cloud_simulation/box";
 
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -26,6 +27,7 @@ pub struct AppConfig {
     pub s3_root: PathBuf,
     pub sftp_root: PathBuf,
     pub nextcloud_root: PathBuf,
+    pub box_root: PathBuf,
     pub google_credentials: Option<OAuthCredentials>,
     pub dropbox_credentials: Option<OAuthCredentials>,
     pub onedrive_credentials: Option<OAuthCredentials>,
@@ -33,6 +35,7 @@ pub struct AppConfig {
     pub s3_credentials: Option<S3Credentials>,
     pub sftp_credentials: Option<SFTPCredentials>,
     pub nextcloud_credentials: Option<NextcloudCredentials>,
+    pub box_credentials: Option<OAuthCredentials>,
 }
 
 impl Default for AppConfig {
@@ -46,6 +49,7 @@ impl Default for AppConfig {
             s3_root: PathBuf::from(DEFAULT_S3_ROOT),
             sftp_root: PathBuf::from(DEFAULT_SFTP_ROOT),
             nextcloud_root: PathBuf::from(DEFAULT_NEXTCLOUD_ROOT),
+            box_root: PathBuf::from(DEFAULT_BOX_ROOT),
             google_credentials: None,
             dropbox_credentials: None,
             onedrive_credentials: None,
@@ -53,6 +57,7 @@ impl Default for AppConfig {
             s3_credentials: None,
             sftp_credentials: None,
             nextcloud_credentials: None,
+            box_credentials: None,
         }
     }
 }

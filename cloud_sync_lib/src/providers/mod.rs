@@ -115,6 +115,8 @@ pub mod s3;
 pub mod sftp;
 #[cfg(feature = "nextcloud")]
 pub mod nextcloud;
+#[cfg(feature = "box")]
+pub mod box_provider;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -133,4 +135,6 @@ pub use s3::S3Provider;
 pub use sftp::SFTPProvider;
 #[cfg(feature = "nextcloud")]
 pub use nextcloud::NextcloudProvider;
+#[cfg(feature = "box")]
+pub use box_provider::BoxProvider;
 pub use fallback::SimulatedFallback;

@@ -18,6 +18,8 @@ use cloud_sync_lib::S3Provider;
 use cloud_sync_lib::SFTPProvider;
 #[cfg(feature = "nextcloud")]
 use cloud_sync_lib::NextcloudProvider;
+#[cfg(feature = "box")]
+use cloud_sync_lib::BoxProvider;
 
 use crate::DaemonState;
 #[allow(unused_imports)]
@@ -128,6 +130,15 @@ pub async fn handle_control_command(
                             let inner = config.nextcloud_credentials.clone().map(NextcloudProvider::new);
                             let local_sim = LocalSimulation::new(config.nextcloud_root.clone(), "Nextcloud".to_string());
                             backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Nextcloud", sync)));
+                        }
+                    }
+                    #[cfg(feature = "box")]
+                    {
+                        if is_enabled(&config.box_credentials) {
+                            let sync = config.box_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+                            let inner = config.box_credentials.clone().map(BoxProvider::new);
+                            let local_sim = LocalSimulation::new(config.box_root.clone(), "Box".to_string());
+                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Box", sync)));
                         }
                     }
                     s.backends = backends;
