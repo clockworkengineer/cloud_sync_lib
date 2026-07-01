@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::info;
-use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials};
+use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials};
 
 pub const DEFAULT_CONFIG_FILE: &str = "config.toml";
 pub const DEFAULT_WATCH_DIR: &str = "./watched_folder";
@@ -15,6 +15,7 @@ pub const DEFAULT_S3_ROOT: &str = "./cloud_simulation/s3";
 pub const DEFAULT_SFTP_ROOT: &str = "./cloud_simulation/sftp";
 pub const DEFAULT_NEXTCLOUD_ROOT: &str = "./cloud_simulation/nextcloud";
 pub const DEFAULT_BOX_ROOT: &str = "./cloud_simulation/box";
+pub const DEFAULT_MEGA_ROOT: &str = "./cloud_simulation/mega";
 
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -28,6 +29,7 @@ pub struct AppConfig {
     pub sftp_root: PathBuf,
     pub nextcloud_root: PathBuf,
     pub box_root: Option<PathBuf>,
+    pub mega_root: Option<PathBuf>,
     pub google_credentials: Option<OAuthCredentials>,
     pub dropbox_credentials: Option<OAuthCredentials>,
     pub onedrive_credentials: Option<OAuthCredentials>,
@@ -36,6 +38,7 @@ pub struct AppConfig {
     pub sftp_credentials: Option<SFTPCredentials>,
     pub nextcloud_credentials: Option<NextcloudCredentials>,
     pub box_credentials: Option<OAuthCredentials>,
+    pub mega_credentials: Option<MegaCredentials>,
 }
 
 impl Default for AppConfig {
@@ -50,6 +53,7 @@ impl Default for AppConfig {
             sftp_root: PathBuf::from(DEFAULT_SFTP_ROOT),
             nextcloud_root: PathBuf::from(DEFAULT_NEXTCLOUD_ROOT),
             box_root: Some(PathBuf::from(DEFAULT_BOX_ROOT)),
+            mega_root: Some(PathBuf::from(DEFAULT_MEGA_ROOT)),
             google_credentials: None,
             dropbox_credentials: None,
             onedrive_credentials: None,
@@ -58,6 +62,7 @@ impl Default for AppConfig {
             sftp_credentials: None,
             nextcloud_credentials: None,
             box_credentials: None,
+            mega_credentials: None,
         }
     }
 }
@@ -136,6 +141,17 @@ pub fn is_sftp_enabled(credentials: &Option<SFTPCredentials>) -> bool {
 /// # Returns
 /// True if the provider is enabled, false otherwise.
 pub fn is_nextcloud_enabled(credentials: &Option<NextcloudCredentials>) -> bool {
+    credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
+}
+
+/// Helper function to check if MEGA provider is enabled.
+///
+/// # Arguments
+/// * `credentials` - MEGA credentials configuration options.
+///
+/// # Returns
+/// True if the provider is enabled, false otherwise.
+pub fn is_mega_enabled(credentials: &Option<MegaCredentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 

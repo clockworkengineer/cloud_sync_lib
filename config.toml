@@ -66,3 +66,11 @@ app_password = "PLACEHOLDER_APP_PASSWORD"
 destination_folder = ""
 enabled = false
 sync = true
+
+[box_credentials]
+client_id = "your_box_client_id"
+client_secret = "your_box_client_secret"
+refresh_token = "your_box_refresh_token"
+destination_folder = "MySyncFolder"   # Optional: Folder name in Box root
+enabled = true
+sync = true

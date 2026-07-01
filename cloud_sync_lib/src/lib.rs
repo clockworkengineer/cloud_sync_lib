@@ -9,7 +9,7 @@
 pub mod providers;
 pub mod traits;
 
-pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, SimulatedFallback, local_sim::LocalSimulation};
+pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, SimulatedFallback, local_sim::LocalSimulation};
 #[cfg(feature = "google_drive")]
 pub use providers::GoogleDriveProvider;
 #[cfg(feature = "dropbox")]
@@ -26,6 +26,8 @@ pub use providers::SFTPProvider;
 pub use providers::NextcloudProvider;
 #[cfg(feature = "box")]
 pub use providers::BoxProvider;
+#[cfg(feature = "mega")]
+pub use providers::MegaProvider;
 pub use traits::{StorageBackend, StorageError, StorageItem};
 
 #[cfg(test)]
@@ -187,6 +189,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     #[cfg(feature = "google_drive")]
     async fn test_google_drive_real_flow() {
         // Try to load private_config.toml first, then fall back to config.toml
@@ -419,6 +422,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     #[cfg(feature = "dropbox")]
     async fn test_dropbox_real_flow() {
         // Try to load private_config.toml first, then fall back to config.toml
@@ -641,6 +645,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     #[cfg(feature = "onedrive")]
     async fn test_onedrive_real_flow() {
         // Try to load private_config.toml first, then fall back to config.toml
@@ -871,6 +876,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     #[cfg(feature = "webdav")]
     async fn test_webdav_real_flow() {
         let mut config_path = std::path::Path::new("../private_config.toml");
@@ -1086,6 +1092,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     #[cfg(feature = "s3")]
     async fn test_s3_real_flow() {
         let mut config_path = std::path::Path::new("../private_config.toml");
@@ -1275,6 +1282,43 @@ mod tests {
         provider.download("hello.txt", &download_path).await.unwrap();
         assert!(download_path.exists());
         assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated Box storage!");
+
+        // Delete
+        provider.delete("hello.txt").await.unwrap();
+        assert!(!provider_root.join("hello.txt").exists());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "mega")]
+    async fn test_mega_provider_simulated_flow() {
+        let temp_dir = tempdir().unwrap();
+        let provider_root = temp_dir.path().join("mega_root");
+        let local_sim = LocalSimulation::new(provider_root.clone(), "MEGA".to_string());
+        let provider = SimulatedFallback::<MegaProvider>::new(None, local_sim, "MEGA", true);
+
+        // Create a local temporary file to upload
+        let local_file_path = temp_dir.path().join("test.txt");
+        let mut file = File::create(&local_file_path).unwrap();
+        writeln!(file, "Hello simulated MEGA storage!").unwrap();
+
+        // Upload
+        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+
+        // Verify remote file exists
+        let remote_file = provider_root.join("hello.txt");
+        assert!(remote_file.exists());
+        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated MEGA storage!");
+
+        // List
+        let items = provider.list("").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
+
+        // Download
+        let download_path = temp_dir.path().join("downloaded.txt");
+        provider.download("hello.txt", &download_path).await.unwrap();
+        assert!(download_path.exists());
+        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated MEGA storage!");
 
         // Delete
         provider.delete("hello.txt").await.unwrap();

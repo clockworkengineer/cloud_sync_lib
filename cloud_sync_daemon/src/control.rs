@@ -20,11 +20,13 @@ use cloud_sync_lib::SFTPProvider;
 use cloud_sync_lib::NextcloudProvider;
 #[cfg(feature = "box")]
 use cloud_sync_lib::BoxProvider;
+#[cfg(feature = "mega")]
+use cloud_sync_lib::MegaProvider;
 
 use crate::DaemonState;
 #[allow(unused_imports)]
 use crate::config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, load_or_create_config
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, load_or_create_config
 };
 use crate::watcher::trigger_full_sync;
 
@@ -140,6 +142,16 @@ pub async fn handle_control_command(
                             let box_root = config.box_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_BOX_ROOT));
                             let local_sim = LocalSimulation::new(box_root, "Box".to_string());
                             backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Box", sync)));
+                        }
+                    }
+                    #[cfg(feature = "mega")]
+                    {
+                        if is_mega_enabled(&config.mega_credentials) {
+                            let sync = config.mega_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+                            let inner = config.mega_credentials.clone().map(MegaProvider::new);
+                            let mega_root = config.mega_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_MEGA_ROOT));
+                            let local_sim = LocalSimulation::new(mega_root, "MEGA".to_string());
+                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "MEGA", sync)));
                         }
                     }
                     s.backends = backends;

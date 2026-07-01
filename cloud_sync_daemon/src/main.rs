@@ -25,6 +25,8 @@ use cloud_sync_lib::SFTPProvider;
 use cloud_sync_lib::NextcloudProvider;
 #[cfg(feature = "box")]
 use cloud_sync_lib::BoxProvider;
+#[cfg(feature = "mega")]
+use cloud_sync_lib::MegaProvider;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -36,7 +38,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[allow(unused_imports)]
 use config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, load_or_create_config,
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, load_or_create_config,
     DEFAULT_CONFIG_FILE
 };
 use watcher::handle_event;
@@ -204,6 +206,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             backends.push(box_backend);
         } else {
             info!("Box provider is disabled in configuration.");
+        }
+    }
+
+    #[cfg(feature = "mega")]
+    {
+        if is_mega_enabled(&config.mega_credentials) {
+            let sync = config.mega_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.mega_credentials.clone().map(MegaProvider::new);
+            let mega_root = config.mega_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_MEGA_ROOT));
+            let local_sim = LocalSimulation::new(mega_root, "MEGA".to_string());
+            let mega_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "MEGA", sync));
+            backends.push(mega_backend);
+        } else {
+            info!("MEGA provider is disabled in configuration.");
         }
     }
 

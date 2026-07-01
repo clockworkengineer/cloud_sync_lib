@@ -101,6 +101,21 @@ pub struct NextcloudCredentials {
     pub sync: Option<bool>,
 }
 
+/// Credentials configuration for MEGA cloud storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MegaCredentials {
+    /// MEGA Account Email.
+    pub email: String,
+    /// MEGA Account Password.
+    pub password: String,
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
+}
+
 #[cfg(feature = "google_drive")]
 pub mod google_drive;
 #[cfg(feature = "dropbox")]
@@ -117,6 +132,8 @@ pub mod sftp;
 pub mod nextcloud;
 #[cfg(feature = "box")]
 pub mod box_provider;
+#[cfg(feature = "mega")]
+pub mod mega_provider;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -137,4 +154,6 @@ pub use sftp::SFTPProvider;
 pub use nextcloud::NextcloudProvider;
 #[cfg(feature = "box")]
 pub use box_provider::BoxProvider;
+#[cfg(feature = "mega")]
+pub use mega_provider::MegaProvider;
 pub use fallback::SimulatedFallback;
