@@ -74,3 +74,10 @@ refresh_token = "your_box_refresh_token"
 destination_folder = "MySyncFolder"   # Optional: Folder name in Box root
 enabled = true
 sync = true
+
+[mega_credentials]
+email = "your-email@example.com"
+password = "your-mega-password"
+destination_folder = "PiSync" # Optional sub-folder name (creates it if missing)
+enabled = true                # Set to false to disable this provider
+sync = true                   # Set to false to disable deletion syncing
