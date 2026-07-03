@@ -26,11 +26,13 @@ use cloud_sync_lib::MegaProvider;
 use cloud_sync_lib::AzureBlobProvider;
 #[cfg(feature = "gcs")]
 use cloud_sync_lib::GCSProvider;
+#[cfg(feature = "b2")]
+use cloud_sync_lib::B2Provider;
 
 use crate::DaemonState;
 #[allow(unused_imports)]
 use crate::config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, load_or_create_config
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, is_b2_enabled, load_or_create_config
 };
 use crate::watcher::trigger_full_sync;
 
@@ -176,6 +178,16 @@ pub async fn handle_control_command(
                             let gcs_root = config.gcs_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_GCS_ROOT));
                             let local_sim = LocalSimulation::new(gcs_root, "GCS".to_string());
                             backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "GCS", sync)));
+                        }
+                    }
+                    #[cfg(feature = "b2")]
+                    {
+                        if is_b2_enabled(&config.b2_credentials) {
+                            let sync = config.b2_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+                            let inner = config.b2_credentials.clone().map(B2Provider::new);
+                            let b2_root = config.b2_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_B2_ROOT));
+                            let local_sim = LocalSimulation::new(b2_root, "B2".to_string());
+                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "B2", sync)));
                         }
                     }
                     s.backends = backends;

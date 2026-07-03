@@ -34,6 +34,7 @@ pub trait StorageBackend: Send + Sync {
   - [`nextcloud.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/nextcloud.rs): Nextcloud WebDAV & OCS client integration.
   - [`azure_blob.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/azure_blob.rs): Azure Blob Storage REST API integration.
   - [`gcs.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/gcs.rs): Google Cloud Storage JSON API integration.
+  - [`b2.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/b2.rs): Backblaze B2 REST API integration.
   - [`box_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/box_provider.rs): Box storage API integration.
   - [`mega_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/mega_provider.rs): MEGA cloud storage encrypted client integration.
   - [`local_sim.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/local_sim.rs): Shared local fallback simulator (`LocalSimulation`) implementing local folder operations for offline testing.
@@ -55,6 +56,7 @@ Instead of connecting to remote web APIs, the providers delegate file operations
 * Nextcloud simulated root: `./cloud_simulation/nextcloud`
 * Azure Blob simulated root: `./cloud_simulation/azure_blob`
 * GCS simulated root: `./cloud_simulation/gcs`
+* B2 simulated root: `./cloud_simulation/b2`
 * Box simulated root: `./cloud_simulation/box`
 * MEGA simulated root: `./cloud_simulation/mega`
 

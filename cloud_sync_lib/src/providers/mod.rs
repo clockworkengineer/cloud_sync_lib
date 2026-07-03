@@ -152,6 +152,25 @@ pub struct GCSCredentials {
     pub sync: Option<bool>,
 }
 
+/// Credentials configuration for Backblaze B2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct B2Credentials {
+    /// Target Backblaze B2 bucket name.
+    pub bucket: String,
+    /// Backblaze B2 Key ID.
+    pub key_id: String,
+    /// Backblaze B2 Application Key.
+    pub application_key: String,
+    /// Custom endpoint URL (optional, used for mocking / alternate endpoints).
+    pub endpoint: Option<String>,
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
+}
+
 #[cfg(feature = "google_drive")]
 pub mod google_drive;
 #[cfg(feature = "dropbox")]
@@ -174,6 +193,8 @@ pub mod mega_provider;
 pub mod azure_blob;
 #[cfg(feature = "gcs")]
 pub mod gcs;
+#[cfg(feature = "b2")]
+pub mod b2;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -200,4 +221,6 @@ pub use mega_provider::MegaProvider;
 pub use azure_blob::AzureBlobProvider;
 #[cfg(feature = "gcs")]
 pub use gcs::GCSProvider;
+#[cfg(feature = "b2")]
+pub use b2::B2Provider;
 pub use fallback::SimulatedFallback;

@@ -31,6 +31,8 @@ use cloud_sync_lib::MegaProvider;
 use cloud_sync_lib::AzureBlobProvider;
 #[cfg(feature = "gcs")]
 use cloud_sync_lib::GCSProvider;
+#[cfg(feature = "b2")]
+use cloud_sync_lib::B2Provider;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -42,7 +44,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[allow(unused_imports)]
 use config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, load_or_create_config,
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, is_b2_enabled, load_or_create_config,
     DEFAULT_CONFIG_FILE
 };
 use watcher::handle_event;
@@ -250,6 +252,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             backends.push(gcs_backend);
         } else {
             info!("GCS provider is disabled in configuration.");
+        }
+    }
+    #[cfg(feature = "b2")]
+    {
+        if is_b2_enabled(&config.b2_credentials) {
+            let sync = config.b2_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.b2_credentials.clone().map(B2Provider::new);
+            let b2_root = config.b2_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_B2_ROOT));
+            let local_sim = LocalSimulation::new(b2_root, "B2".to_string());
+            let b2_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "B2", sync));
+            backends.push(b2_backend);
+        } else {
+            info!("B2 provider is disabled in configuration.");
         }
     }
     info!("Initialized cloud storage providers:");

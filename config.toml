@@ -8,6 +8,7 @@ sftp_root = "./cloud_simulation/sftp"
 nextcloud_root = "./cloud_simulation/nextcloud"
 azure_blob_root = "./cloud_simulation/azure_blob"
 gcs_root = "./cloud_simulation/gcs"
+b2_root = "./cloud_simulation/b2"
 
 [google_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"
@@ -97,6 +98,15 @@ sync = true
 bucket = "test-bucket"
 service_account_key_path = ""
 # endpoint = "http://127.0.0.1:4443" # Optional local fake-gcs-server emulator
+destination_folder = "MySyncFolder" # Optional
+enabled = false
+sync = true
+
+[b2_credentials]
+bucket = "test-bucket"
+key_id = ""
+application_key = ""
+# endpoint = "https://api.backblazeb2.com" # Optional custom endpoint / mock server
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync = true

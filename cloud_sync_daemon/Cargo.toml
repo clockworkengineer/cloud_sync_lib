@@ -14,7 +14,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1"
 
 [features]
-default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs"]
+default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2"]
 google_drive = ["cloud_sync_lib/google_drive"]
 dropbox = ["cloud_sync_lib/dropbox"]
 onedrive = ["cloud_sync_lib/onedrive"]
@@ -26,3 +26,4 @@ box = ["cloud_sync_lib/box"]
 mega = ["cloud_sync_lib/mega"]
 azure_blob = ["cloud_sync_lib/azure_blob"]
 gcs = ["cloud_sync_lib/gcs"]
+b2 = ["cloud_sync_lib/b2"]

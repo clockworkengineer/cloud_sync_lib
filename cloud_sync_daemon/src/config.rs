@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::info;
-use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials};
+use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials};
 
 pub const DEFAULT_CONFIG_FILE: &str = "config.toml";
 pub const DEFAULT_WATCH_DIR: &str = "./watched_folder";
@@ -18,6 +18,7 @@ pub const DEFAULT_BOX_ROOT: &str = "./cloud_simulation/box";
 pub const DEFAULT_MEGA_ROOT: &str = "./cloud_simulation/mega";
 pub const DEFAULT_AZURE_BLOB_ROOT: &str = "./cloud_simulation/azure_blob";
 pub const DEFAULT_GCS_ROOT: &str = "./cloud_simulation/gcs";
+pub const DEFAULT_B2_ROOT: &str = "./cloud_simulation/b2";
 
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -34,6 +35,7 @@ pub struct AppConfig {
     pub mega_root: Option<PathBuf>,
     pub azure_blob_root: Option<PathBuf>,
     pub gcs_root: Option<PathBuf>,
+    pub b2_root: Option<PathBuf>,
     pub google_credentials: Option<OAuthCredentials>,
     pub dropbox_credentials: Option<OAuthCredentials>,
     pub onedrive_credentials: Option<OAuthCredentials>,
@@ -45,6 +47,7 @@ pub struct AppConfig {
     pub mega_credentials: Option<MegaCredentials>,
     pub azure_blob_credentials: Option<AzureBlobCredentials>,
     pub gcs_credentials: Option<GCSCredentials>,
+    pub b2_credentials: Option<B2Credentials>,
 }
 
 impl Default for AppConfig {
@@ -62,6 +65,7 @@ impl Default for AppConfig {
             mega_root: Some(PathBuf::from(DEFAULT_MEGA_ROOT)),
             azure_blob_root: Some(PathBuf::from(DEFAULT_AZURE_BLOB_ROOT)),
             gcs_root: Some(PathBuf::from(DEFAULT_GCS_ROOT)),
+            b2_root: Some(PathBuf::from(DEFAULT_B2_ROOT)),
             google_credentials: None,
             dropbox_credentials: None,
             onedrive_credentials: None,
@@ -73,6 +77,7 @@ impl Default for AppConfig {
             mega_credentials: None,
             azure_blob_credentials: None,
             gcs_credentials: None,
+            b2_credentials: None,
         }
     }
 }
@@ -184,6 +189,17 @@ pub fn is_azure_blob_enabled(credentials: &Option<AzureBlobCredentials>) -> bool
 /// # Returns
 /// True if the provider is enabled, false otherwise.
 pub fn is_gcs_enabled(credentials: &Option<GCSCredentials>) -> bool {
+    credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
+}
+
+/// Helper function to check if B2 provider is enabled.
+///
+/// # Arguments
+/// * `credentials` - B2 credentials configuration options.
+///
+/// # Returns
+/// True if the provider is enabled, false otherwise.
+pub fn is_b2_enabled(credentials: &Option<B2Credentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 
