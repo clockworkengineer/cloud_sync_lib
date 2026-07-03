@@ -28,11 +28,15 @@ use cloud_sync_lib::AzureBlobProvider;
 use cloud_sync_lib::GCSProvider;
 #[cfg(feature = "b2")]
 use cloud_sync_lib::B2Provider;
+#[cfg(feature = "pcloud")]
+use cloud_sync_lib::PCloudProvider;
+#[cfg(feature = "ipfs")]
+use cloud_sync_lib::IPFSProvider;
 
 use crate::DaemonState;
 #[allow(unused_imports)]
 use crate::config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, is_b2_enabled, load_or_create_config
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, is_b2_enabled, is_pcloud_enabled, is_ipfs_enabled, load_or_create_config
 };
 use crate::watcher::trigger_full_sync;
 
@@ -188,6 +192,26 @@ pub async fn handle_control_command(
                             let b2_root = config.b2_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_B2_ROOT));
                             let local_sim = LocalSimulation::new(b2_root, "B2".to_string());
                             backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "B2", sync)));
+                        }
+                    }
+                    #[cfg(feature = "pcloud")]
+                    {
+                        if is_pcloud_enabled(&config.pcloud_credentials) {
+                            let sync = config.pcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+                            let inner = config.pcloud_credentials.clone().map(PCloudProvider::new);
+                            let pcloud_root = config.pcloud_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_PCLOUD_ROOT));
+                            let local_sim = LocalSimulation::new(pcloud_root, "pCloud".to_string());
+                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "pCloud", sync)));
+                        }
+                    }
+                    #[cfg(feature = "ipfs")]
+                    {
+                        if is_ipfs_enabled(&config.ipfs_credentials) {
+                            let sync = config.ipfs_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+                            let inner = config.ipfs_credentials.clone().map(IPFSProvider::new);
+                            let ipfs_root = config.ipfs_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_IPFS_ROOT));
+                            let local_sim = LocalSimulation::new(ipfs_root, "IPFS".to_string());
+                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "IPFS", sync)));
                         }
                     }
                     s.backends = backends;

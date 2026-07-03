@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::info;
-use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials};
+use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials};
 
 pub const DEFAULT_CONFIG_FILE: &str = "config.toml";
 pub const DEFAULT_WATCH_DIR: &str = "./watched_folder";
@@ -19,6 +19,8 @@ pub const DEFAULT_MEGA_ROOT: &str = "./cloud_simulation/mega";
 pub const DEFAULT_AZURE_BLOB_ROOT: &str = "./cloud_simulation/azure_blob";
 pub const DEFAULT_GCS_ROOT: &str = "./cloud_simulation/gcs";
 pub const DEFAULT_B2_ROOT: &str = "./cloud_simulation/b2";
+pub const DEFAULT_PCLOUD_ROOT: &str = "./cloud_simulation/pcloud";
+pub const DEFAULT_IPFS_ROOT: &str = "./cloud_simulation/ipfs";
 
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -36,6 +38,8 @@ pub struct AppConfig {
     pub azure_blob_root: Option<PathBuf>,
     pub gcs_root: Option<PathBuf>,
     pub b2_root: Option<PathBuf>,
+    pub pcloud_root: Option<PathBuf>,
+    pub ipfs_root: Option<PathBuf>,
     pub google_credentials: Option<OAuthCredentials>,
     pub dropbox_credentials: Option<OAuthCredentials>,
     pub onedrive_credentials: Option<OAuthCredentials>,
@@ -48,6 +52,8 @@ pub struct AppConfig {
     pub azure_blob_credentials: Option<AzureBlobCredentials>,
     pub gcs_credentials: Option<GCSCredentials>,
     pub b2_credentials: Option<B2Credentials>,
+    pub pcloud_credentials: Option<PCloudCredentials>,
+    pub ipfs_credentials: Option<IPFSCredentials>,
 }
 
 impl Default for AppConfig {
@@ -66,6 +72,8 @@ impl Default for AppConfig {
             azure_blob_root: Some(PathBuf::from(DEFAULT_AZURE_BLOB_ROOT)),
             gcs_root: Some(PathBuf::from(DEFAULT_GCS_ROOT)),
             b2_root: Some(PathBuf::from(DEFAULT_B2_ROOT)),
+            pcloud_root: Some(PathBuf::from(DEFAULT_PCLOUD_ROOT)),
+            ipfs_root: Some(PathBuf::from(DEFAULT_IPFS_ROOT)),
             google_credentials: None,
             dropbox_credentials: None,
             onedrive_credentials: None,
@@ -78,6 +86,8 @@ impl Default for AppConfig {
             azure_blob_credentials: None,
             gcs_credentials: None,
             b2_credentials: None,
+            pcloud_credentials: None,
+            ipfs_credentials: None,
         }
     }
 }
@@ -200,6 +210,28 @@ pub fn is_gcs_enabled(credentials: &Option<GCSCredentials>) -> bool {
 /// # Returns
 /// True if the provider is enabled, false otherwise.
 pub fn is_b2_enabled(credentials: &Option<B2Credentials>) -> bool {
+    credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
+}
+
+/// Helper function to check if pCloud provider is enabled.
+///
+/// # Arguments
+/// * `credentials` - pCloud credentials configuration options.
+///
+/// # Returns
+/// True if the provider is enabled, false otherwise.
+pub fn is_pcloud_enabled(credentials: &Option<PCloudCredentials>) -> bool {
+    credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
+}
+
+/// Helper function to check if IPFS provider is enabled.
+///
+/// # Arguments
+/// * `credentials` - IPFS credentials configuration options.
+///
+/// # Returns
+/// True if the provider is enabled, false otherwise.
+pub fn is_ipfs_enabled(credentials: &Option<IPFSCredentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 

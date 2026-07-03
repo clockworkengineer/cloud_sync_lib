@@ -25,7 +25,7 @@ yup-oauth2 = { version = "8.3", optional = true }
 chrono = { version = "0.4", optional = true }
 
 [features]
-default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2"]
+default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"]
 google_drive = []
 dropbox = []
 onedrive = []
@@ -38,6 +38,8 @@ mega = ["dep:mega", "dep:tokio-util", "dep:futures-util"]
 azure_blob = ["dep:base64", "dep:hmac", "dep:sha2", "dep:httpdate"]
 gcs = ["dep:yup-oauth2", "dep:chrono"]
 b2 = []
+pcloud = []
+ipfs = []
 
 [dev-dependencies]
 tempfile = "3"

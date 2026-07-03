@@ -9,7 +9,7 @@
 pub mod providers;
 pub mod traits;
 
-pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, SimulatedFallback, local_sim::LocalSimulation};
+pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation};
 #[cfg(feature = "google_drive")]
 pub use providers::GoogleDriveProvider;
 #[cfg(feature = "dropbox")]
@@ -34,6 +34,10 @@ pub use providers::AzureBlobProvider;
 pub use providers::GCSProvider;
 #[cfg(feature = "b2")]
 pub use providers::B2Provider;
+#[cfg(feature = "pcloud")]
+pub use providers::PCloudProvider;
+#[cfg(feature = "ipfs")]
+pub use providers::IPFSProvider;
 pub use traits::{StorageBackend, StorageError, StorageItem};
 
 #[cfg(test)]
@@ -1436,6 +1440,80 @@ mod tests {
         provider.download("hello.txt", &download_path).await.unwrap();
         assert!(download_path.exists());
         assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated B2 storage!");
+
+        // Delete
+        provider.delete("hello.txt").await.unwrap();
+        assert!(!provider_root.join("hello.txt").exists());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "pcloud")]
+    async fn test_pcloud_provider_simulated_flow() {
+        let temp_dir = tempdir().unwrap();
+        let provider_root = temp_dir.path().join("pcloud_root");
+        let local_sim = LocalSimulation::new(provider_root.clone(), "pCloud".to_string());
+        let provider = SimulatedFallback::<PCloudProvider>::new(None, local_sim, "pCloud", true);
+
+        // Create a local temporary file to upload
+        let local_file_path = temp_dir.path().join("test.txt");
+        let mut file = File::create(&local_file_path).unwrap();
+        writeln!(file, "Hello simulated pCloud storage!").unwrap();
+
+        // Upload
+        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+
+        // Verify remote file exists
+        let remote_file = provider_root.join("hello.txt");
+        assert!(remote_file.exists());
+        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated pCloud storage!");
+
+        // List
+        let items = provider.list("").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
+
+        // Download
+        let download_path = temp_dir.path().join("downloaded.txt");
+        provider.download("hello.txt", &download_path).await.unwrap();
+        assert!(download_path.exists());
+        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated pCloud storage!");
+
+        // Delete
+        provider.delete("hello.txt").await.unwrap();
+        assert!(!provider_root.join("hello.txt").exists());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "ipfs")]
+    async fn test_ipfs_provider_simulated_flow() {
+        let temp_dir = tempdir().unwrap();
+        let provider_root = temp_dir.path().join("ipfs_root");
+        let local_sim = LocalSimulation::new(provider_root.clone(), "IPFS".to_string());
+        let provider = SimulatedFallback::<IPFSProvider>::new(None, local_sim, "IPFS", true);
+
+        // Create a local temporary file to upload
+        let local_file_path = temp_dir.path().join("test.txt");
+        let mut file = File::create(&local_file_path).unwrap();
+        writeln!(file, "Hello simulated IPFS storage!").unwrap();
+
+        // Upload
+        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+
+        // Verify remote file exists
+        let remote_file = provider_root.join("hello.txt");
+        assert!(remote_file.exists());
+        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated IPFS storage!");
+
+        // List
+        let items = provider.list("").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
+
+        // Download
+        let download_path = temp_dir.path().join("downloaded.txt");
+        provider.download("hello.txt", &download_path).await.unwrap();
+        assert!(download_path.exists());
+        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated IPFS storage!");
 
         // Delete
         provider.delete("hello.txt").await.unwrap();

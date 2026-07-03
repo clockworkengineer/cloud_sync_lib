@@ -35,6 +35,8 @@ pub trait StorageBackend: Send + Sync {
   - [`azure_blob.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/azure_blob.rs): Azure Blob Storage REST API integration.
   - [`gcs.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/gcs.rs): Google Cloud Storage JSON API integration.
   - [`b2.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/b2.rs): Backblaze B2 REST API integration.
+  - [`pcloud.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/pcloud.rs): pCloud REST API integration.
+  - [`ipfs.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/ipfs.rs): IPFS Pinning Service REST API integration.
   - [`box_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/box_provider.rs): Box storage API integration.
   - [`mega_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/mega_provider.rs): MEGA cloud storage encrypted client integration.
   - [`local_sim.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/local_sim.rs): Shared local fallback simulator (`LocalSimulation`) implementing local folder operations for offline testing.
@@ -57,6 +59,8 @@ Instead of connecting to remote web APIs, the providers delegate file operations
 * Azure Blob simulated root: `./cloud_simulation/azure_blob`
 * GCS simulated root: `./cloud_simulation/gcs`
 * B2 simulated root: `./cloud_simulation/b2`
+* pCloud simulated root: `./cloud_simulation/pcloud`
+* IPFS simulated root: `./cloud_simulation/ipfs`
 * Box simulated root: `./cloud_simulation/box`
 * MEGA simulated root: `./cloud_simulation/mega`
 

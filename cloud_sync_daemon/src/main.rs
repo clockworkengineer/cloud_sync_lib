@@ -33,6 +33,10 @@ use cloud_sync_lib::AzureBlobProvider;
 use cloud_sync_lib::GCSProvider;
 #[cfg(feature = "b2")]
 use cloud_sync_lib::B2Provider;
+#[cfg(feature = "pcloud")]
+use cloud_sync_lib::PCloudProvider;
+#[cfg(feature = "ipfs")]
+use cloud_sync_lib::IPFSProvider;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -44,7 +48,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[allow(unused_imports)]
 use config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, is_b2_enabled, load_or_create_config,
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, is_b2_enabled, is_pcloud_enabled, is_ipfs_enabled, load_or_create_config,
     DEFAULT_CONFIG_FILE
 };
 use watcher::handle_event;
@@ -265,6 +269,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             backends.push(b2_backend);
         } else {
             info!("B2 provider is disabled in configuration.");
+        }
+    }
+    #[cfg(feature = "pcloud")]
+    {
+        if is_pcloud_enabled(&config.pcloud_credentials) {
+            let sync = config.pcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.pcloud_credentials.clone().map(PCloudProvider::new);
+            let pcloud_root = config.pcloud_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_PCLOUD_ROOT));
+            let local_sim = LocalSimulation::new(pcloud_root, "pCloud".to_string());
+            let pcloud_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "pCloud", sync));
+            backends.push(pcloud_backend);
+        } else {
+            info!("pCloud provider is disabled in configuration.");
+        }
+    }
+    #[cfg(feature = "ipfs")]
+    {
+        if is_ipfs_enabled(&config.ipfs_credentials) {
+            let sync = config.ipfs_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.ipfs_credentials.clone().map(IPFSProvider::new);
+            let ipfs_root = config.ipfs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_IPFS_ROOT));
+            let local_sim = LocalSimulation::new(ipfs_root, "IPFS".to_string());
+            let ipfs_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "IPFS", sync));
+            backends.push(ipfs_backend);
+        } else {
+            info!("IPFS provider is disabled in configuration.");
         }
     }
     info!("Initialized cloud storage providers:");

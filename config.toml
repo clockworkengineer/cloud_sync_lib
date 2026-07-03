@@ -9,6 +9,8 @@ nextcloud_root = "./cloud_simulation/nextcloud"
 azure_blob_root = "./cloud_simulation/azure_blob"
 gcs_root = "./cloud_simulation/gcs"
 b2_root = "./cloud_simulation/b2"
+pcloud_root = "./cloud_simulation/pcloud"
+ipfs_root = "./cloud_simulation/ipfs"
 
 [google_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"
@@ -107,6 +109,21 @@ bucket = "test-bucket"
 key_id = ""
 application_key = ""
 # endpoint = "https://api.backblazeb2.com" # Optional custom endpoint / mock server
+destination_folder = "MySyncFolder" # Optional
+enabled = false
+sync = true
+
+[pcloud_credentials]
+access_token = ""
+# endpoint = "https://api.pcloud.com" # Optional custom API endpoint (e.g. European accounts)
+destination_folder = "MySyncFolder" # Optional
+enabled = false
+sync = true
+
+[ipfs_credentials]
+jwt_token = ""
+# endpoint = "https://api.pinata.cloud" # Optional custom API endpoint
+# gateway_url = "https://gateway.pinata.cloud/ipfs/" # Optional custom IPFS gateway
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync = true

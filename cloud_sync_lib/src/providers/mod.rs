@@ -171,6 +171,38 @@ pub struct B2Credentials {
     pub sync: Option<bool>,
 }
 
+/// Credentials configuration for pCloud.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PCloudCredentials {
+    /// pCloud OAuth2 Access Token.
+    pub access_token: String,
+    /// Custom API endpoint (optional, e.g. for European accounts or testing).
+    pub endpoint: Option<String>,
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
+}
+
+/// Credentials configuration for IPFS Pinning Service (e.g. Pinata).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IPFSCredentials {
+    /// JWT Bearer Token for authorization.
+    pub jwt_token: String,
+    /// Custom API endpoint (optional, defaults to Pinata's API https://api.pinata.cloud).
+    pub endpoint: Option<String>,
+    /// Gateway URL to resolve pinned CIDs (optional, defaults to https://gateway.pinata.cloud/ipfs/).
+    pub gateway_url: Option<String>,
+    /// Optional prefix folder/label for sync mapping.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion (unpinning) syncing.
+    pub sync: Option<bool>,
+}
+
 #[cfg(feature = "google_drive")]
 pub mod google_drive;
 #[cfg(feature = "dropbox")]
@@ -195,6 +227,10 @@ pub mod azure_blob;
 pub mod gcs;
 #[cfg(feature = "b2")]
 pub mod b2;
+#[cfg(feature = "pcloud")]
+pub mod pcloud;
+#[cfg(feature = "ipfs")]
+pub mod ipfs;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -223,4 +259,8 @@ pub use azure_blob::AzureBlobProvider;
 pub use gcs::GCSProvider;
 #[cfg(feature = "b2")]
 pub use b2::B2Provider;
+#[cfg(feature = "pcloud")]
+pub use pcloud::PCloudProvider;
+#[cfg(feature = "ipfs")]
+pub use ipfs::IPFSProvider;
 pub use fallback::SimulatedFallback;
