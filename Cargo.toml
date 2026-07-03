@@ -3,6 +3,7 @@ members = [
     "cloud_sync_lib",
     "cloud_sync_daemon",
     "cloud_sync_ui",
+    "cloud_sync_tauri",
 ]
 resolver = "2"
 

@@ -1,0 +1,15 @@
+[package]
+name = "cloud_sync_tauri"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tauri = { version = "2.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+cloud_sync_ui = { path = "../cloud_sync_ui" }
+tauri-plugin-shell = "2.0"
+
+[build-dependencies]
+tauri-build = { version = "2.0" }
