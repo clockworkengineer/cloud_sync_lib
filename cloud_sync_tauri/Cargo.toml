@@ -12,4 +12,4 @@ cloud_sync_ui = { path = "../cloud_sync_ui" }
 tauri-plugin-shell = "2.0"
 
 [build-dependencies]
-tauri-build = { version = "2.0" }
+tauri-build = { version = "2.0", features = [] }
