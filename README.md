@@ -21,6 +21,10 @@ For a detailed look at component interactions, design decisions, and system diag
 * **OneDrive**: Microsoft Graph REST API integration.
 * **Box**: Custom app integration via OAuth 2.0 with access token rotation/caching and auto-persistence.
 * **MEGA**: Client-side encrypted sync utilizing the `mega` library.
+* **WebDAV**: Sync to WebDAV-compliant servers.
+* **Amazon S3**: AWS S3 or S3-compatible backend storage (like MinIO) sync.
+* **SFTP**: Secure File Transfer Protocol sync.
+* **Nextcloud**: Sync to Nextcloud instances via WebDAV & OCS APIs.
 
 ---
 
@@ -39,6 +43,10 @@ For a detailed look at component interactions, design decisions, and system diag
    * Refer to the [OneDrive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/onedrive_setup.md)
    * Refer to the [Box API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/box_setup.md)
    * Refer to the [MEGA Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/mega_setup.md)
+   * Refer to the [WebDAV Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/webdav_setup.md)
+   * Refer to the [S3 Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/s3_setup.md)
+   * Refer to the [SFTP Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/sftp_setup.md)
+   * Refer to the [Nextcloud Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/nextcloud_setup.md)
 
 ---
 

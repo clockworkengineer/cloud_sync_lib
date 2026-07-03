@@ -28,6 +28,10 @@ pub trait StorageBackend: Send + Sync {
   - [`google_drive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/google_drive.rs): Google Drive REST API integration.
   - [`dropbox.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/dropbox.rs): Dropbox REST API integration. Includes prefix `destination_folder` path handling.
   - [`onedrive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/onedrive.rs): Microsoft OneDrive Graph API integration.
+  - [`webdav.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/webdav.rs): WebDAV client integration.
+  - [`s3.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/s3.rs): Amazon S3 and S3-Compatible API integration.
+  - [`sftp.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/sftp.rs): SFTP client integration.
+  - [`nextcloud.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/nextcloud.rs): Nextcloud WebDAV & OCS client integration.
   - [`box_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/box_provider.rs): Box storage API integration.
   - [`mega_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/mega_provider.rs): MEGA cloud storage encrypted client integration.
   - [`local_sim.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/local_sim.rs): Shared local fallback simulator (`LocalSimulation`) implementing local folder operations for offline testing.
@@ -43,6 +47,10 @@ Instead of connecting to remote web APIs, the providers delegate file operations
 * Google Drive simulated root: `./cloud_simulation/google_drive`
 * Dropbox simulated root: `./cloud_simulation/dropbox`
 * OneDrive simulated root: `./cloud_simulation/onedrive`
+* WebDAV simulated root: `./cloud_simulation/webdav`
+* S3 simulated root: `./cloud_simulation/s3`
+* SFTP simulated root: `./cloud_simulation/sftp`
+* Nextcloud simulated root: `./cloud_simulation/nextcloud`
 * Box simulated root: `./cloud_simulation/box`
 * MEGA simulated root: `./cloud_simulation/mega`
 

@@ -22,6 +22,10 @@ watch_directory = "./watched_folder"
 google_drive_root = "./cloud_simulation/google_drive"
 dropbox_root = "./cloud_simulation/dropbox"
 onedrive_root = "./cloud_simulation/onedrive"
+webdav_root = "./cloud_simulation/webdav"
+s3_root = "./cloud_simulation/s3"
+sftp_root = "./cloud_simulation/sftp"
+nextcloud_root = "./cloud_simulation/nextcloud"
 
 [google_credentials]
 client_id = "..."
@@ -34,6 +38,45 @@ enabled = true
 client_id = "..."
 client_secret = "..."
 refresh_token = "..."
+destination_folder = "MySyncFolder"
+enabled = true
+
+[onedrive_credentials]
+client_id = "..."
+client_secret = "..."
+refresh_token = "..."
+destination_folder = "MySyncFolder"
+enabled = true
+
+[webdav_credentials]
+url = "http://127.0.0.1:8080"
+username = "..."
+password = "..."
+destination_folder = "MySyncFolder"
+enabled = true
+
+[s3_credentials]
+bucket = "..."
+region = "us-east-1"
+access_key_id = "..."
+secret_access_key = "..."
+endpoint = "http://127.0.0.1:9000"
+destination_folder = "MySyncFolder"
+enabled = true
+
+[sftp_credentials]
+host = "127.0.0.1"
+port = 22
+username = "..."
+password = "..."
+private_key_path = ""
+destination_folder = "MySyncFolder"
+enabled = true
+
+[nextcloud_credentials]
+url = "http://127.0.0.1:8080"
+username = "..."
+app_password = "..."
 destination_folder = "MySyncFolder"
 enabled = true
 
