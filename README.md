@@ -38,15 +38,15 @@ For a detailed look at component interactions, design decisions, and system diag
    * By default, any backend without credentials falls back to a local folder simulation.
    * Toggle any backend on/off using the `enabled = true/false` parameter under its credentials block.
 3. **Follow API Setup Guides**:
-   * Refer to the [Google Drive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/google_drive_setup.md)
-   * Refer to the [Dropbox API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/dropbox_setup.md)
-   * Refer to the [OneDrive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/onedrive_setup.md)
-   * Refer to the [Box API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/box_setup.md)
-   * Refer to the [MEGA Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/mega_setup.md)
-   * Refer to the [WebDAV Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/webdav_setup.md)
-   * Refer to the [S3 Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/s3_setup.md)
-   * Refer to the [SFTP Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/sftp_setup.md)
-   * Refer to the [Nextcloud Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/nextcloud_setup.md)
+   * Refer to the [Google Drive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/google_drive_setup.md)
+   * Refer to the [Dropbox API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/dropbox_setup.md)
+   * Refer to the [OneDrive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/onedrive_setup.md)
+   * Refer to the [Box API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/box_setup.md)
+   * Refer to the [MEGA Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/mega_setup.md)
+   * Refer to the [WebDAV Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/webdav_setup.md)
+   * Refer to the [S3 Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/s3_setup.md)
+   * Refer to the [SFTP Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/sftp_setup.md)
+   * Refer to the [Nextcloud Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/nextcloud_setup.md)
 
 ---
 
