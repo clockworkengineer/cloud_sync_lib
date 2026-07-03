@@ -135,6 +135,23 @@ pub struct AzureBlobCredentials {
     pub sync: Option<bool>,
 }
 
+/// Credentials configuration for Google Cloud Storage (GCS).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GCSCredentials {
+    /// Target Google Cloud Storage bucket name.
+    pub bucket: String,
+    /// Absolute path to the Service Account JSON credentials key file.
+    pub service_account_key_path: String,
+    /// Custom endpoint URL (optional, used for local fake-gcs-server emulator).
+    pub endpoint: Option<String>,
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
+}
+
 #[cfg(feature = "google_drive")]
 pub mod google_drive;
 #[cfg(feature = "dropbox")]
@@ -155,6 +172,8 @@ pub mod box_provider;
 pub mod mega_provider;
 #[cfg(feature = "azure_blob")]
 pub mod azure_blob;
+#[cfg(feature = "gcs")]
+pub mod gcs;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -179,4 +198,6 @@ pub use box_provider::BoxProvider;
 pub use mega_provider::MegaProvider;
 #[cfg(feature = "azure_blob")]
 pub use azure_blob::AzureBlobProvider;
+#[cfg(feature = "gcs")]
+pub use gcs::GCSProvider;
 pub use fallback::SimulatedFallback;

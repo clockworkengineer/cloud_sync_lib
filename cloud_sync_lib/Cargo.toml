@@ -21,9 +21,11 @@ base64 = { version = "0.21", optional = true }
 hmac = { version = "0.12", optional = true }
 sha2 = { version = "0.10", optional = true }
 httpdate = { version = "1.0", optional = true }
+yup-oauth2 = { version = "8.3", optional = true }
+chrono = { version = "0.4", optional = true }
 
 [features]
-default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob"]
+default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs"]
 google_drive = []
 dropbox = []
 onedrive = []
@@ -34,6 +36,7 @@ nextcloud = []
 box = []
 mega = ["dep:mega", "dep:tokio-util", "dep:futures-util"]
 azure_blob = ["dep:base64", "dep:hmac", "dep:sha2", "dep:httpdate"]
+gcs = ["dep:yup-oauth2", "dep:chrono"]
 
 [dev-dependencies]
 tempfile = "3"

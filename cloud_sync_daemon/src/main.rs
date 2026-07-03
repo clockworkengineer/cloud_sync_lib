@@ -29,6 +29,8 @@ use cloud_sync_lib::BoxProvider;
 use cloud_sync_lib::MegaProvider;
 #[cfg(feature = "azure_blob")]
 use cloud_sync_lib::AzureBlobProvider;
+#[cfg(feature = "gcs")]
+use cloud_sync_lib::GCSProvider;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,7 +42,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[allow(unused_imports)]
 use config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, load_or_create_config,
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, load_or_create_config,
     DEFAULT_CONFIG_FILE
 };
 use watcher::handle_event;
@@ -235,6 +237,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             backends.push(azure_blob_backend);
         } else {
             info!("Azure Blob provider is disabled in configuration.");
+        }
+    }
+    #[cfg(feature = "gcs")]
+    {
+        if is_gcs_enabled(&config.gcs_credentials) {
+            let sync = config.gcs_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.gcs_credentials.clone().map(GCSProvider::new);
+            let gcs_root = config.gcs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_GCS_ROOT));
+            let local_sim = LocalSimulation::new(gcs_root, "GCS".to_string());
+            let gcs_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "GCS", sync));
+            backends.push(gcs_backend);
+        } else {
+            info!("GCS provider is disabled in configuration.");
         }
     }
     info!("Initialized cloud storage providers:");

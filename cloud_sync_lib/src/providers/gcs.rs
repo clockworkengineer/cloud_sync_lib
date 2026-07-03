@@ -1,0 +1,277 @@
+//! Google Cloud Storage (GCS) storage backend provider implementation.
+//!
+//! Handles interaction with the GCS JSON REST API. Supports OAuth2 authentication
+//! using Service Account JSON key files or bypasses auth for local emulators.
+
+use crate::traits::{StorageBackend, StorageError, StorageItem};
+use crate::providers::GCSCredentials;
+use crate::providers::utils::parse_response_error;
+use async_trait::async_trait;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+use tokio::fs;
+use tracing::info;
+use serde::Deserialize;
+use yup_oauth2::authenticator::ServiceAccountAuthenticator;
+
+#[derive(Deserialize, Debug)]
+struct GCSObject {
+    name: String,
+    size: String,
+    updated: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct GCSListResponse {
+    items: Option<Vec<GCSObject>>,
+}
+
+/// Storage provider client for Google Cloud Storage JSON API.
+pub struct GCSProvider {
+    /// The HTTP client for making API requests.
+    client: reqwest::Client,
+    /// Credentials configuration.
+    credentials: GCSCredentials,
+    /// GCS base API URL.
+    api_url: String,
+}
+
+fn url_encode(input: &str) -> String {
+    let mut encoded = String::new();
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    encoded
+}
+
+impl GCSProvider {
+    /// Creates a new `GCSProvider` using the provided credentials.
+    pub fn new(credentials: GCSCredentials) -> Self {
+        let api_url = if let Some(ref ep) = credentials.endpoint {
+            ep.trim_end_matches('/').to_string()
+        } else {
+            "https://storage.googleapis.com".to_string()
+        };
+
+        Self {
+            client: reqwest::Client::new(),
+            credentials,
+            api_url,
+        }
+    }
+
+    /// Configures custom endpoints, useful for mocking during tests.
+    #[cfg(test)]
+    pub fn with_endpoints(mut self, api_url: String) -> Self {
+        self.api_url = api_url;
+        self
+    }
+
+    /// Formats the remote path, incorporating the optional destination folder prefix.
+    fn format_path(&self, remote_path: &str) -> String {
+        let clean_path = remote_path.trim_start_matches('/');
+        if let Some(ref dest_folder) = self.credentials.destination_folder {
+            let clean_dest = dest_folder.trim_matches('/');
+            if !clean_dest.is_empty() {
+                if clean_path.is_empty() {
+                    return clean_dest.to_string();
+                } else {
+                    return format!("{}/{}", clean_dest, clean_path);
+                }
+            }
+        }
+        clean_path.to_string()
+    }
+
+    /// Retrieves an access token for GCS if service account credentials are provided.
+    async fn get_access_token(&self) -> Result<Option<String>, StorageError> {
+        if self.credentials.service_account_key_path.is_empty() {
+            return Ok(None);
+        }
+
+        let key = yup_oauth2::read_service_account_key(&self.credentials.service_account_key_path)
+            .await
+            .map_err(|e| StorageError::Authentication(format!("Failed to read service account key: {}", e)))?;
+
+        let auth = ServiceAccountAuthenticator::builder(key)
+            .build()
+            .await
+            .map_err(|e| StorageError::Authentication(format!("Failed to build authenticator: {}", e)))?;
+
+        let token = auth
+            .token(&["https://www.googleapis.com/auth/devstorage.full_control"])
+            .await
+            .map_err(|e| StorageError::Authentication(format!("Failed to retrieve OAuth token: {}", e)))?;
+
+        Ok(Some(token.token().unwrap_or_default().to_string()))
+    }
+}
+
+#[async_trait]
+impl StorageBackend for GCSProvider {
+    fn name(&self) -> &str {
+        "GCS"
+    }
+
+    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        let clean_path = self.format_path(remote_path);
+        info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+
+        let file_content = fs::read(local_path).await?;
+        let token = self.get_access_token().await?;
+
+        // URL encode the object name
+        let encoded_name = url_encode(&clean_path);
+        let upload_url = format!(
+            "{}/upload/storage/v1/b/{}/o?uploadType=media&name={}",
+            self.api_url, self.credentials.bucket, encoded_name
+        );
+
+        let mut req = self.client.post(&upload_url)
+            .header("Content-Type", "application/octet-stream")
+            .body(file_content);
+
+        if let Some(tok) = token {
+            req = req.bearer_auth(tok);
+        }
+
+        let res = req.send().await?;
+
+        if !res.status().is_success() {
+            return Err(parse_response_error(res, self.name(), "upload").await);
+        }
+
+        Ok(())
+    }
+
+    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        let clean_path = self.format_path(remote_path);
+        let token = self.get_access_token().await?;
+
+        let encoded_name = url_encode(&clean_path);
+        let download_url = format!(
+            "{}/storage/v1/b/{}/o/{}?alt=media",
+            self.api_url, self.credentials.bucket, encoded_name
+        );
+
+        let mut req = self.client.get(&download_url);
+        if let Some(tok) = token {
+            req = req.bearer_auth(tok);
+        }
+
+        let res = req.send().await?;
+
+        if !res.status().is_success() {
+            return Err(parse_response_error(res, self.name(), "download").await);
+        }
+
+        if let Some(parent) = local_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        let bytes = res.bytes().await?;
+        fs::write(local_path, bytes).await?;
+        Ok(())
+    }
+
+    async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+        let clean_path = self.format_path(remote_path);
+        let token = self.get_access_token().await?;
+
+        let encoded_name = url_encode(&clean_path);
+        let delete_url = format!(
+            "{}/storage/v1/b/{}/o/{}",
+            self.api_url, self.credentials.bucket, encoded_name
+        );
+
+        let mut req = self.client.delete(&delete_url);
+        if let Some(tok) = token {
+            req = req.bearer_auth(tok);
+        }
+
+        let res = req.send().await?;
+
+        if !res.status().is_success() {
+            return Err(parse_response_error(res, self.name(), "delete").await);
+        }
+
+        Ok(())
+    }
+
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        let clean_path = self.format_path(remote_path);
+        let token = self.get_access_token().await?;
+
+        let prefix_query = if clean_path.is_empty() {
+            "".to_string()
+        } else {
+            // GCS expects prefix parameter
+            let prefix = if clean_path.ends_with('/') {
+                clean_path.clone()
+            } else {
+                format!("{}/", clean_path)
+            };
+            format!("&prefix={}", url_encode(&prefix))
+        };
+
+        let list_url = format!(
+            "{}/storage/v1/b/{}/o?{}",
+            self.api_url, self.credentials.bucket, prefix_query
+        );
+
+        let mut req = self.client.get(&list_url);
+        if let Some(tok) = token {
+            req = req.bearer_auth(tok);
+        }
+
+        let res = req.send().await?;
+
+        if !res.status().is_success() {
+            return Err(parse_response_error(res, self.name(), "list").await);
+        }
+
+        let list_response: GCSListResponse = res.json().await?;
+        let mut items = Vec::new();
+
+        if let Some(objects) = list_response.items {
+            for obj in objects {
+                // Strip prefix destination_folder if present
+                let mut item_path = PathBuf::from(&obj.name);
+                if let Some(ref dest_folder) = self.credentials.destination_folder {
+                    let clean_dest = dest_folder.trim_matches('/');
+                    if !clean_dest.is_empty() {
+                        if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
+                            item_path = stripped.to_path_buf();
+                        }
+                    }
+                }
+
+                // Parse GCS RFC3339 time format
+                let modified = chrono::DateTime::parse_from_rfc3339(&obj.updated)
+                    .map(|dt| SystemTime::from(dt))
+                    .unwrap_or(SystemTime::now());
+
+                let size = obj.size.parse::<u64>().unwrap_or(0);
+
+                items.push(StorageItem {
+                    path: item_path,
+                    size,
+                    modified,
+                    is_dir: false, // GCS is a flat namespace, virtual directories are simulated
+                });
+            }
+        }
+
+        Ok(items)
+    }
+
+    fn sync(&self) -> bool {
+        self.credentials.sync.unwrap_or(true)
+    }
+}

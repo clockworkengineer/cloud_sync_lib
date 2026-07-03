@@ -7,6 +7,7 @@ s3_root = "./cloud_simulation/s3"
 sftp_root = "./cloud_simulation/sftp"
 nextcloud_root = "./cloud_simulation/nextcloud"
 azure_blob_root = "./cloud_simulation/azure_blob"
+gcs_root = "./cloud_simulation/gcs"
 
 [google_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"
@@ -88,6 +89,14 @@ account_name = "devstoreaccount1"
 account_key = "Eby8vdM0gThJrgY4RbrYGZUXmin47115CuvNytYiG8pxUXSBn9126Ek85GBv39i1EdjK71S1Yu08dBQ1g=="
 container = "sync-container"
 # endpoint = "http://127.0.0.1:10000/devstoreaccount1" # Optional local Azurite emulator
+destination_folder = "MySyncFolder" # Optional
+enabled = false
+sync = true
+
+[gcs_credentials]
+bucket = "test-bucket"
+service_account_key_path = ""
+# endpoint = "http://127.0.0.1:4443" # Optional local fake-gcs-server emulator
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync = true
