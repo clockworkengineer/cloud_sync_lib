@@ -22,11 +22,13 @@ use cloud_sync_lib::NextcloudProvider;
 use cloud_sync_lib::BoxProvider;
 #[cfg(feature = "mega")]
 use cloud_sync_lib::MegaProvider;
+#[cfg(feature = "azure_blob")]
+use cloud_sync_lib::AzureBlobProvider;
 
 use crate::DaemonState;
 #[allow(unused_imports)]
 use crate::config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, load_or_create_config
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, load_or_create_config
 };
 use crate::watcher::trigger_full_sync;
 
@@ -152,6 +154,16 @@ pub async fn handle_control_command(
                             let mega_root = config.mega_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_MEGA_ROOT));
                             let local_sim = LocalSimulation::new(mega_root, "MEGA".to_string());
                             backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "MEGA", sync)));
+                        }
+                    }
+                    #[cfg(feature = "azure_blob")]
+                    {
+                        if is_azure_blob_enabled(&config.azure_blob_credentials) {
+                            let sync = config.azure_blob_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+                            let inner = config.azure_blob_credentials.clone().map(AzureBlobProvider::new);
+                            let azure_blob_root = config.azure_blob_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_AZURE_BLOB_ROOT));
+                            let local_sim = LocalSimulation::new(azure_blob_root, "Azure Blob".to_string());
+                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Azure Blob", sync)));
                         }
                     }
                     s.backends = backends;

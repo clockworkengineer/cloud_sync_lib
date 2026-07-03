@@ -27,6 +27,8 @@ use cloud_sync_lib::NextcloudProvider;
 use cloud_sync_lib::BoxProvider;
 #[cfg(feature = "mega")]
 use cloud_sync_lib::MegaProvider;
+#[cfg(feature = "azure_blob")]
+use cloud_sync_lib::AzureBlobProvider;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -38,7 +40,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[allow(unused_imports)]
 use config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, load_or_create_config,
+    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, load_or_create_config,
     DEFAULT_CONFIG_FILE
 };
 use watcher::handle_event;
@@ -222,7 +224,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("MEGA provider is disabled in configuration.");
         }
     }
-
+    #[cfg(feature = "azure_blob")]
+    {
+        if is_azure_blob_enabled(&config.azure_blob_credentials) {
+            let sync = config.azure_blob_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.azure_blob_credentials.clone().map(AzureBlobProvider::new);
+            let azure_blob_root = config.azure_blob_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_AZURE_BLOB_ROOT));
+            let local_sim = LocalSimulation::new(azure_blob_root, "Azure Blob".to_string());
+            let azure_blob_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "Azure Blob", sync));
+            backends.push(azure_blob_backend);
+        } else {
+            info!("Azure Blob provider is disabled in configuration.");
+        }
+    }
     info!("Initialized cloud storage providers:");
     for backend in &backends {
         info!(" - {}", backend.name());

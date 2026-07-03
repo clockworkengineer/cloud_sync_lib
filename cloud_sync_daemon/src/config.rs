@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::info;
-use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials};
+use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials};
 
 pub const DEFAULT_CONFIG_FILE: &str = "config.toml";
 pub const DEFAULT_WATCH_DIR: &str = "./watched_folder";
@@ -16,6 +16,7 @@ pub const DEFAULT_SFTP_ROOT: &str = "./cloud_simulation/sftp";
 pub const DEFAULT_NEXTCLOUD_ROOT: &str = "./cloud_simulation/nextcloud";
 pub const DEFAULT_BOX_ROOT: &str = "./cloud_simulation/box";
 pub const DEFAULT_MEGA_ROOT: &str = "./cloud_simulation/mega";
+pub const DEFAULT_AZURE_BLOB_ROOT: &str = "./cloud_simulation/azure_blob";
 
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -30,6 +31,7 @@ pub struct AppConfig {
     pub nextcloud_root: PathBuf,
     pub box_root: Option<PathBuf>,
     pub mega_root: Option<PathBuf>,
+    pub azure_blob_root: Option<PathBuf>,
     pub google_credentials: Option<OAuthCredentials>,
     pub dropbox_credentials: Option<OAuthCredentials>,
     pub onedrive_credentials: Option<OAuthCredentials>,
@@ -39,6 +41,7 @@ pub struct AppConfig {
     pub nextcloud_credentials: Option<NextcloudCredentials>,
     pub box_credentials: Option<OAuthCredentials>,
     pub mega_credentials: Option<MegaCredentials>,
+    pub azure_blob_credentials: Option<AzureBlobCredentials>,
 }
 
 impl Default for AppConfig {
@@ -54,6 +57,7 @@ impl Default for AppConfig {
             nextcloud_root: PathBuf::from(DEFAULT_NEXTCLOUD_ROOT),
             box_root: Some(PathBuf::from(DEFAULT_BOX_ROOT)),
             mega_root: Some(PathBuf::from(DEFAULT_MEGA_ROOT)),
+            azure_blob_root: Some(PathBuf::from(DEFAULT_AZURE_BLOB_ROOT)),
             google_credentials: None,
             dropbox_credentials: None,
             onedrive_credentials: None,
@@ -63,6 +67,7 @@ impl Default for AppConfig {
             nextcloud_credentials: None,
             box_credentials: None,
             mega_credentials: None,
+            azure_blob_credentials: None,
         }
     }
 }
@@ -152,6 +157,17 @@ pub fn is_nextcloud_enabled(credentials: &Option<NextcloudCredentials>) -> bool 
 /// # Returns
 /// True if the provider is enabled, false otherwise.
 pub fn is_mega_enabled(credentials: &Option<MegaCredentials>) -> bool {
+    credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
+}
+
+/// Helper function to check if Azure Blob provider is enabled.
+///
+/// # Arguments
+/// * `credentials` - Azure Blob credentials configuration options.
+///
+/// # Returns
+/// True if the provider is enabled, false otherwise.
+pub fn is_azure_blob_enabled(credentials: &Option<AzureBlobCredentials>) -> bool {
     credentials.as_ref().map_or(true, |c| c.enabled.unwrap_or(true))
 }
 

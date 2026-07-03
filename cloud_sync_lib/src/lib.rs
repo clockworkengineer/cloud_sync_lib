@@ -9,7 +9,7 @@
 pub mod providers;
 pub mod traits;
 
-pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, SimulatedFallback, local_sim::LocalSimulation};
+pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, SimulatedFallback, local_sim::LocalSimulation};
 #[cfg(feature = "google_drive")]
 pub use providers::GoogleDriveProvider;
 #[cfg(feature = "dropbox")]
@@ -28,6 +28,8 @@ pub use providers::NextcloudProvider;
 pub use providers::BoxProvider;
 #[cfg(feature = "mega")]
 pub use providers::MegaProvider;
+#[cfg(feature = "azure_blob")]
+pub use providers::AzureBlobProvider;
 pub use traits::{StorageBackend, StorageError, StorageItem};
 
 #[cfg(test)]
@@ -1319,6 +1321,43 @@ mod tests {
         provider.download("hello.txt", &download_path).await.unwrap();
         assert!(download_path.exists());
         assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated MEGA storage!");
+
+        // Delete
+        provider.delete("hello.txt").await.unwrap();
+        assert!(!provider_root.join("hello.txt").exists());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "azure_blob")]
+    async fn test_azure_blob_provider_simulated_flow() {
+        let temp_dir = tempdir().unwrap();
+        let provider_root = temp_dir.path().join("azure_blob_root");
+        let local_sim = LocalSimulation::new(provider_root.clone(), "Azure Blob".to_string());
+        let provider = SimulatedFallback::<AzureBlobProvider>::new(None, local_sim, "Azure Blob", true);
+
+        // Create a local temporary file to upload
+        let local_file_path = temp_dir.path().join("test.txt");
+        let mut file = File::create(&local_file_path).unwrap();
+        writeln!(file, "Hello simulated Azure Blob storage!").unwrap();
+
+        // Upload
+        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+
+        // Verify remote file exists
+        let remote_file = provider_root.join("hello.txt");
+        assert!(remote_file.exists());
+        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated Azure Blob storage!");
+
+        // List
+        let items = provider.list("").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
+
+        // Download
+        let download_path = temp_dir.path().join("downloaded.txt");
+        provider.download("hello.txt", &download_path).await.unwrap();
+        assert!(download_path.exists());
+        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated Azure Blob storage!");
 
         // Delete
         provider.delete("hello.txt").await.unwrap();

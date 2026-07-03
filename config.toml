@@ -6,6 +6,7 @@ webdav_root = "./cloud_simulation/webdav"
 s3_root = "./cloud_simulation/s3"
 sftp_root = "./cloud_simulation/sftp"
 nextcloud_root = "./cloud_simulation/nextcloud"
+azure_blob_root = "./cloud_simulation/azure_blob"
 
 [google_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"
@@ -81,3 +82,12 @@ password = "your-mega-password"
 destination_folder = "PiSync" # Optional sub-folder name (creates it if missing)
 enabled = true                # Set to false to disable this provider
 sync = true                   # Set to false to disable deletion syncing
+
+[azure_blob_credentials]
+account_name = "devstoreaccount1"
+account_key = "Eby8vdM0gThJrgY4RbrYGZUXmin47115CuvNytYiG8pxUXSBn9126Ek85GBv39i1EdjK71S1Yu08dBQ1g=="
+container = "sync-container"
+# endpoint = "http://127.0.0.1:10000/devstoreaccount1" # Optional local Azurite emulator
+destination_folder = "MySyncFolder" # Optional
+enabled = false
+sync = true

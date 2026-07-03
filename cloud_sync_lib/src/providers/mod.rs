@@ -116,6 +116,25 @@ pub struct MegaCredentials {
     pub sync: Option<bool>,
 }
 
+/// Credentials configuration for Azure Blob Storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AzureBlobCredentials {
+    /// Azure Storage Account name.
+    pub account_name: String,
+    /// Azure Storage Account Access Key.
+    pub account_key: String,
+    /// Target Container name.
+    pub container: String,
+    /// Custom endpoint URL (optional, used for local Azurite emulator).
+    pub endpoint: Option<String>,
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
+}
+
 #[cfg(feature = "google_drive")]
 pub mod google_drive;
 #[cfg(feature = "dropbox")]
@@ -134,6 +153,8 @@ pub mod nextcloud;
 pub mod box_provider;
 #[cfg(feature = "mega")]
 pub mod mega_provider;
+#[cfg(feature = "azure_blob")]
+pub mod azure_blob;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
@@ -156,4 +177,6 @@ pub use nextcloud::NextcloudProvider;
 pub use box_provider::BoxProvider;
 #[cfg(feature = "mega")]
 pub use mega_provider::MegaProvider;
+#[cfg(feature = "azure_blob")]
+pub use azure_blob::AzureBlobProvider;
 pub use fallback::SimulatedFallback;
