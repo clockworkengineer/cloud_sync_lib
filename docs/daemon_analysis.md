@@ -15,10 +15,9 @@ This document provides a comprehensive technical analysis of the current `cloud_
 
 ## 2. Key Limitations & Missing Features
 
-### 1. Exclusion Patterns / Ignore Lists (`.syncignore`)
-*   **Current state**: The daemon syncs *all* file events inside the watch directory.
-*   **Why it's missing**: This leads to syncing heavy temporary build directories (e.g. `target/`, `node_modules/`) or OS metadata (e.g. `.DS_Store`, `Thumbs.db`), which wastes bandwidth and cloud storage.
-*   **Suggestion**: Implement a `.syncignore` parser (using the `ignore` or `glob` crate) to skip matching paths.
+### 1. Exclusion Patterns / Ignore Lists (`.syncignore`) [Implemented]
+*   **Status**: Implemented.
+*   **Details**: The daemon uses the `ignore` crate to build standard gitignore pattern matchers based on `.syncignore` file contents and the configuration's `exclude` list, skipping excluded files/directories during synchronization and directory scanning.
 
 ### 2. Bidirectional / Two-Way Syncing (Remote to Local)
 *   **Current state**: Sync is strictly one-way (local to remote). If a file is added or modified on the cloud interface directly, the daemon will not pull it down.
@@ -30,10 +29,9 @@ This document provides a comprehensive technical analysis of the current `cloud_
 *   **Why it's missing**: Many users sync private files to public clouds and require zero-knowledge encryption.
 *   **Suggestion**: Implement an `EncryptedBackend` wrapper that implements `StorageBackend` and automatically encrypts file bytes (using `aes-gcm` or `chacha20poly1305`) before writing/uploading.
 
-### 4. Bandwidth Rate Limiting
-*   **Current state**: Uploads consume as much bandwidth as the network interface can provide.
-*   **Why it's missing**: Saturating the upload link blocks other household/office network traffic.
-*   **Suggestion**: Implement a token-bucket rate limiter wrapper for `reqwest` streams to cap maximum upload/download speed.
+### 4. Bandwidth Rate Limiting [Implemented]
+*   **Status**: Implemented.
+*   **Details**: Implemented a thread-safe token-bucket rate limiter. Local folder simulation and streams wrap file copies/IO with `copy_rate_limited`, throttling bytes to the maximum upload/download rates defined in `config.toml`.
 
 ### 5. Empty Directory Syncing
 *   **Current state**: The watcher explicitly skips directory creation events (lines 111-122 of `watcher.rs`).
