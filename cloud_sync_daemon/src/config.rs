@@ -55,6 +55,8 @@ pub struct AppConfig {
     pub pcloud_credentials: Option<PCloudCredentials>,
     pub ipfs_credentials: Option<IPFSCredentials>,
     pub exclude: Option<Vec<String>>,
+    pub max_upload_rate: Option<u64>,
+    pub max_download_rate: Option<u64>,
 }
 
 impl Default for AppConfig {
@@ -90,6 +92,8 @@ impl Default for AppConfig {
             pcloud_credentials: None,
             ipfs_credentials: None,
             exclude: None,
+            max_upload_rate: None,
+            max_download_rate: None,
         }
     }
 }

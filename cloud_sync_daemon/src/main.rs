@@ -77,6 +77,219 @@ pub struct DaemonState {
     pub gitignore: ignore::gitignore::Gitignore,
     /// Copy of the current exclude configurations.
     pub exclude: Option<Vec<String>>,
+    /// Optional rate limiter for uploads.
+    pub upload_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
+    /// Optional rate limiter for downloads.
+    pub download_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
+}
+
+/// Builds the active storage backends and configures their rate limiters.
+pub fn build_backends(
+    config: &config::AppConfig,
+    upload_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
+    download_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
+) -> Vec<Arc<dyn StorageBackend>> {
+    let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
+
+    #[cfg(feature = "google_drive")]
+    {
+        if is_enabled(&config.google_credentials) {
+            let sync = config.google_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.google_credentials.clone().map(GoogleDriveProvider::new);
+            let local_sim = LocalSimulation::new(config.google_drive_root.clone(), "Google Drive".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let drive = Arc::new(SimulatedFallback::new(inner, local_sim, "Google Drive", sync));
+            backends.push(drive);
+        } else {
+            info!("Google Drive provider is disabled in configuration.");
+        }
+    }
+
+    #[cfg(feature = "dropbox")]
+    {
+        if is_enabled(&config.dropbox_credentials) {
+            let sync = config.dropbox_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.dropbox_credentials.clone().map(DropboxProvider::new);
+            let local_sim = LocalSimulation::new(config.dropbox_root.clone(), "Dropbox".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let dropbox = Arc::new(SimulatedFallback::new(inner, local_sim, "Dropbox", sync));
+            backends.push(dropbox);
+        } else {
+            info!("Dropbox provider is disabled in configuration.");
+        }
+    }
+
+    #[cfg(feature = "onedrive")]
+    {
+        if is_enabled(&config.onedrive_credentials) {
+            let sync = config.onedrive_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.onedrive_credentials.clone().map(OneDriveProvider::new);
+            let local_sim = LocalSimulation::new(config.onedrive_root.clone(), "OneDrive".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let onedrive = Arc::new(SimulatedFallback::new(inner, local_sim, "OneDrive", sync));
+            backends.push(onedrive);
+        } else {
+            info!("OneDrive provider is disabled in configuration.");
+        }
+    }
+
+    #[cfg(feature = "webdav")]
+    {
+        if is_webdav_enabled(&config.webdav_credentials) {
+            let sync = config.webdav_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.webdav_credentials.clone().map(WebDAVProvider::new);
+            let local_sim = LocalSimulation::new(config.webdav_root.clone(), "WebDAV".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let webdav = Arc::new(SimulatedFallback::new(inner, local_sim, "WebDAV", sync));
+            backends.push(webdav);
+        } else {
+            info!("WebDAV provider is disabled in configuration.");
+        }
+    }
+
+    #[cfg(feature = "s3")]
+    {
+        if is_s3_enabled(&config.s3_credentials) {
+            let sync = config.s3_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.s3_credentials.clone().map(S3Provider::new);
+            let local_sim = LocalSimulation::new(config.s3_root.clone(), "S3".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let s3_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "S3", sync));
+            backends.push(s3_backend);
+        } else {
+            info!("S3 provider is disabled in configuration.");
+        }
+    }
+
+    #[cfg(feature = "sftp")]
+    {
+        if is_sftp_enabled(&config.sftp_credentials) {
+            let sync = config.sftp_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.sftp_credentials.clone().map(SFTPProvider::new);
+            let local_sim = LocalSimulation::new(config.sftp_root.clone(), "SFTP".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let sftp_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "SFTP", sync));
+            backends.push(sftp_backend);
+        } else {
+            info!("SFTP provider is disabled in configuration.");
+        }
+    }
+
+    #[cfg(feature = "nextcloud")]
+    {
+        if is_nextcloud_enabled(&config.nextcloud_credentials) {
+            let sync = config.nextcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.nextcloud_credentials.clone().map(NextcloudProvider::new);
+            let local_sim = LocalSimulation::new(config.nextcloud_root.clone(), "Nextcloud".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let nextcloud_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "Nextcloud", sync));
+            backends.push(nextcloud_backend);
+        } else {
+            info!("Nextcloud provider is disabled in configuration.");
+        }
+    }
+
+    #[cfg(feature = "box")]
+    {
+        if is_enabled(&config.box_credentials) {
+            let sync = config.box_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.box_credentials.clone().map(BoxProvider::new);
+            let box_root = config.box_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_BOX_ROOT));
+            let local_sim = LocalSimulation::new(box_root, "Box".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let box_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "Box", sync));
+            backends.push(box_backend);
+        } else {
+            info!("Box provider is disabled in configuration.");
+        }
+    }
+
+    #[cfg(feature = "mega")]
+    {
+        if is_mega_enabled(&config.mega_credentials) {
+            let sync = config.mega_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.mega_credentials.clone().map(MegaProvider::new);
+            let mega_root = config.mega_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_MEGA_ROOT));
+            let local_sim = LocalSimulation::new(mega_root, "MEGA".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let mega_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "MEGA", sync));
+            backends.push(mega_backend);
+        } else {
+            info!("MEGA provider is disabled in configuration.");
+        }
+    }
+    #[cfg(feature = "azure_blob")]
+    {
+        if is_azure_blob_enabled(&config.azure_blob_credentials) {
+            let sync = config.azure_blob_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.azure_blob_credentials.clone().map(AzureBlobProvider::new);
+            let azure_blob_root = config.azure_blob_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_AZURE_BLOB_ROOT));
+            let local_sim = LocalSimulation::new(azure_blob_root, "Azure Blob".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let azure_blob_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "Azure Blob", sync));
+            backends.push(azure_blob_backend);
+        } else {
+            info!("Azure Blob provider is disabled in configuration.");
+        }
+    }
+    #[cfg(feature = "gcs")]
+    {
+        if is_gcs_enabled(&config.gcs_credentials) {
+            let sync = config.gcs_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.gcs_credentials.clone().map(GCSProvider::new);
+            let gcs_root = config.gcs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_GCS_ROOT));
+            let local_sim = LocalSimulation::new(gcs_root, "GCS".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let gcs_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "GCS", sync));
+            backends.push(gcs_backend);
+        } else {
+            info!("GCS provider is disabled in configuration.");
+        }
+    }
+    #[cfg(feature = "b2")]
+    {
+        if is_b2_enabled(&config.b2_credentials) {
+            let sync = config.b2_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.b2_credentials.clone().map(B2Provider::new);
+            let b2_root = config.b2_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_B2_ROOT));
+            let local_sim = LocalSimulation::new(b2_root, "B2".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let b2_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "B2", sync));
+            backends.push(b2_backend);
+        } else {
+            info!("B2 provider is disabled in configuration.");
+        }
+    }
+    #[cfg(feature = "pcloud")]
+    {
+        if is_pcloud_enabled(&config.pcloud_credentials) {
+            let sync = config.pcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.pcloud_credentials.clone().map(PCloudProvider::new);
+            let pcloud_root = config.pcloud_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_PCLOUD_ROOT));
+            let local_sim = LocalSimulation::new(pcloud_root, "pCloud".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let pcloud_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "pCloud", sync));
+            backends.push(pcloud_backend);
+        } else {
+            info!("pCloud provider is disabled in configuration.");
+        }
+    }
+    #[cfg(feature = "ipfs")]
+    {
+        if is_ipfs_enabled(&config.ipfs_credentials) {
+            let sync = config.ipfs_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
+            let inner = config.ipfs_credentials.clone().map(IPFSProvider::new);
+            let ipfs_root = config.ipfs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_IPFS_ROOT));
+            let local_sim = LocalSimulation::new(ipfs_root, "IPFS".to_string())
+                .with_limiters(upload_limiter.clone(), download_limiter.clone());
+            let ipfs_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "IPFS", sync));
+            backends.push(ipfs_backend);
+        } else {
+            info!("IPFS provider is disabled in configuration.");
+        }
+    }
+
+    backends
 }
 
 #[tokio::main]
@@ -119,193 +332,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gitignore = watcher::build_gitignore(&watch_dir, &config.exclude);
     let exclude = config.exclude.clone();
 
+    // Initialize rate limiters
+    let upload_limiter = config.max_upload_rate.map(|rate| {
+        cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024)
+    });
+    let download_limiter = config.max_download_rate.map(|rate| {
+        cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024)
+    });
+
     // Initialize Providers
-    let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
+    let backends = build_backends(&config, upload_limiter.clone(), download_limiter.clone());
 
-    #[cfg(feature = "google_drive")]
-    {
-        if is_enabled(&config.google_credentials) {
-            let sync = config.google_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.google_credentials.clone().map(GoogleDriveProvider::new);
-            let local_sim = LocalSimulation::new(config.google_drive_root.clone(), "Google Drive".to_string());
-            let drive = Arc::new(SimulatedFallback::new(inner, local_sim, "Google Drive", sync));
-            backends.push(drive);
-        } else {
-            info!("Google Drive provider is disabled in configuration.");
-        }
-    }
-
-    #[cfg(feature = "dropbox")]
-    {
-        if is_enabled(&config.dropbox_credentials) {
-            let sync = config.dropbox_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.dropbox_credentials.clone().map(DropboxProvider::new);
-            let local_sim = LocalSimulation::new(config.dropbox_root.clone(), "Dropbox".to_string());
-            let dropbox = Arc::new(SimulatedFallback::new(inner, local_sim, "Dropbox", sync));
-            backends.push(dropbox);
-        } else {
-            info!("Dropbox provider is disabled in configuration.");
-        }
-    }
-
-    #[cfg(feature = "onedrive")]
-    {
-        if is_enabled(&config.onedrive_credentials) {
-            let sync = config.onedrive_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.onedrive_credentials.clone().map(OneDriveProvider::new);
-            let local_sim = LocalSimulation::new(config.onedrive_root.clone(), "OneDrive".to_string());
-            let onedrive = Arc::new(SimulatedFallback::new(inner, local_sim, "OneDrive", sync));
-            backends.push(onedrive);
-        } else {
-            info!("OneDrive provider is disabled in configuration.");
-        }
-    }
-
-    #[cfg(feature = "webdav")]
-    {
-        if is_webdav_enabled(&config.webdav_credentials) {
-            let sync = config.webdav_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.webdav_credentials.clone().map(WebDAVProvider::new);
-            let local_sim = LocalSimulation::new(config.webdav_root.clone(), "WebDAV".to_string());
-            let webdav = Arc::new(SimulatedFallback::new(inner, local_sim, "WebDAV", sync));
-            backends.push(webdav);
-        } else {
-            info!("WebDAV provider is disabled in configuration.");
-        }
-    }
-
-    #[cfg(feature = "s3")]
-    {
-        if is_s3_enabled(&config.s3_credentials) {
-            let sync = config.s3_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.s3_credentials.clone().map(S3Provider::new);
-            let local_sim = LocalSimulation::new(config.s3_root.clone(), "S3".to_string());
-            let s3_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "S3", sync));
-            backends.push(s3_backend);
-        } else {
-            info!("S3 provider is disabled in configuration.");
-        }
-    }
-
-    #[cfg(feature = "sftp")]
-    {
-        if is_sftp_enabled(&config.sftp_credentials) {
-            let sync = config.sftp_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.sftp_credentials.clone().map(SFTPProvider::new);
-            let local_sim = LocalSimulation::new(config.sftp_root.clone(), "SFTP".to_string());
-            let sftp_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "SFTP", sync));
-            backends.push(sftp_backend);
-        } else {
-            info!("SFTP provider is disabled in configuration.");
-        }
-    }
-
-    #[cfg(feature = "nextcloud")]
-    {
-        if is_nextcloud_enabled(&config.nextcloud_credentials) {
-            let sync = config.nextcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.nextcloud_credentials.clone().map(NextcloudProvider::new);
-            let local_sim = LocalSimulation::new(config.nextcloud_root.clone(), "Nextcloud".to_string());
-            let nextcloud_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "Nextcloud", sync));
-            backends.push(nextcloud_backend);
-        } else {
-            info!("Nextcloud provider is disabled in configuration.");
-        }
-    }
-
-    #[cfg(feature = "box")]
-    {
-        if is_enabled(&config.box_credentials) {
-            let sync = config.box_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.box_credentials.clone().map(BoxProvider::new);
-            let box_root = config.box_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_BOX_ROOT));
-            let local_sim = LocalSimulation::new(box_root, "Box".to_string());
-            let box_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "Box", sync));
-            backends.push(box_backend);
-        } else {
-            info!("Box provider is disabled in configuration.");
-        }
-    }
-
-    #[cfg(feature = "mega")]
-    {
-        if is_mega_enabled(&config.mega_credentials) {
-            let sync = config.mega_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.mega_credentials.clone().map(MegaProvider::new);
-            let mega_root = config.mega_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_MEGA_ROOT));
-            let local_sim = LocalSimulation::new(mega_root, "MEGA".to_string());
-            let mega_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "MEGA", sync));
-            backends.push(mega_backend);
-        } else {
-            info!("MEGA provider is disabled in configuration.");
-        }
-    }
-    #[cfg(feature = "azure_blob")]
-    {
-        if is_azure_blob_enabled(&config.azure_blob_credentials) {
-            let sync = config.azure_blob_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.azure_blob_credentials.clone().map(AzureBlobProvider::new);
-            let azure_blob_root = config.azure_blob_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_AZURE_BLOB_ROOT));
-            let local_sim = LocalSimulation::new(azure_blob_root, "Azure Blob".to_string());
-            let azure_blob_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "Azure Blob", sync));
-            backends.push(azure_blob_backend);
-        } else {
-            info!("Azure Blob provider is disabled in configuration.");
-        }
-    }
-    #[cfg(feature = "gcs")]
-    {
-        if is_gcs_enabled(&config.gcs_credentials) {
-            let sync = config.gcs_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.gcs_credentials.clone().map(GCSProvider::new);
-            let gcs_root = config.gcs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_GCS_ROOT));
-            let local_sim = LocalSimulation::new(gcs_root, "GCS".to_string());
-            let gcs_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "GCS", sync));
-            backends.push(gcs_backend);
-        } else {
-            info!("GCS provider is disabled in configuration.");
-        }
-    }
-    #[cfg(feature = "b2")]
-    {
-        if is_b2_enabled(&config.b2_credentials) {
-            let sync = config.b2_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.b2_credentials.clone().map(B2Provider::new);
-            let b2_root = config.b2_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_B2_ROOT));
-            let local_sim = LocalSimulation::new(b2_root, "B2".to_string());
-            let b2_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "B2", sync));
-            backends.push(b2_backend);
-        } else {
-            info!("B2 provider is disabled in configuration.");
-        }
-    }
-    #[cfg(feature = "pcloud")]
-    {
-        if is_pcloud_enabled(&config.pcloud_credentials) {
-            let sync = config.pcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.pcloud_credentials.clone().map(PCloudProvider::new);
-            let pcloud_root = config.pcloud_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_PCLOUD_ROOT));
-            let local_sim = LocalSimulation::new(pcloud_root, "pCloud".to_string());
-            let pcloud_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "pCloud", sync));
-            backends.push(pcloud_backend);
-        } else {
-            info!("pCloud provider is disabled in configuration.");
-        }
-    }
-    #[cfg(feature = "ipfs")]
-    {
-        if is_ipfs_enabled(&config.ipfs_credentials) {
-            let sync = config.ipfs_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-            let inner = config.ipfs_credentials.clone().map(IPFSProvider::new);
-            let ipfs_root = config.ipfs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_IPFS_ROOT));
-            let local_sim = LocalSimulation::new(ipfs_root, "IPFS".to_string());
-            let ipfs_backend = Arc::new(SimulatedFallback::new(inner, local_sim, "IPFS", sync));
-            backends.push(ipfs_backend);
-        } else {
-            info!("IPFS provider is disabled in configuration.");
-        }
-    }
-    info!("Initialized cloud storage providers:");
+    info!("Active cloud storage backends:");
     for backend in &backends {
         info!(" - {}", backend.name());
     }
@@ -320,6 +358,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui_addr,
         gitignore,
         exclude,
+        upload_limiter,
+        download_limiter,
     }));
 
     // Set up mpsc channel for events

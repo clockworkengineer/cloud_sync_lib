@@ -14,6 +14,7 @@ serde_json = "1.0"
 quick-xml = { version = "0.31", features = ["serialize"] }
 rust-s3 = { version = "0.33", default-features = false, features = ["tokio-rustls-tls"], optional = true }
 ssh2 = { version = "0.9", optional = true }
+bytes = "1"
 mega = { version = "0.4", optional = true }
 tokio-util = { version = "0.7", features = ["compat"], optional = true }
 futures-util = { version = "0.3", optional = true }

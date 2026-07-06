@@ -3,6 +3,7 @@
 //! Provides an implementation of storage simulation on the local filesystem.
 
 use crate::traits::{StorageItem, StorageError};
+use crate::rate_limit::{TokenBucket, copy_rate_limited};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
@@ -16,6 +17,10 @@ pub struct LocalSimulation {
     root_dir: PathBuf,
     /// The name of the provider we are simulating (e.g. "Dropbox").
     provider_name: String,
+    /// Optional upload rate limiter
+    upload_limiter: Option<TokenBucket>,
+    /// Optional download rate limiter
+    download_limiter: Option<TokenBucket>,
 }
 
 impl LocalSimulation {
@@ -31,7 +36,20 @@ impl LocalSimulation {
         Self {
             root_dir,
             provider_name,
+            upload_limiter: None,
+            download_limiter: None,
         }
+    }
+
+    /// Sets the upload and download rate limiters.
+    pub fn with_limiters(
+        mut self,
+        upload_limiter: Option<TokenBucket>,
+        download_limiter: Option<TokenBucket>,
+    ) -> Self {
+        self.upload_limiter = upload_limiter;
+        self.download_limiter = download_limiter;
+        self
     }
 
     /// Maps a remote path to the local directory simulation structure.
@@ -60,7 +78,7 @@ impl LocalSimulation {
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).await?;
         }
-        fs::copy(local_path, &destination).await?;
+        copy_rate_limited(local_path, &destination, self.upload_limiter.clone()).await?;
         Ok(())
     }
 
@@ -81,7 +99,7 @@ impl LocalSimulation {
         if let Some(parent) = local_path.parent() {
             fs::create_dir_all(parent).await?;
         }
-        fs::copy(&source, local_path).await?;
+        copy_rate_limited(&source, local_path, self.download_limiter.clone()).await?;
         Ok(())
     }
 

@@ -346,6 +346,8 @@ mod tests {
             ui_addr: None,
             gitignore: Gitignore::empty(),
             exclude: None,
+            upload_limiter: None,
+            download_limiter: None,
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));

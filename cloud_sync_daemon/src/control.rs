@@ -3,35 +3,6 @@
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info};
-use cloud_sync_lib::{StorageBackend, SimulatedFallback, LocalSimulation};
-#[cfg(feature = "google_drive")]
-use cloud_sync_lib::GoogleDriveProvider;
-#[cfg(feature = "dropbox")]
-use cloud_sync_lib::DropboxProvider;
-#[cfg(feature = "onedrive")]
-use cloud_sync_lib::OneDriveProvider;
-#[cfg(feature = "webdav")]
-use cloud_sync_lib::WebDAVProvider;
-#[cfg(feature = "s3")]
-use cloud_sync_lib::S3Provider;
-#[cfg(feature = "sftp")]
-use cloud_sync_lib::SFTPProvider;
-#[cfg(feature = "nextcloud")]
-use cloud_sync_lib::NextcloudProvider;
-#[cfg(feature = "box")]
-use cloud_sync_lib::BoxProvider;
-#[cfg(feature = "mega")]
-use cloud_sync_lib::MegaProvider;
-#[cfg(feature = "azure_blob")]
-use cloud_sync_lib::AzureBlobProvider;
-#[cfg(feature = "gcs")]
-use cloud_sync_lib::GCSProvider;
-#[cfg(feature = "b2")]
-use cloud_sync_lib::B2Provider;
-#[cfg(feature = "pcloud")]
-use cloud_sync_lib::PCloudProvider;
-#[cfg(feature = "ipfs")]
-use cloud_sync_lib::IPFSProvider;
 
 use crate::DaemonState;
 #[allow(unused_imports)]
@@ -80,144 +51,19 @@ pub async fn handle_control_command(
             info!("Reloading configuration file: {}...", s.config_file);
             match load_or_create_config(&s.config_file).await {
                 Ok(config) => {
-                    let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
-                    #[cfg(feature = "google_drive")]
-                    {
-                        if is_enabled(&config.google_credentials) {
-                            let sync = config.google_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.google_credentials.clone().map(GoogleDriveProvider::new);
-                            let local_sim = LocalSimulation::new(config.google_drive_root.clone(), "Google Drive".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Google Drive", sync)));
-                        }
-                    }
-                    #[cfg(feature = "dropbox")]
-                    {
-                        if is_enabled(&config.dropbox_credentials) {
-                            let sync = config.dropbox_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.dropbox_credentials.clone().map(DropboxProvider::new);
-                            let local_sim = LocalSimulation::new(config.dropbox_root.clone(), "Dropbox".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Dropbox", sync)));
-                        }
-                    }
-                    #[cfg(feature = "onedrive")]
-                    {
-                        if is_enabled(&config.onedrive_credentials) {
-                            let sync = config.onedrive_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.onedrive_credentials.clone().map(OneDriveProvider::new);
-                            let local_sim = LocalSimulation::new(config.onedrive_root.clone(), "OneDrive".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "OneDrive", sync)));
-                        }
-                    }
-                    #[cfg(feature = "webdav")]
-                    {
-                        if is_webdav_enabled(&config.webdav_credentials) {
-                            let sync = config.webdav_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.webdav_credentials.clone().map(WebDAVProvider::new);
-                            let local_sim = LocalSimulation::new(config.webdav_root.clone(), "WebDAV".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "WebDAV", sync)));
-                        }
-                    }
-                    #[cfg(feature = "s3")]
-                    {
-                        if is_s3_enabled(&config.s3_credentials) {
-                            let sync = config.s3_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.s3_credentials.clone().map(S3Provider::new);
-                            let local_sim = LocalSimulation::new(config.s3_root.clone(), "S3".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "S3", sync)));
-                        }
-                    }
-                    #[cfg(feature = "sftp")]
-                    {
-                        if is_sftp_enabled(&config.sftp_credentials) {
-                            let sync = config.sftp_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.sftp_credentials.clone().map(SFTPProvider::new);
-                            let local_sim = LocalSimulation::new(config.sftp_root.clone(), "SFTP".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "SFTP", sync)));
-                        }
-                    }
-                    #[cfg(feature = "nextcloud")]
-                    {
-                        if is_nextcloud_enabled(&config.nextcloud_credentials) {
-                            let sync = config.nextcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.nextcloud_credentials.clone().map(NextcloudProvider::new);
-                            let local_sim = LocalSimulation::new(config.nextcloud_root.clone(), "Nextcloud".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Nextcloud", sync)));
-                        }
-                    }
-                    #[cfg(feature = "box")]
-                    {
-                        if is_enabled(&config.box_credentials) {
-                            let sync = config.box_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.box_credentials.clone().map(BoxProvider::new);
-                            let box_root = config.box_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_BOX_ROOT));
-                            let local_sim = LocalSimulation::new(box_root, "Box".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Box", sync)));
-                        }
-                    }
-                    #[cfg(feature = "mega")]
-                    {
-                        if is_mega_enabled(&config.mega_credentials) {
-                            let sync = config.mega_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.mega_credentials.clone().map(MegaProvider::new);
-                            let mega_root = config.mega_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_MEGA_ROOT));
-                            let local_sim = LocalSimulation::new(mega_root, "MEGA".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "MEGA", sync)));
-                        }
-                    }
-                    #[cfg(feature = "azure_blob")]
-                    {
-                        if is_azure_blob_enabled(&config.azure_blob_credentials) {
-                            let sync = config.azure_blob_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.azure_blob_credentials.clone().map(AzureBlobProvider::new);
-                            let azure_blob_root = config.azure_blob_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_AZURE_BLOB_ROOT));
-                            let local_sim = LocalSimulation::new(azure_blob_root, "Azure Blob".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "Azure Blob", sync)));
-                        }
-                    }
-                    #[cfg(feature = "gcs")]
-                    {
-                        if is_gcs_enabled(&config.gcs_credentials) {
-                            let sync = config.gcs_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.gcs_credentials.clone().map(GCSProvider::new);
-                            let gcs_root = config.gcs_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_GCS_ROOT));
-                            let local_sim = LocalSimulation::new(gcs_root, "GCS".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "GCS", sync)));
-                        }
-                    }
-                    #[cfg(feature = "b2")]
-                    {
-                        if is_b2_enabled(&config.b2_credentials) {
-                            let sync = config.b2_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.b2_credentials.clone().map(B2Provider::new);
-                            let b2_root = config.b2_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_B2_ROOT));
-                            let local_sim = LocalSimulation::new(b2_root, "B2".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "B2", sync)));
-                        }
-                    }
-                    #[cfg(feature = "pcloud")]
-                    {
-                        if is_pcloud_enabled(&config.pcloud_credentials) {
-                            let sync = config.pcloud_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.pcloud_credentials.clone().map(PCloudProvider::new);
-                            let pcloud_root = config.pcloud_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_PCLOUD_ROOT));
-                            let local_sim = LocalSimulation::new(pcloud_root, "pCloud".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "pCloud", sync)));
-                        }
-                    }
-                    #[cfg(feature = "ipfs")]
-                    {
-                        if is_ipfs_enabled(&config.ipfs_credentials) {
-                            let sync = config.ipfs_credentials.as_ref().and_then(|c| c.sync).unwrap_or(true);
-                            let inner = config.ipfs_credentials.clone().map(IPFSProvider::new);
-                            let ipfs_root = config.ipfs_root.clone().unwrap_or_else(|| std::path::PathBuf::from(crate::config::DEFAULT_IPFS_ROOT));
-                            let local_sim = LocalSimulation::new(ipfs_root, "IPFS".to_string());
-                            backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, "IPFS", sync)));
-                        }
-                    }
+                    let upload_limiter = config.max_upload_rate.map(|rate| {
+                        cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024)
+                    });
+                    let download_limiter = config.max_download_rate.map(|rate| {
+                        cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024)
+                    });
+                    let backends = crate::build_backends(&config, upload_limiter.clone(), download_limiter.clone());
                     s.backends = backends;
+                    s.upload_limiter = upload_limiter;
+                    s.download_limiter = download_limiter;
                     s.exclude = config.exclude.clone();
                     s.gitignore = crate::watcher::build_gitignore(&s.watch_dir, &config.exclude);
-                    info!("Configuration reloaded successfully. Active backends updated.");
+                    info!("Configuration reloaded successfully. Active backends and rate limits updated.");
                     "Status: Config reloaded successfully\n".to_string()
                 }
                 Err(e) => {
