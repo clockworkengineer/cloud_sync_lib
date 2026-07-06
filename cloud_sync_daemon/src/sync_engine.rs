@@ -11,60 +11,7 @@ struct FileInfo {
     is_dir: bool,
 }
 
-/// Scans the local watched directory recursively and builds a map of relative file paths to their metadata.
-async fn scan_local_dir(
-    watch_dir: &Path,
-    gitignore: &ignore::gitignore::Gitignore,
-) -> Result<HashMap<String, FileInfo>, std::io::Error> {
-    let mut files = HashMap::new();
-    let mut queue = vec![watch_dir.to_path_buf()];
 
-    while let Some(current_dir) = queue.pop() {
-        if current_dir != watch_dir && gitignore.matched_path_or_any_parents(&current_dir, true).is_ignore() {
-            continue;
-        }
-
-        let mut entries = tokio::fs::read_dir(current_dir).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            let metadata = entry.metadata().await?;
-
-            if metadata.is_dir() {
-                if gitignore.matched_path_or_any_parents(&path, true).is_ignore() {
-                    continue;
-                }
-                queue.push(path.clone());
-                if let Ok(rel_path) = path.strip_prefix(watch_dir) {
-                    let rel_str = rel_path.to_string_lossy().to_string();
-                    if !rel_str.is_empty() {
-                        files.insert(rel_str, FileInfo {
-                            size: 0,
-                            modified: metadata.modified().unwrap_or(SystemTime::now()),
-                            is_dir: true,
-                        });
-                    }
-                }
-            } else if metadata.is_file() {
-                if gitignore.matched_path_or_any_parents(&path, false).is_ignore() {
-                    continue;
-                }
-                if let Ok(rel_path) = path.strip_prefix(watch_dir) {
-                    let rel_str = rel_path.to_string_lossy().to_string();
-                    if rel_str == ".sync_state.json" || rel_str == ".syncignore" {
-                        continue;
-                    }
-                    files.insert(rel_str, FileInfo {
-                        size: metadata.len(),
-                        modified: metadata.modified().unwrap_or(SystemTime::now()),
-                        is_dir: false,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(files)
-}
 
 /// Scans the remote storage directory recursively and builds a map of relative file paths to their metadata.
 async fn scan_remote_dir(
@@ -176,7 +123,15 @@ pub async fn sync_bidirectional(
     let mut sync_state = SyncState::load(state_file_path).await.unwrap_or_default();
 
     // 2. Scan directories
-    let local_files = scan_local_dir(watch_dir, gitignore).await?;
+    let local_scanned = crate::watcher::scan_local_directory(watch_dir, gitignore).await?;
+    let mut local_files = HashMap::new();
+    for (rel_path, item) in local_scanned {
+        local_files.insert(rel_path, FileInfo {
+            size: item.size,
+            modified: item.modified,
+            is_dir: item.is_dir,
+        });
+    }
     let remote_files = scan_remote_dir(backend).await?;
 
     // 3. Process changes

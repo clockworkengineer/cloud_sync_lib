@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::fs;
 use tokio::sync::Mutex;
 use notify::{Event, EventKind};
@@ -13,6 +13,7 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
 use crate::DaemonState;
 use crate::{DEBOUNCE_DELAY_MS, RETRY_DELAY_MS, MAX_SYNC_ATTEMPTS};
+use crate::utils::get_remote_path;
 
 /// Builds a new Gitignore matcher based on .syncignore and app config excludes.
 pub fn build_gitignore(watch_dir: &Path, exclude_patterns: &Option<Vec<String>>) -> Gitignore {
@@ -33,89 +34,95 @@ pub fn build_gitignore(watch_dir: &Path, exclude_patterns: &Option<Vec<String>>)
     builder.build().unwrap_or_else(|_| Gitignore::empty())
 }
 
-/// Helper function to strip prefix from the watch directory path to get the relative remote path.
-///
-/// # Arguments
-/// * `path` - Path of the file being synced.
-/// * `watch_dir` - The watched root directory path.
-///
-/// # Returns
-/// The normalized remote path string, or None if prefix stripping fails.
-pub fn get_remote_path(path: &Path, watch_dir: &Path) -> Option<String> {
-    let relative_path = match path.strip_prefix(watch_dir) {
-        Ok(p) => p.to_path_buf(),
-        Err(_) => {
-            let path_str = path.to_string_lossy();
-            let watch_dir_str = watch_dir.to_string_lossy();
-            if path_str.starts_with(&*watch_dir_str) {
-                Path::new(&path_str[watch_dir_str.len()..]).to_path_buf()
-            } else {
-                return None;
-            }
-        }
-    };
-    Some(relative_path.to_string_lossy().replace('\\', "/"))
+#[derive(Debug, Clone)]
+pub struct ScannedItem {
+    pub path: PathBuf,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: SystemTime,
 }
 
-/// Scans the watch directory recursively and uploads all files to active backends.
-///
-/// # Arguments
-/// * `watch_dir` - The local directory root to scan.
-/// * `backends` - Slice of active storage backends.
-/// * `gitignore` - Pattern matcher for file exclusions.
-///
-/// # Returns
-/// `std::io::Result` indicating scanning success/failure.
-pub async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>], gitignore: &Gitignore) -> std::io::Result<()> {
-    let mut dir_entries = vec![watch_dir.to_path_buf()];
-    while let Some(current_dir) = dir_entries.pop() {
+/// Recursively scans a local directory, building a map of relative file paths to their metadata, applying Gitignore pattern exclusions.
+pub async fn scan_local_directory(
+    watch_dir: &Path,
+    gitignore: &Gitignore,
+) -> Result<HashMap<String, ScannedItem>, std::io::Error> {
+    let mut files = HashMap::new();
+    let mut queue = vec![watch_dir.to_path_buf()];
+
+    while let Some(current_dir) = queue.pop() {
         if current_dir != watch_dir && gitignore.matched_path_or_any_parents(&current_dir, true).is_ignore() {
-            info!("Skipping excluded directory: {:?}", current_dir);
             continue;
         }
+
         let mut entries = fs::read_dir(current_dir).await?;
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
-            let metadata = fs::metadata(&path).await?;
+            let metadata = entry.metadata().await?;
+
             if metadata.is_dir() {
                 if gitignore.matched_path_or_any_parents(&path, true).is_ignore() {
-                    info!("Skipping excluded directory: {:?}", path);
                     continue;
                 }
-                dir_entries.push(path.clone());
-                if let Some(remote_path_str) = get_remote_path(&path, watch_dir) {
-                    for backend in backends {
-                        let backend = backend.clone();
-                        let remote_path = remote_path_str.clone();
-                        tokio::spawn(async move {
-                            info!("[{}] Syncing directory '{}' via manual trigger", backend.name(), remote_path);
-                            if let Err(e) = backend.create_folder(&remote_path).await {
-                                error!("[{}] Failed to create directory '{}': {}", backend.name(), remote_path, e);
-                            }
+                queue.push(path.clone());
+                if let Ok(rel_path) = path.strip_prefix(watch_dir) {
+                    let rel_str = rel_path.to_string_lossy().to_string();
+                    if !rel_str.is_empty() {
+                        files.insert(rel_str, ScannedItem {
+                            path: path.clone(),
+                            is_dir: true,
+                            size: 0,
+                            modified: metadata.modified().unwrap_or(SystemTime::now()),
                         });
                     }
                 }
             } else if metadata.is_file() {
                 if gitignore.matched_path_or_any_parents(&path, false).is_ignore() {
-                    info!("Skipping excluded file: {:?}", path);
                     continue;
                 }
-                if let Some(remote_path_str) = get_remote_path(&path, watch_dir) {
-                    for backend in backends {
-                        let backend = backend.clone();
-                        let local_path = path.clone();
-                        let remote_path = remote_path_str.clone();
-                        tokio::spawn(async move {
-                            info!("[{}] Syncing '{}' via manual trigger", backend.name(), remote_path);
-                            if let Err(e) = backend.upload(&local_path, &remote_path).await {
-                                error!("[{}] Failed to sync '{}': {}", backend.name(), remote_path, e);
-                            } else {
-                                info!("[{}] Successfully synced '{}'", backend.name(), remote_path);
-                            }
-                        });
+                if let Ok(rel_path) = path.strip_prefix(watch_dir) {
+                    let rel_str = rel_path.to_string_lossy().to_string();
+                    if rel_str == ".sync_state.json" || rel_str == ".syncignore" {
+                        continue;
                     }
+                    files.insert(rel_str, ScannedItem {
+                        path: path.clone(),
+                        is_dir: false,
+                        size: metadata.len(),
+                        modified: metadata.modified().unwrap_or(SystemTime::now()),
+                    });
                 }
             }
+        }
+    }
+
+    Ok(files)
+}
+
+/// Scans the watch directory recursively and uploads all files to active backends.
+pub async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>], gitignore: &Gitignore) -> std::io::Result<()> {
+    let items = scan_local_directory(watch_dir, gitignore).await?;
+    for (remote_path_str, item) in items {
+        for backend in backends {
+            let backend = backend.clone();
+            let local_path = item.path.clone();
+            let remote_path = remote_path_str.clone();
+            let is_dir = item.is_dir;
+            tokio::spawn(async move {
+                if is_dir {
+                    info!("[{}] Syncing directory '{}' via manual trigger", backend.name(), remote_path);
+                    if let Err(e) = backend.create_folder(&remote_path).await {
+                        error!("[{}] Failed to create directory '{}': {}", backend.name(), remote_path, e);
+                    }
+                } else {
+                    info!("[{}] Syncing '{}' via manual trigger", backend.name(), remote_path);
+                    if let Err(e) = backend.upload(&local_path, &remote_path).await {
+                        error!("[{}] Failed to sync '{}': {}", backend.name(), remote_path, e);
+                    } else {
+                        info!("[{}] Successfully synced '{}'", backend.name(), remote_path);
+                    }
+                }
+            });
         }
     }
     Ok(())

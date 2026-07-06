@@ -8,6 +8,7 @@ pub mod config;
 pub mod control;
 pub mod watcher;
 pub mod sync_engine;
+pub mod utils;
 
 use cloud_sync_lib::{StorageBackend, SimulatedFallback, LocalSimulation};
 #[cfg(feature = "google_drive")]
