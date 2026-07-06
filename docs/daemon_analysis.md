@@ -19,10 +19,9 @@ This document provides a comprehensive technical analysis of the current `cloud_
 *   **Status**: Implemented.
 *   **Details**: The daemon uses the `ignore` crate to build standard gitignore pattern matchers based on `.syncignore` file contents and the configuration's `exclude` list, skipping excluded files/directories during synchronization and directory scanning.
 
-### 2. Bidirectional / Two-Way Syncing (Remote to Local)
-*   **Current state**: Sync is strictly one-way (local to remote). If a file is added or modified on the cloud interface directly, the daemon will not pull it down.
-*   **Why it's missing**: True cloud drives require two-way syncing.
-*   **Suggestion**: Implement a periodic "pull scan" that lists remote directories, compares modification dates/hashes, and downloads newer files, with conflict resolution logic (e.g., creating `.conflict` files).
+### 2. Bidirectional / Two-Way Syncing (Remote to Local) [Implemented]
+*   **Status**: Implemented.
+*   **Details**: Implemented recursive remote scanning and compared directories against a `.sync_state.json` catalog. Propagates additions/deletions on both sides, and renames conflicting local edits to `.local-conflict` files before downloading remote copies. Runs on a configurable background pull interval loop.
 
 ### 3. Client-Side Encryption (Zero-Knowledge Sync)
 *   **Current state**: Files are uploaded in plaintext.

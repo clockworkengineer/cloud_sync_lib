@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::SystemTime;
 use cloud_sync_lib::{StorageBackend, SyncState, FileState};
-use tracing::{info, error};
+use tracing::info;
 
 #[derive(Debug)]
 struct FileInfo {
@@ -109,7 +109,7 @@ async fn resolve_conflict(
     rel_path: &str,
     backend: &dyn StorageBackend,
     local_size: u64,
-    local_modified: SystemTime,
+    _local_modified: SystemTime,
     remote_size: u64,
     remote_modified: SystemTime,
     next_files_state: &mut HashMap<String, FileState>,
@@ -278,6 +278,8 @@ pub async fn sync_bidirectional(
             }
             // Case 7: Only existed in state (Deleted on both sides)
             (None, None, Some(_)) => {}
+            // Case 8: Doesn't exist anywhere
+            (None, None, None) => {}
         }
     }
 
