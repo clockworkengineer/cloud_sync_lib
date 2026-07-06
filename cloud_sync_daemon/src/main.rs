@@ -73,6 +73,10 @@ pub struct DaemonState {
     pub syncing: bool,
     /// The address of the Web UI server, if provided.
     pub ui_addr: Option<String>,
+    /// Gitignore pattern matcher for exclusions.
+    pub gitignore: ignore::gitignore::Gitignore,
+    /// Copy of the current exclude configurations.
+    pub exclude: Option<Vec<String>>,
 }
 
 #[tokio::main]
@@ -110,6 +114,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&config.watch_directory).await?;
     let watch_dir = fs::canonicalize(&config.watch_directory).await?;
     info!("Watching directory: {:?}", watch_dir);
+
+    // Initialize gitignore matcher
+    let gitignore = watcher::build_gitignore(&watch_dir, &config.exclude);
+    let exclude = config.exclude.clone();
 
     // Initialize Providers
     let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
@@ -310,6 +318,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config_file: config_file.clone(),
         syncing: false,
         ui_addr,
+        gitignore,
+        exclude,
     }));
 
     // Set up mpsc channel for events

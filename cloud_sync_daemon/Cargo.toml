@@ -12,6 +12,7 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1"
+ignore = "0.4"
 
 [features]
 default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"]

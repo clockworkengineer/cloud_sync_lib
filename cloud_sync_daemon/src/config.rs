@@ -54,6 +54,7 @@ pub struct AppConfig {
     pub b2_credentials: Option<B2Credentials>,
     pub pcloud_credentials: Option<PCloudCredentials>,
     pub ipfs_credentials: Option<IPFSCredentials>,
+    pub exclude: Option<Vec<String>>,
 }
 
 impl Default for AppConfig {
@@ -88,6 +89,7 @@ impl Default for AppConfig {
             b2_credentials: None,
             pcloud_credentials: None,
             ipfs_credentials: None,
+            exclude: None,
         }
     }
 }

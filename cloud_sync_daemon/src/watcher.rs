@@ -9,9 +9,29 @@ use tokio::sync::Mutex;
 use notify::{Event, EventKind};
 use tracing::{error, info, warn};
 use cloud_sync_lib::StorageBackend;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
 use crate::DaemonState;
 use crate::{DEBOUNCE_DELAY_MS, RETRY_DELAY_MS, MAX_SYNC_ATTEMPTS};
+
+/// Builds a new Gitignore matcher based on .syncignore and app config excludes.
+pub fn build_gitignore(watch_dir: &Path, exclude_patterns: &Option<Vec<String>>) -> Gitignore {
+    let mut builder = GitignoreBuilder::new(watch_dir);
+    let syncignore_path = watch_dir.join(".syncignore");
+    if syncignore_path.exists() {
+        if let Some(err) = builder.add(&syncignore_path) {
+            warn!("Error loading .syncignore at {:?}: {}", syncignore_path, err);
+        }
+    }
+    if let Some(ref excludes) = exclude_patterns {
+        for pattern in excludes {
+            if let Err(e) = builder.add_line(None, pattern) {
+                warn!("Error parsing exclude pattern '{}': {}", pattern, e);
+            }
+        }
+    }
+    builder.build().unwrap_or_else(|_| Gitignore::empty())
+}
 
 /// Helper function to strip prefix from the watch directory path to get the relative remote path.
 ///
@@ -42,19 +62,32 @@ pub fn get_remote_path(path: &Path, watch_dir: &Path) -> Option<String> {
 /// # Arguments
 /// * `watch_dir` - The local directory root to scan.
 /// * `backends` - Slice of active storage backends.
+/// * `gitignore` - Pattern matcher for file exclusions.
 ///
 /// # Returns
 /// `std::io::Result` indicating scanning success/failure.
-pub async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>]) -> std::io::Result<()> {
+pub async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>], gitignore: &Gitignore) -> std::io::Result<()> {
     let mut dir_entries = vec![watch_dir.to_path_buf()];
     while let Some(current_dir) = dir_entries.pop() {
+        if current_dir != watch_dir && gitignore.matched_path_or_any_parents(&current_dir, true).is_ignore() {
+            info!("Skipping excluded directory: {:?}", current_dir);
+            continue;
+        }
         let mut entries = fs::read_dir(current_dir).await?;
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             let metadata = fs::metadata(&path).await?;
             if metadata.is_dir() {
+                if gitignore.matched_path_or_any_parents(&path, true).is_ignore() {
+                    info!("Skipping excluded directory: {:?}", path);
+                    continue;
+                }
                 dir_entries.push(path);
             } else if metadata.is_file() {
+                if gitignore.matched_path_or_any_parents(&path, false).is_ignore() {
+                    info!("Skipping excluded file: {:?}", path);
+                    continue;
+                }
                 if let Some(remote_path_str) = get_remote_path(&path, watch_dir) {
                     for backend in backends {
                         let backend = backend.clone();
@@ -89,10 +122,21 @@ pub async fn handle_event(
     state: Arc<Mutex<DaemonState>>,
     active_locks: Arc<Mutex<HashMap<(String, PathBuf), Arc<tokio::sync::Mutex<()>>>>>,
 ) {
+    // Check if .syncignore itself changed
+    let syncignore_changed = event.paths.iter().any(|p| {
+        p.file_name().map_or(false, |name| name == ".syncignore")
+    });
+
+    if syncignore_changed {
+        info!(".syncignore change detected. Rebuilding ignore rules...");
+        let mut s = state.lock().await;
+        s.gitignore = build_gitignore(&s.watch_dir, &s.exclude);
+    }
+
     // Read current state
-    let (paused, backends, watch_dir) = {
+    let (paused, backends, watch_dir, gitignore) = {
         let s = state.lock().await;
-        (s.paused, s.backends.clone(), s.watch_dir.clone())
+        (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone())
     };
 
     if paused {
@@ -108,6 +152,14 @@ pub async fn handle_event(
                     continue; // Skip if file was deleted before we could process it
                 }
 
+                // Canonicalize event path
+                let abs_path = fs::canonicalize(&path).await.unwrap_or(path.clone());
+
+                if gitignore.matched_path_or_any_parents(&abs_path, false).is_ignore() {
+                    info!("Skipping excluded path: {:?}", abs_path);
+                    continue;
+                }
+
                 // Make sure it is a file (we don't sync empty directories in this simple logic, but can be extended)
                 let metadata = match fs::metadata(&path).await {
                     Ok(m) => m,
@@ -120,9 +172,6 @@ pub async fn handle_event(
                 if !metadata.is_file() {
                     continue;
                 }
-
-                // Canonicalize event path
-                let abs_path = fs::canonicalize(&path).await.unwrap_or(path.clone());
 
                 let remote_path_str = match get_remote_path(&abs_path, &watch_dir) {
                     Some(p) => p,
@@ -185,6 +234,10 @@ pub async fn handle_event(
         }
         EventKind::Remove(_) => {
             for path in event.paths {
+                if gitignore.matched_path_or_any_parents(&path, false).is_ignore() {
+                    info!("Skipping deletion for excluded path: {:?}", path);
+                    continue;
+                }
                 let remote_path_str = match get_remote_path(&path, &watch_dir) {
                     Some(p) => p,
                     None => {
@@ -291,6 +344,8 @@ mod tests {
             config_file: "config.toml".to_string(),
             syncing: false,
             ui_addr: None,
+            gitignore: Gitignore::empty(),
+            exclude: None,
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));
@@ -304,5 +359,16 @@ mod tests {
 
         assert!(delete_called_sync_true.load(Ordering::SeqCst), "Backend with sync=true should have delete called");
         assert!(!delete_called_sync_false.load(Ordering::SeqCst), "Backend with sync=false should NOT have delete called");
+    }
+
+    #[test]
+    fn test_build_gitignore_and_matching() {
+        let watch_dir = Path::new("/home/user/watch");
+        let exclude = Some(vec!["*.log".to_string(), "temp/".to_string()]);
+        let gitignore = build_gitignore(watch_dir, &exclude);
+
+        assert!(gitignore.matched_path_or_any_parents(Path::new("/home/user/watch/error.log"), false).is_ignore());
+        assert!(!gitignore.matched_path_or_any_parents(Path::new("/home/user/watch/error.txt"), false).is_ignore());
+        assert!(gitignore.matched_path_or_any_parents(Path::new("/home/user/watch/temp/file.txt"), false).is_ignore());
     }
 }

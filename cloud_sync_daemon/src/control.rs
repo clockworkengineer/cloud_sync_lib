@@ -215,6 +215,8 @@ pub async fn handle_control_command(
                         }
                     }
                     s.backends = backends;
+                    s.exclude = config.exclude.clone();
+                    s.gitignore = crate::watcher::build_gitignore(&s.watch_dir, &config.exclude);
                     info!("Configuration reloaded successfully. Active backends updated.");
                     "Status: Config reloaded successfully\n".to_string()
                 }
@@ -232,10 +234,11 @@ pub async fn handle_control_command(
                 s.syncing = true;
                 let watch_dir = s.watch_dir.clone();
                 let backends = s.backends.clone();
+                let gitignore = s.gitignore.clone();
                 let state_clone = state.clone();
                 tokio::spawn(async move {
                     info!("Manual sync triggered via control command. Scanning watch directory...");
-                    if let Err(e) = trigger_full_sync(&watch_dir, &backends).await {
+                    if let Err(e) = trigger_full_sync(&watch_dir, &backends, &gitignore).await {
                         error!("Manual sync failed: {}", e);
                     } else {
                         info!("Manual sync completed successfully!");
