@@ -5,6 +5,33 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Common configuration settings shared by all storage providers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommonProviderSettings {
+    /// Optional prefix folder in the remote storage where files will be synced.
+    pub destination_folder: Option<String>,
+    /// Optional toggle to enable/disable the provider backend.
+    pub enabled: Option<bool>,
+    /// Optional toggle to enable/disable deletion syncing.
+    pub sync: Option<bool>,
+}
+
+pub trait ProviderConfig {
+    fn common_settings(&self) -> &CommonProviderSettings;
+
+    fn is_enabled(&self) -> bool {
+        self.common_settings().enabled.unwrap_or(true)
+    }
+
+    fn sync_deletions(&self) -> bool {
+        self.common_settings().sync.unwrap_or(true)
+    }
+
+    fn destination_folder(&self) -> Option<&str> {
+        self.common_settings().destination_folder.as_deref()
+    }
+}
+
 /// Credentials configuration for OAuth2 authorization flows.
 ///
 /// Contains client secrets and long-lived refresh tokens used to retrieve
@@ -17,12 +44,14 @@ pub struct OAuthCredentials {
     pub client_secret: String,
     /// Long-lived Refresh Token.
     pub refresh_token: String,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for OAuthCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials and URL configuration for WebDAV servers.
@@ -34,12 +63,14 @@ pub struct WebDAVCredentials {
     pub username: String,
     /// WebDAV Password.
     pub password: String,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for WebDAVCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials configuration for Amazon S3 and S3-Compatible backends.
@@ -55,12 +86,14 @@ pub struct S3Credentials {
     pub secret_access_key: String,
     /// Custom endpoint URL (optional, required for S3-compatible providers).
     pub endpoint: Option<String>,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for S3Credentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials configuration for SFTP.
@@ -76,12 +109,14 @@ pub struct SFTPCredentials {
     pub password: Option<String>,
     /// Path to the SSH private key (optional).
     pub private_key_path: Option<String>,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for SFTPCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials configuration for Nextcloud WebDAV and OCS services.
@@ -93,12 +128,14 @@ pub struct NextcloudCredentials {
     pub username: String,
     /// Nextcloud App Password.
     pub app_password: String,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for NextcloudCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials configuration for MEGA cloud storage.
@@ -108,12 +145,14 @@ pub struct MegaCredentials {
     pub email: String,
     /// MEGA Account Password.
     pub password: String,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for MegaCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials configuration for Azure Blob Storage.
@@ -127,12 +166,14 @@ pub struct AzureBlobCredentials {
     pub container: String,
     /// Custom endpoint URL (optional, used for local Azurite emulator).
     pub endpoint: Option<String>,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for AzureBlobCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials configuration for Google Cloud Storage (GCS).
@@ -144,12 +185,14 @@ pub struct GCSCredentials {
     pub service_account_key_path: String,
     /// Custom endpoint URL (optional, used for local fake-gcs-server emulator).
     pub endpoint: Option<String>,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for GCSCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials configuration for Backblaze B2.
@@ -163,12 +206,14 @@ pub struct B2Credentials {
     pub application_key: String,
     /// Custom endpoint URL (optional, used for mocking / alternate endpoints).
     pub endpoint: Option<String>,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for B2Credentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials configuration for pCloud.
@@ -178,12 +223,14 @@ pub struct PCloudCredentials {
     pub access_token: String,
     /// Custom API endpoint (optional, e.g. for European accounts or testing).
     pub endpoint: Option<String>,
-    /// Optional prefix folder in the remote storage where files will be synced.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for PCloudCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 /// Credentials configuration for IPFS Pinning Service (e.g. Pinata).
@@ -195,12 +242,14 @@ pub struct IPFSCredentials {
     pub endpoint: Option<String>,
     /// Gateway URL to resolve pinned CIDs (optional, defaults to https://gateway.pinata.cloud/ipfs/).
     pub gateway_url: Option<String>,
-    /// Optional prefix folder/label for sync mapping.
-    pub destination_folder: Option<String>,
-    /// Optional toggle to enable/disable the provider backend.
-    pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion (unpinning) syncing.
-    pub sync: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for IPFSCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
 }
 
 #[cfg(feature = "google_drive")]

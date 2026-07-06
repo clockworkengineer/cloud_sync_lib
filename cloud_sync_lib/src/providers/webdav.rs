@@ -52,30 +52,8 @@ impl WebDAVProvider {
         self
     }
 
-    /// Formats the remote path, incorporating the optional destination folder prefix.
-    ///
-    /// # Arguments
-    /// * `remote_path` - The relative destination path.
-    ///
-    /// # Returns
-    /// The fully-resolved WebDAV absolute path string (prefixed with `/`).
     fn format_path(&self, remote_path: &str) -> String {
-        let clean_path = remote_path.trim_start_matches('/');
-        if let Some(ref dest_folder) = self.credentials.destination_folder {
-            let clean_dest = dest_folder.trim_matches('/');
-            if !clean_dest.is_empty() {
-                if clean_path.is_empty() {
-                    return format!("/{}", clean_dest);
-                } else {
-                    return format!("/{}/{}", clean_dest, clean_path);
-                }
-            }
-        }
-        if clean_path.is_empty() {
-            "".to_string()
-        } else {
-            format!("/{}", clean_path)
-        }
+        crate::providers::utils::format_absolute_path(remote_path, self.credentials.common.destination_folder.as_deref())
     }
 
     /// Ensures that parent directories exist on the WebDAV server for a given remote path.

@@ -11,7 +11,7 @@ pub mod traits;
 pub mod rate_limit;
 pub mod state;
 
-pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation};
+pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig};
 pub use state::{SyncState, FileState};
 #[cfg(feature = "google_drive")]
 pub use providers::GoogleDriveProvider;
@@ -164,9 +164,11 @@ mod tests {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
             refresh_token: "mock_refresh".to_string(),
-            destination_folder: None,
-            enabled: None,
-            sync: None,
+            common: CommonProviderSettings {
+                destination_folder: None,
+                enabled: None,
+                sync: None,
+            },
         };
 
         // Create provider and set endpoints to mock server
@@ -397,9 +399,11 @@ mod tests {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
             refresh_token: "mock_refresh".to_string(),
-            destination_folder: None,
-            enabled: None,
-            sync: None,
+            common: CommonProviderSettings {
+                destination_folder: None,
+                enabled: None,
+                sync: None,
+            },
         };
 
         // Create provider and set endpoints to mock server
@@ -621,9 +625,11 @@ mod tests {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
             refresh_token: "mock_refresh".to_string(),
-            destination_folder: None,
-            enabled: None,
-            sync: None,
+            common: CommonProviderSettings {
+                destination_folder: None,
+                enabled: None,
+                sync: None,
+            },
         };
 
         // Create provider and set endpoints to mock server
@@ -856,9 +862,11 @@ mod tests {
             url: server.uri(),
             username: "username".to_string(),
             password: "password".to_string(),
-            destination_folder: Some("MySyncFolder".to_string()),
-            enabled: None,
-            sync: None,
+            common: CommonProviderSettings {
+                destination_folder: Some("MySyncFolder".to_string()),
+                enabled: None,
+                sync: None,
+            },
         };
 
         // Create provider and set endpoints to mock server
@@ -1072,9 +1080,11 @@ mod tests {
             access_key_id: "access_key".to_string(),
             secret_access_key: "secret_key".to_string(),
             endpoint: Some(server.uri()),
-            destination_folder: Some("MySyncFolder".to_string()),
-            enabled: None,
-            sync: None,
+            common: CommonProviderSettings {
+                destination_folder: Some("MySyncFolder".to_string()),
+                enabled: None,
+                sync: None,
+            },
         };
 
         // Create provider and set endpoints to mock server

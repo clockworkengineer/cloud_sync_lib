@@ -47,7 +47,7 @@ impl SFTPProvider {
 
     /// Helper to resolve the complete remote path using the destination folder prefix.
     fn resolve_remote_path(&self, remote_path: &str) -> String {
-        let dest = self.creds.destination_folder.as_deref().unwrap_or("").trim_matches('/');
+        let dest = self.creds.common.destination_folder.as_deref().unwrap_or("").trim_matches('/');
         let norm_path = remote_path.trim_matches('/');
         if dest.is_empty() {
             norm_path.to_string()

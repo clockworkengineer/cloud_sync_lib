@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Target Nextcloud URL: {}", credentials.url);
     println!("Username: {}", credentials.username);
-    println!("Destination Folder: {:?}", credentials.destination_folder);
+    println!("Destination Folder: {:?}", credentials.common.destination_folder);
 
     println!("\nInitializing Nextcloud provider...");
     let provider = NextcloudProvider::new(credentials);

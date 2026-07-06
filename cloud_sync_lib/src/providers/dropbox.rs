@@ -77,29 +77,8 @@ impl DropboxProvider {
 
     /// Formats the remote path, incorporating the optional destination folder prefix.
     ///
-    /// # Arguments
-    /// * `path` - The relative destination path.
-    ///
-    /// # Returns
-    /// The fully-resolved Dropbox absolute path string.
     fn format_path(&self, path: &str) -> String {
-        let clean_path = path.trim_start_matches('/');
-        let mut full_path = String::new();
-
-        if let Some(ref dest_folder) = self.credentials.destination_folder {
-            let clean_dest = dest_folder.trim_matches('/');
-            if !clean_dest.is_empty() {
-                full_path.push_str("/");
-                full_path.push_str(clean_dest);
-            }
-        }
-
-        if !clean_path.is_empty() {
-            full_path.push_str("/");
-            full_path.push_str(clean_path);
-        }
-
-        full_path
+        crate::providers::utils::format_absolute_path(path, self.credentials.common.destination_folder.as_deref())
     }
 }
 

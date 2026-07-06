@@ -63,28 +63,8 @@ impl PCloudProvider {
         }
     }
 
-    /// Formats the remote path, incorporating the optional destination folder prefix.
     fn format_path(&self, remote_path: &str) -> String {
-        let clean_path = remote_path.trim_start_matches('/');
-        let mut full_path = if let Some(ref dest_folder) = self.credentials.destination_folder {
-            let clean_dest = dest_folder.trim_matches('/');
-            if !clean_dest.is_empty() {
-                if clean_path.is_empty() {
-                    format!("/{}", clean_dest)
-                } else {
-                    format!("/{}/{}", clean_dest, clean_path)
-                }
-            } else {
-                format!("/{}", clean_path)
-            }
-        } else {
-            format!("/{}", clean_path)
-        };
-
-        if full_path.ends_with('/') && full_path.len() > 1 {
-            full_path.pop();
-        }
-        full_path
+        crate::providers::utils::format_absolute_path(remote_path, self.credentials.common.destination_folder.as_deref())
     }
 }
 
@@ -207,7 +187,7 @@ impl StorageBackend for PCloudProvider {
 
                     // Strip destination folder prefix from returned paths
                     let mut item_path = PathBuf::from(&entry.name);
-                    if let Some(ref dest_folder) = self.credentials.destination_folder {
+                    if let Some(ref dest_folder) = self.credentials.common.destination_folder {
                         let clean_dest = dest_folder.trim_matches('/');
                         if !clean_dest.is_empty() {
                             if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
@@ -234,6 +214,6 @@ impl StorageBackend for PCloudProvider {
     }
 
     fn sync(&self) -> bool {
-        self.credentials.sync.unwrap_or(true)
+        self.credentials.common.sync.unwrap_or(true)
     }
 }

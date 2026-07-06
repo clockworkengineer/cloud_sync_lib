@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Email: {}", credentials.email);
-    println!("Destination Folder: {:?}", credentials.destination_folder);
+    println!("Destination Folder: {:?}", credentials.common.destination_folder);
 
     println!("\nInitializing MEGA provider...");
     let provider = MegaProvider::new(credentials);

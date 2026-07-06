@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Target S3 Bucket: {}", credentials.bucket);
     println!("Region: {}", credentials.region);
     println!("Endpoint: {:?}", credentials.endpoint);
-    println!("Destination Folder: {:?}", credentials.destination_folder);
+    println!("Destination Folder: {:?}", credentials.common.destination_folder);
 
     println!("\nInitializing S3 provider...");
     let provider = S3Provider::new(credentials);

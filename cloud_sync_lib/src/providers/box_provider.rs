@@ -164,7 +164,7 @@ impl BoxProvider {
         let clean_path = path.trim_start_matches('/');
         let mut segments = Vec::new();
 
-        if let Some(ref dest) = self.credentials.destination_folder {
+        if let Some(ref dest) = self.credentials.common.destination_folder {
             let clean_dest = dest.trim_matches('/');
             if !clean_dest.is_empty() {
                 for seg in clean_dest.split('/') {

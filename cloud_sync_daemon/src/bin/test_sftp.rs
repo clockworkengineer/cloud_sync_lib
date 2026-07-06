@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Target SFTP Host: {}:{}", credentials.host, credentials.port.unwrap_or(22));
     println!("Username: {}", credentials.username);
-    println!("Destination Folder: {:?}", credentials.destination_folder);
+    println!("Destination Folder: {:?}", credentials.common.destination_folder);
 
     println!("\nInitializing SFTP provider...");
     let provider = SFTPProvider::new(credentials);

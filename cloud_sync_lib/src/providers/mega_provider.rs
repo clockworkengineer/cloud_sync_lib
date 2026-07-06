@@ -113,7 +113,7 @@ impl StorageBackend for MegaProvider {
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let email = self.credentials.email.clone();
         let password = self.credentials.password.clone();
-        let dest_folder = self.credentials.destination_folder.clone();
+        let dest_folder = self.credentials.common.destination_folder.clone();
         let local_path = local_path.to_path_buf();
         let remote_path = remote_path.to_string();
 
@@ -177,7 +177,7 @@ impl StorageBackend for MegaProvider {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         let email = self.credentials.email.clone();
         let password = self.credentials.password.clone();
-        let dest_folder = self.credentials.destination_folder.clone();
+        let dest_folder = self.credentials.common.destination_folder.clone();
         let local_path = local_path.to_path_buf();
         let remote_path = remote_path.to_string();
 
@@ -216,7 +216,7 @@ impl StorageBackend for MegaProvider {
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         let email = self.credentials.email.clone();
         let password = self.credentials.password.clone();
-        let dest_folder = self.credentials.destination_folder.clone();
+        let dest_folder = self.credentials.common.destination_folder.clone();
         let remote_path = remote_path.to_string();
 
         tokio::task::spawn_blocking(move || {
@@ -246,7 +246,7 @@ impl StorageBackend for MegaProvider {
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         let email = self.credentials.email.clone();
         let password = self.credentials.password.clone();
-        let dest_folder = self.credentials.destination_folder.clone();
+        let dest_folder = self.credentials.common.destination_folder.clone();
         let remote_path = remote_path.to_string();
 
         tokio::task::spawn_blocking(move || {
@@ -297,6 +297,6 @@ impl StorageBackend for MegaProvider {
     }
 
     fn sync(&self) -> bool {
-        self.credentials.sync.unwrap_or(true)
+        self.credentials.common.sync.unwrap_or(true)
     }
 }

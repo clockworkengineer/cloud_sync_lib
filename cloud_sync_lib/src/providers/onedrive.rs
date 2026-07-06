@@ -72,24 +72,8 @@ impl OneDriveProvider {
 
     /// Formats the remote path, incorporating the optional destination folder prefix.
     ///
-    /// # Arguments
-    /// * `remote_path` - The relative destination path.
-    ///
-    /// # Returns
-    /// The fully-resolved OneDrive absolute path string.
     fn format_path(&self, remote_path: &str) -> String {
-        let clean_path = remote_path.trim_start_matches('/');
-        if let Some(ref dest_folder) = self.credentials.destination_folder {
-            let clean_dest = dest_folder.trim_matches('/');
-            if !clean_dest.is_empty() {
-                if clean_path.is_empty() {
-                    return clean_dest.to_string();
-                } else {
-                    return format!("{}/{}", clean_dest, clean_path);
-                }
-            }
-        }
-        clean_path.to_string()
+        crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
     }
 }
 

@@ -141,7 +141,7 @@ impl GoogleDriveProvider {
         let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
         let mut parent_id = "root".to_string();
 
-        if let Some(ref dest_folder) = self.credentials.destination_folder {
+        if let Some(ref dest_folder) = self.credentials.common.destination_folder {
             if !dest_folder.is_empty() {
                 parent_id = self.get_or_create_folder_id(token, &parent_id, dest_folder).await?;
             }

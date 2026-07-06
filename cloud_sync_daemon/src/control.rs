@@ -5,10 +5,7 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info};
 
 use crate::DaemonState;
-#[allow(unused_imports)]
-use crate::config::{
-    is_enabled, is_webdav_enabled, is_s3_enabled, is_sftp_enabled, is_nextcloud_enabled, is_mega_enabled, is_azure_blob_enabled, is_gcs_enabled, is_b2_enabled, is_pcloud_enabled, is_ipfs_enabled, load_or_create_config
-};
+use crate::config::load_or_create_config;
 use crate::watcher::trigger_full_sync;
 
 /// Handles a string command sent from the daemon controller via TCP.

@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Client ID: {}", credentials.client_id);
-    println!("Destination Folder: {:?}", credentials.destination_folder);
+    println!("Destination Folder: {:?}", credentials.common.destination_folder);
 
     println!("\nInitializing Box provider...");
     let provider = BoxProvider::new(credentials);
