@@ -71,3 +71,8 @@ pub async fn run_connection_diagnostics(
     println!("\n🎉 All {} connectivity tests passed successfully!", provider.name());
     Ok(())
 }
+
+#[allow(dead_code)]
+fn main() {}
+
+

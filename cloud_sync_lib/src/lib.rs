@@ -11,7 +11,7 @@ pub mod traits;
 pub mod rate_limit;
 pub mod state;
 
-pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig};
+pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig, EncryptedBackend};
 pub use state::{SyncState, FileState};
 #[cfg(feature = "google_drive")]
 pub use providers::GoogleDriveProvider;
@@ -168,6 +168,7 @@ mod tests {
                 destination_folder: None,
                 enabled: None,
                 sync: None,
+                encryption_password: None,
             },
         };
 
@@ -403,6 +404,7 @@ mod tests {
                 destination_folder: None,
                 enabled: None,
                 sync: None,
+                encryption_password: None,
             },
         };
 
@@ -629,6 +631,7 @@ mod tests {
                 destination_folder: None,
                 enabled: None,
                 sync: None,
+                encryption_password: None,
             },
         };
 
@@ -866,6 +869,7 @@ mod tests {
                 destination_folder: Some("MySyncFolder".to_string()),
                 enabled: None,
                 sync: None,
+                encryption_password: None,
             },
         };
 
@@ -1084,6 +1088,7 @@ mod tests {
                 destination_folder: Some("MySyncFolder".to_string()),
                 enabled: None,
                 sync: None,
+                encryption_password: None,
             },
         };
 

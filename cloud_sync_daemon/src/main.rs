@@ -100,7 +100,13 @@ fn try_add_backend<C, P, F>(
         let inner = creds_option.clone().map(builder);
         let local_sim = LocalSimulation::new(sim_root, provider_name.to_string())
             .with_limiters(upload_limiter, download_limiter);
-        backends.push(Arc::new(SimulatedFallback::new(inner, local_sim, provider_name, sync)));
+        let fallback = SimulatedFallback::new(inner, local_sim, provider_name, sync);
+
+        if let Some(password) = creds_option.as_ref().and_then(|c| c.encryption_password()) {
+            backends.push(Arc::new(cloud_sync_lib::EncryptedBackend::new(fallback, password)));
+        } else {
+            backends.push(Arc::new(fallback));
+        }
     } else {
         info!("{} provider is disabled in configuration.", provider_name);
     }

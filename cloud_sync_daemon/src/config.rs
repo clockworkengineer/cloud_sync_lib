@@ -145,6 +145,7 @@ mod tests {
                 destination_folder: None,
                 enabled: Some(false),
                 sync: None,
+                encryption_password: None,
             },
         });
         assert!(!is_provider_enabled(&creds_disabled));
@@ -157,6 +158,7 @@ mod tests {
                 destination_folder: None,
                 enabled: Some(true),
                 sync: None,
+                encryption_password: None,
             },
         });
         assert!(is_provider_enabled(&creds_enabled));

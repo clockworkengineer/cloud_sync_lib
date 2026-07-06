@@ -20,10 +20,13 @@ tokio-util = { version = "0.7", features = ["compat"], optional = true }
 futures-util = { version = "0.3", optional = true }
 base64 = { version = "0.21", optional = true }
 hmac = { version = "0.12", optional = true }
-sha2 = { version = "0.10", optional = true }
+sha2 = "0.10"
 httpdate = { version = "1.0", optional = true }
 yup-oauth2 = { version = "8.3", optional = true }
 chrono = { version = "0.4", optional = true }
+aes-gcm = "0.10"
+rand = "0.8"
+
 
 [features]
 default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"]
@@ -36,7 +39,7 @@ sftp = ["dep:ssh2"]
 nextcloud = []
 box = []
 mega = ["dep:mega", "dep:tokio-util", "dep:futures-util"]
-azure_blob = ["dep:base64", "dep:hmac", "dep:sha2", "dep:httpdate"]
+azure_blob = ["dep:base64", "dep:hmac", "dep:httpdate"]
 gcs = ["dep:yup-oauth2", "dep:chrono"]
 b2 = []
 pcloud = []

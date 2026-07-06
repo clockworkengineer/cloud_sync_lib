@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Common configuration settings shared by all storage providers.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CommonProviderSettings {
     /// Optional prefix folder in the remote storage where files will be synced.
     pub destination_folder: Option<String>,
@@ -14,6 +14,8 @@ pub struct CommonProviderSettings {
     pub enabled: Option<bool>,
     /// Optional toggle to enable/disable deletion syncing.
     pub sync: Option<bool>,
+    /// Optional password for client-side encryption.
+    pub encryption_password: Option<String>,
 }
 
 pub trait ProviderConfig {
@@ -29,6 +31,10 @@ pub trait ProviderConfig {
 
     fn destination_folder(&self) -> Option<&str> {
         self.common_settings().destination_folder.as_deref()
+    }
+
+    fn encryption_password(&self) -> Option<&str> {
+        self.common_settings().encryption_password.as_deref()
     }
 }
 
@@ -283,6 +289,8 @@ pub mod ipfs;
 pub mod local_sim;
 pub mod utils;
 pub mod fallback;
+pub mod encryption;
+
 
 #[cfg(feature = "google_drive")]
 pub use google_drive::GoogleDriveProvider;
@@ -313,3 +321,5 @@ pub use pcloud::PCloudProvider;
 #[cfg(feature = "ipfs")]
 pub use ipfs::IPFSProvider;
 pub use fallback::SimulatedFallback;
+pub use encryption::EncryptedBackend;
+

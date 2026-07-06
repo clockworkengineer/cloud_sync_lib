@@ -2,7 +2,8 @@
 //!
 //! Provides an implementation of storage simulation on the local filesystem.
 
-use crate::traits::{StorageItem, StorageError};
+use crate::traits::{StorageBackend, StorageItem, StorageError};
+use async_trait::async_trait;
 use crate::rate_limit::{TokenBucket, copy_rate_limited};
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -159,3 +160,31 @@ impl LocalSimulation {
         Ok(items)
     }
 }
+
+#[async_trait]
+impl StorageBackend for LocalSimulation {
+    fn name(&self) -> &str {
+        &self.provider_name
+    }
+
+    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        self.upload(local_path, remote_path).await
+    }
+
+    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        self.download(remote_path, local_path).await
+    }
+
+    async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+        self.delete(remote_path).await
+    }
+
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        self.list(remote_path).await
+    }
+
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        self.create_folder(remote_path).await
+    }
+}
+
