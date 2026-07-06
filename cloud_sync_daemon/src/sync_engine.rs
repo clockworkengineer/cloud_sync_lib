@@ -293,15 +293,49 @@ pub async fn sync_bidirectional(
 mod tests {
     use super::*;
     use cloud_sync_lib::providers::local_sim::LocalSimulation;
-    use tempfile::tempdir;
+    use cloud_sync_lib::StorageError;
+    use cloud_sync_lib::StorageItem;
+
+    struct TestBackendWrapper {
+        sim: LocalSimulation,
+    }
+
+    #[async_trait::async_trait]
+    impl StorageBackend for TestBackendWrapper {
+        fn name(&self) -> &str {
+            "TestSim"
+        }
+        async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+            self.sim.upload(local_path, remote_path).await
+        }
+        async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+            self.sim.download(remote_path, local_path).await
+        }
+        async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+            self.sim.delete(remote_path).await
+        }
+        async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+            self.sim.list(remote_path).await
+        }
+    }
 
     #[tokio::test]
     async fn test_bidirectional_sync_flows() {
-        let local_dir = tempdir().unwrap();
-        let remote_dir = tempdir().unwrap();
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
 
-        let local_path = local_dir.path();
-        let remote_sim = LocalSimulation::new(remote_dir.path().to_path_buf(), "TestSim".to_string());
+        let temp_base = std::env::temp_dir();
+        let local_dir = temp_base.join(format!("local_{}", unique_id));
+        let remote_dir = temp_base.join(format!("remote_{}", unique_id));
+
+        tokio::fs::create_dir_all(&local_dir).await.unwrap();
+        tokio::fs::create_dir_all(&remote_dir).await.unwrap();
+
+        let local_path = &local_dir;
+        let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
+        let remote_sim = TestBackendWrapper { sim };
         let state_file = local_path.join(".sync_state.json");
         let gitignore = ignore::gitignore::Gitignore::empty();
 
@@ -312,10 +346,10 @@ mod tests {
         let file1_path = local_path.join("file1.txt");
         tokio::fs::write(&file1_path, "local data").await.unwrap();
         sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
-        assert!(remote_sim.resolve("file1.txt").exists());
+        assert!(remote_sim.sim.resolve("file1.txt").exists());
 
         // 3. Add remote file -> should download
-        let remote_file2 = remote_sim.resolve("file2.txt");
+        let remote_file2 = remote_sim.sim.resolve("file2.txt");
         tokio::fs::write(&remote_file2, "remote data").await.unwrap();
         sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
         assert!(local_path.join("file2.txt").exists());
@@ -323,17 +357,21 @@ mod tests {
         // 4. Modify local file -> should upload
         tokio::fs::write(&file1_path, "local modified data").await.unwrap();
         sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
-        let remote1_data = tokio::fs::read_to_string(remote_sim.resolve("file1.txt")).await.unwrap();
+        let remote1_data = tokio::fs::read_to_string(remote_sim.sim.resolve("file1.txt")).await.unwrap();
         assert_eq!(remote1_data, "local modified data");
 
         // 5. Delete local file -> should delete remote
         tokio::fs::remove_file(&file1_path).await.unwrap();
         sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
-        assert!(!remote_sim.resolve("file1.txt").exists());
+        assert!(!remote_sim.sim.resolve("file1.txt").exists());
 
         // 6. Delete remote file -> should delete local
-        tokio::fs::remove_file(remote_sim.resolve("file2.txt")).await.unwrap();
+        tokio::fs::remove_file(remote_sim.sim.resolve("file2.txt")).await.unwrap();
         sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
         assert!(!local_path.join("file2.txt").exists());
+
+        // Clean up
+        let _ = tokio::fs::remove_dir_all(&local_dir).await;
+        let _ = tokio::fs::remove_dir_all(&remote_dir).await;
     }
 }
