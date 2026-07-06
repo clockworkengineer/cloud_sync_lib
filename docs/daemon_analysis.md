@@ -32,7 +32,6 @@ This document provides a comprehensive technical analysis of the current `cloud_
 *   **Status**: Implemented.
 *   **Details**: Implemented a thread-safe token-bucket rate limiter. Local folder simulation and streams wrap file copies/IO with `copy_rate_limited`, throttling bytes to the maximum upload/download rates defined in `config.toml`.
 
-### 5. Empty Directory Syncing
-*   **Current state**: The watcher explicitly skips directory creation events (lines 111-122 of `watcher.rs`).
-*   **Why it's missing**: Empty folders created by the user are ignored.
-*   **Suggestion**: Extend the `StorageBackend` trait to include `create_folder` and propagate folder creation events.
+### 5. Empty Directory Syncing [Implemented]
+*   **Status**: Implemented.
+*   **Details**: Extended `StorageBackend` with `create_folder` method. Updated the watcher to capture directory creation events and propagate them remotely. Extended the bidirectional sync engine to catalog folders and recreate empty directories locally and remotely.
