@@ -7,6 +7,7 @@
 pub mod config;
 pub mod control;
 pub mod watcher;
+pub mod sync_engine;
 
 use cloud_sync_lib::{StorageBackend, SimulatedFallback, LocalSimulation};
 #[cfg(feature = "google_drive")]
@@ -377,6 +378,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     watcher.watch(&watch_dir, RecursiveMode::Recursive)?;
+
+    // Spawn periodic remote pull synchronization loop
+    let pull_interval = config.pull_interval_secs.unwrap_or(30);
+    let state_pull = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(pull_interval));
+        interval.tick().await; // skip immediate first tick
+
+        loop {
+            interval.tick().await;
+
+            let (paused, backends, watch_dir, gitignore) = {
+                let s = state_pull.lock().await;
+                (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone())
+            };
+
+            if paused {
+                continue;
+            }
+
+            info!("Periodic bidirectional sync started...");
+            let state_file_path = watch_dir.join(".sync_state.json");
+            for backend in &backends {
+                if let Err(e) = sync_engine::sync_bidirectional(
+                    &watch_dir,
+                    backend.as_ref(),
+                    &state_file_path,
+                    &gitignore,
+                ).await {
+                    error!("Bidirectional sync failed for backend '{}': {}", backend.name(), e);
+                }
+            }
+            info!("Periodic bidirectional sync completed.");
+        }
+    });
 
     info!("Daemon is listening for changes... Press Ctrl+C to exit.");
 
