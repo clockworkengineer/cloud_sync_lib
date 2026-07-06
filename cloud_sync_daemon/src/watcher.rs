@@ -82,7 +82,19 @@ pub async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBack
                     info!("Skipping excluded directory: {:?}", path);
                     continue;
                 }
-                dir_entries.push(path);
+                dir_entries.push(path.clone());
+                if let Some(remote_path_str) = get_remote_path(&path, watch_dir) {
+                    for backend in backends {
+                        let backend = backend.clone();
+                        let remote_path = remote_path_str.clone();
+                        tokio::spawn(async move {
+                            info!("[{}] Syncing directory '{}' via manual trigger", backend.name(), remote_path);
+                            if let Err(e) = backend.create_folder(&remote_path).await {
+                                error!("[{}] Failed to create directory '{}': {}", backend.name(), remote_path, e);
+                            }
+                        });
+                    }
+                }
             } else if metadata.is_file() {
                 if gitignore.matched_path_or_any_parents(&path, false).is_ignore() {
                     info!("Skipping excluded file: {:?}", path);
@@ -169,7 +181,8 @@ pub async fn handle_event(
                     }
                 };
 
-                if !metadata.is_file() {
+                let is_directory = metadata.is_dir();
+                if !metadata.is_file() && !is_directory {
                     continue;
                 }
 
@@ -180,7 +193,7 @@ pub async fn handle_event(
                         continue;
                     }
                 };
-                info!("File change detected: '{}'. Syncing to all cloud backends...", remote_path_str);
+                info!("Path change detected: '{}' (dir: {}). Syncing to all cloud backends...", remote_path_str, is_directory);
 
                 for backend in &backends {
                     let backend = backend.clone();
@@ -203,7 +216,12 @@ pub async fn handle_event(
                         // Add minor delay/retry logic in case the file is still being written to by the OS/editor
                         let mut attempts = MAX_SYNC_ATTEMPTS;
                         while attempts > 0 {
-                            match backend.upload(&local_path, &remote_path).await {
+                            let sync_res = if is_directory {
+                                backend.create_folder(&remote_path).await
+                            } else {
+                                backend.upload(&local_path, &remote_path).await
+                            };
+                            match sync_res {
                                 Ok(_) => {
                                     info!("[{}] Successfully synced '{}'", backend.name(), remote_path);
                                     break;

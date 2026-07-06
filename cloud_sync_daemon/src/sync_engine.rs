@@ -8,6 +8,7 @@ use tracing::info;
 struct FileInfo {
     size: u64,
     modified: SystemTime,
+    is_dir: bool,
 }
 
 /// Scans the local watched directory recursively and builds a map of relative file paths to their metadata.
@@ -32,7 +33,17 @@ async fn scan_local_dir(
                 if gitignore.matched_path_or_any_parents(&path, true).is_ignore() {
                     continue;
                 }
-                queue.push(path);
+                queue.push(path.clone());
+                if let Ok(rel_path) = path.strip_prefix(watch_dir) {
+                    let rel_str = rel_path.to_string_lossy().to_string();
+                    if !rel_str.is_empty() {
+                        files.insert(rel_str, FileInfo {
+                            size: 0,
+                            modified: metadata.modified().unwrap_or(SystemTime::now()),
+                            is_dir: true,
+                        });
+                    }
+                }
             } else if metadata.is_file() {
                 if gitignore.matched_path_or_any_parents(&path, false).is_ignore() {
                     continue;
@@ -45,6 +56,7 @@ async fn scan_local_dir(
                     files.insert(rel_str, FileInfo {
                         size: metadata.len(),
                         modified: metadata.modified().unwrap_or(SystemTime::now()),
+                        is_dir: false,
                     });
                 }
             }
@@ -67,11 +79,17 @@ async fn scan_remote_dir(
                 for item in items {
                     let path_str = item.path.to_string_lossy().to_string();
                     if item.is_dir {
-                        queue.push(path_str);
+                        queue.push(path_str.clone());
+                        files.insert(path_str, FileInfo {
+                            size: 0,
+                            modified: item.modified,
+                            is_dir: true,
+                        });
                     } else {
                         files.insert(path_str, FileInfo {
                             size: item.size,
                             modified: item.modified,
+                            is_dir: false,
                         });
                     }
                 }
@@ -130,6 +148,7 @@ async fn resolve_conflict(
         size: local_size,
         local_modified: conflict_local_mtime,
         remote_modified: conflict_remote_mtime,
+        is_dir: Some(false),
     });
 
     info!("Downloading remote file '{}' to original local path", rel_path);
@@ -140,6 +159,7 @@ async fn resolve_conflict(
         size: remote_size,
         local_modified: replaced_local_mtime,
         remote_modified: remote_modified,
+        is_dir: Some(false),
     });
 
     Ok(())
@@ -178,6 +198,65 @@ pub async fn sync_bidirectional(
         let remote_opt = remote_files.get(&rel_path);
         let state_opt = sync_state.files.get(&rel_path);
 
+        let is_local_dir = local_opt.map(|f| f.is_dir).unwrap_or(false);
+        let is_remote_dir = remote_opt.map(|f| f.is_dir).unwrap_or(false);
+        let is_state_dir = state_opt.and_then(|f| f.is_dir).unwrap_or(false);
+
+        if is_local_dir || is_remote_dir || is_state_dir {
+            match (local_opt, remote_opt, state_opt) {
+                (Some(local), Some(remote), _) => {
+                    next_files_state.insert(rel_path.clone(), FileState {
+                        size: 0,
+                        local_modified: local.modified,
+                        remote_modified: remote.modified,
+                        is_dir: Some(true),
+                    });
+                }
+                (Some(local), None, None) => {
+                    info!("Bidirectional: creating remote directory '{}'", rel_path);
+                    if let Err(e) = backend.create_folder(&rel_path).await {
+                        info!("Failed to create remote directory '{}': {}", rel_path, e);
+                    }
+                    next_files_state.insert(rel_path.clone(), FileState {
+                        size: 0,
+                        local_modified: local.modified,
+                        remote_modified: get_remote_mtime(backend, &rel_path).await.unwrap_or(SystemTime::now()),
+                        is_dir: Some(true),
+                    });
+                }
+                (None, Some(remote), None) => {
+                    info!("Bidirectional: creating local directory '{}'", rel_path);
+                    let local_path = watch_dir.join(&rel_path);
+                    if let Err(e) = tokio::fs::create_dir_all(&local_path).await {
+                        info!("Failed to create local directory '{:?}': {}", local_path, e);
+                    }
+                    let new_local_mtime = get_local_mtime(&local_path).await.unwrap_or(SystemTime::now());
+                    next_files_state.insert(rel_path.clone(), FileState {
+                        size: 0,
+                        local_modified: new_local_mtime,
+                        remote_modified: remote.modified,
+                        is_dir: Some(true),
+                    });
+                }
+                (Some(_local), None, Some(_state)) => {
+                    info!("Bidirectional: deleting local directory '{}' (deleted remotely)", rel_path);
+                    let local_path = watch_dir.join(&rel_path);
+                    if local_path.exists() {
+                        let _ = tokio::fs::remove_dir_all(&local_path).await;
+                    }
+                }
+                (None, Some(_remote), Some(_state)) => {
+                    if backend.sync() {
+                        info!("Bidirectional: deleting remote directory '{}' (deleted locally)", rel_path);
+                        let _ = backend.delete(&rel_path).await;
+                    }
+                }
+                (None, None, Some(_)) => {}
+                (None, None, None) => {}
+            }
+            continue;
+        }
+
         match (local_opt, remote_opt, state_opt) {
             // Case 1: Exists everywhere (check for modifications)
             (Some(local), Some(remote), Some(state)) => {
@@ -193,6 +272,7 @@ pub async fn sync_bidirectional(
                         size: local.size,
                         local_modified: local.modified,
                         remote_modified: get_remote_mtime(backend, &rel_path).await.unwrap_or(remote.modified),
+                        is_dir: Some(false),
                     });
                 } else if remote_changed {
                     info!("Bidirectional: downloading remote modification '{}' to local", rel_path);
@@ -202,6 +282,7 @@ pub async fn sync_bidirectional(
                         size: remote.size,
                         local_modified: new_local_mtime,
                         remote_modified: remote.modified,
+                        is_dir: Some(false),
                     });
                 } else {
                     next_files_state.insert(rel_path.clone(), state.clone());
@@ -214,6 +295,7 @@ pub async fn sync_bidirectional(
                         size: local.size,
                         local_modified: local.modified,
                         remote_modified: remote.modified,
+                        is_dir: Some(false),
                     });
                 } else {
                     resolve_conflict(watch_dir, &rel_path, backend, local.size, local.modified, remote.size, remote.modified, &mut next_files_state).await?;
@@ -227,6 +309,7 @@ pub async fn sync_bidirectional(
                     size: local.size,
                     local_modified: local.modified,
                     remote_modified: get_remote_mtime(backend, &rel_path).await.unwrap_or(SystemTime::now()),
+                    is_dir: Some(false),
                 });
             }
             // Case 4: Remote-only, not in state catalog (New remote file)
@@ -238,6 +321,7 @@ pub async fn sync_bidirectional(
                     size: remote.size,
                     local_modified: new_local_mtime,
                     remote_modified: remote.modified,
+                    is_dir: Some(false),
                 });
             }
             // Case 5: Local & State, but missing remote (Deleted remotely)
@@ -250,6 +334,7 @@ pub async fn sync_bidirectional(
                         size: local.size,
                         local_modified: local.modified,
                         remote_modified: get_remote_mtime(backend, &rel_path).await.unwrap_or(SystemTime::now()),
+                        is_dir: Some(false),
                     });
                 } else {
                     info!("Bidirectional: deleting local file '{}' since it was deleted remotely", rel_path);
@@ -268,6 +353,7 @@ pub async fn sync_bidirectional(
                         size: remote.size,
                         local_modified: new_local_mtime,
                         remote_modified: remote.modified,
+                        is_dir: Some(false),
                     });
                 } else {
                     if backend.sync() {
@@ -316,6 +402,9 @@ mod tests {
         }
         async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
             self.sim.list(remote_path).await
+        }
+        async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+            self.sim.create_folder(remote_path).await
         }
     }
 
@@ -369,6 +458,20 @@ mod tests {
         tokio::fs::remove_file(remote_sim.sim.resolve("file2.txt")).await.unwrap();
         sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
         assert!(!local_path.join("file2.txt").exists());
+
+        // 7. Add local directory -> should upload (create remotely)
+        let local_subdir = local_path.join("empty_dir");
+        tokio::fs::create_dir_all(&local_subdir).await.unwrap();
+        sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
+        assert!(remote_sim.sim.resolve("empty_dir").exists());
+        assert!(remote_sim.sim.resolve("empty_dir").is_dir());
+
+        // 8. Add remote directory -> should download (create locally)
+        let remote_subdir = remote_sim.sim.resolve("remote_empty_dir");
+        tokio::fs::create_dir_all(&remote_subdir).await.unwrap();
+        sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
+        assert!(local_path.join("remote_empty_dir").exists());
+        assert!(local_path.join("remote_empty_dir").is_dir());
 
         // Clean up
         let _ = tokio::fs::remove_dir_all(&local_dir).await;

@@ -12,6 +12,9 @@ pub struct FileState {
     pub local_modified: SystemTime,
     /// The last modified time on the remote cloud storage.
     pub remote_modified: SystemTime,
+    /// Whether this entry represents a directory rather than a file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_dir: Option<bool>,
 }
 
 /// Represents the overall catalog state of the synchronization.

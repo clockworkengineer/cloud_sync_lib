@@ -69,6 +69,11 @@ pub trait StorageBackend: Send + Sync {
     /// Lists the contents of the cloud's directory at `remote_path`.
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError>;
 
+    /// Creates a folder/directory at the cloud's `remote_path`.
+    async fn create_folder(&self, _remote_path: &str) -> Result<(), StorageError> {
+        Ok(())
+    }
+
     /// Returns whether the backend should sync deletions.
     fn sync(&self) -> bool {
         true

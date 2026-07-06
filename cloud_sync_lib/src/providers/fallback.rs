@@ -80,6 +80,14 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         }
     }
 
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        if let Some(ref inner) = self.inner {
+            inner.create_folder(remote_path).await
+        } else {
+            self.local_sim.create_folder(remote_path).await
+        }
+    }
+
     fn sync(&self) -> bool {
         self.sync
     }

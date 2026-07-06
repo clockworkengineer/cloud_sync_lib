@@ -124,6 +124,14 @@ impl LocalSimulation {
         Ok(())
     }
 
+    /// Simulates creating a folder/directory in the local simulation folder.
+    pub async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        let target = self.resolve(remote_path);
+        info!("[{}] (Simulated) Creating remote directory '{}'", self.provider_name, remote_path);
+        fs::create_dir_all(&target).await?;
+        Ok(())
+    }
+
     /// Simulates listing contents of the local simulation folder.
     ///
     /// # Arguments
