@@ -13,7 +13,7 @@ use tower_http::cors::CorsLayer;
 
 use handlers::{
     serve_index, api_status, api_start, api_pause, api_resume, api_sync,
-    api_reload, api_stop
+    api_reload, api_stop, api_clear
 };
 
 pub const UI_BIND_ADDR: &str = "127.0.0.1:8082";
@@ -33,6 +33,7 @@ pub async fn start_ui_server() -> Result<(), std::io::Error> {
         .route("/api/sync", post(api_sync))
         .route("/api/reload", post(api_reload))
         .route("/api/stop", post(api_stop))
+        .route("/api/clear", post(api_clear))
         .layer(CorsLayer::permissive());
 
     let listener = tokio::net::TcpListener::bind(UI_BIND_ADDR).await?;

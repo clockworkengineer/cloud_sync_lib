@@ -169,3 +169,29 @@ pub async fn api_stop() -> impl IntoResponse {
         }
     }
 }
+
+#[derive(serde::Deserialize)]
+pub struct ClearRequest {
+    pub provider: String,
+}
+
+/// HTTP Endpoint: Clears a provider's remote destination.
+pub async fn api_clear(Json(payload): axum::Json<ClearRequest>) -> impl IntoResponse {
+    let cmd = format!("clear {}", payload.provider);
+    match send_daemon_cmd(&cmd).await {
+        Ok(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.starts_with("Error:") {
+                Json(json!({ "error": trimmed })).into_response()
+            } else {
+                Json(json!({ "status": trimmed })).into_response()
+            }
+        }
+        Err(e) => {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": format!("Could not connect to daemon socket: {}", e) }))
+            ).into_response()
+        }
+    }
+}

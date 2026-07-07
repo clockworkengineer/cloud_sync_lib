@@ -288,11 +288,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let mut config_file = DEFAULT_CONFIG_FILE.to_string();
     let mut ui_addr = None;
+    let mut clear_remote = None;
 
     let mut i = 1;
     while i < args.len() {
         if args[i] == "--ui-addr" && i + 1 < args.len() {
             ui_addr = Some(args[i + 1].clone());
+            i += 2;
+        } else if args[i] == "--clear-remote" && i + 1 < args.len() {
+            clear_remote = Some(args[i + 1].clone());
             i += 2;
         } else {
             config_file = args[i].clone();
@@ -327,6 +331,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize Providers
     let backends = build_backends(&config, upload_limiter.clone(), download_limiter.clone());
+
+    if let Some(target_provider) = clear_remote {
+        let matching_backend = backends.iter().find(|b| b.name().eq_ignore_ascii_case(&target_provider));
+        match matching_backend {
+            Some(backend) => {
+                info!("Clearing all files on remote provider: {}", backend.name());
+                let items = backend.list("").await?;
+                for item in items {
+                    let path_str = item.path.to_string_lossy();
+                    info!("Deleting remote item: {}", path_str);
+                    if let Err(e) = backend.delete(&path_str).await {
+                        error!("Failed to delete remote item '{}': {}", path_str, e);
+                    }
+                }
+                info!("Successfully cleared remote provider: {}", backend.name());
+                return Ok(());
+            }
+            None => {
+                error!("No enabled provider found matching name: '{}'", target_provider);
+                return Err("Provider not found or disabled".into());
+            }
+        }
+    }
 
     info!("Active cloud storage backends:");
     for backend in &backends {

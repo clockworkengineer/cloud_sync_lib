@@ -22,7 +22,11 @@ pub async fn handle_control_command(
     state: &Arc<Mutex<DaemonState>>,
     shutdown_tx: &mpsc::Sender<()>,
 ) -> String {
-    match cmd {
+    let parts: Vec<&str> = cmd.trim().split_whitespace().collect();
+    if parts.is_empty() {
+        return "Error: Empty command\n".to_string();
+    }
+    match parts[0] {
         "status" => {
             let s = state.lock().await;
             let backend_names: Vec<String> = s.backends.iter().map(|b| b.name().to_string()).collect();
@@ -91,10 +95,44 @@ pub async fn handle_control_command(
                 "Status: Sync triggered in background\n".to_string()
             }
         }
+        "clear" => {
+            if parts.len() < 2 {
+                return "Error: clear command requires a provider name argument (e.g. 'clear MEGA')\n".to_string();
+            }
+            let target_provider = parts[1..].join(" ");
+            let s = state.lock().await;
+            let matching_backend = s.backends.iter().find(|b| b.name().eq_ignore_ascii_case(&target_provider));
+            match matching_backend {
+                Some(backend) => {
+                    info!("Clearing all files on remote provider: {}", backend.name());
+                    match backend.list("").await {
+                        Ok(items) => {
+                            for item in items {
+                                let path_str = item.path.to_string_lossy();
+                                info!("Deleting remote item: {}", path_str);
+                                if let Err(e) = backend.delete(&path_str).await {
+                                    error!("Failed to delete remote item '{}': {}", path_str, e);
+                                }
+                            }
+                            info!("Successfully cleared remote provider: {}", backend.name());
+                            format!("Status: Successfully cleared remote provider: {}\n", backend.name())
+                        }
+                        Err(e) => {
+                            error!("Failed to list files on provider '{}': {}", backend.name(), e);
+                            format!("Error: Failed to list files on provider: {}\n", e)
+                        }
+                    }
+                }
+                None => {
+                    error!("No enabled provider found matching name: '{}'", target_provider);
+                    format!("Error: No enabled provider found matching name: '{}'\n", target_provider)
+                }
+            }
+        }
         "stop" => {
             let _ = shutdown_tx.send(()).await;
             "Status: Stopping daemon...\n".to_string()
         }
-        _ => "Error: Unknown command. Supported: status, pause, resume, reload, sync, stop\n".to_string(),
+        _ => "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, stop\n".to_string(),
     }
 }
