@@ -22,7 +22,7 @@ pub async fn handle_control_command(
     state: &Arc<Mutex<DaemonState>>,
     shutdown_tx: &mpsc::Sender<()>,
 ) -> String {
-    let parts: Vec<&str> = cmd.trim().split_whitespace().collect();
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
     if parts.is_empty() {
         return "Error: Empty command\n".to_string();
     }
