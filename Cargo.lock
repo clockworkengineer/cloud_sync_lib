@@ -558,6 +558,7 @@ dependencies = [
  "ignore",
  "notify",
  "serde",
+ "tempfile",
  "tokio",
  "toml 0.8.23",
  "tracing",
