@@ -296,7 +296,8 @@ impl StorageBackend for MegaProvider {
         .map_err(|e| StorageError::Provider(e.to_string()))?
     }
 
-    fn sync(&self) -> bool {
-        self.credentials.common.sync.unwrap_or(true)
+    fn sync_mode(&self) -> super::SyncMode {
+        use super::ProviderConfig;
+        self.credentials.sync_mode()
     }
 }

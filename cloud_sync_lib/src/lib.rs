@@ -11,7 +11,7 @@ pub mod traits;
 pub mod rate_limit;
 pub mod state;
 
-pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig, EncryptedBackend};
+pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig, EncryptedBackend, SyncMode};
 pub use state::{SyncState, FileState};
 #[cfg(feature = "google_drive")]
 pub use providers::GoogleDriveProvider;
@@ -56,7 +56,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("gdrive_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "Google Drive".to_string());
-        let provider = SimulatedFallback::<GoogleDriveProvider>::new(None, local_sim, "Google Drive", true, true);
+        let provider = SimulatedFallback::<GoogleDriveProvider>::new(None, local_sim, "Google Drive", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -167,8 +167,7 @@ mod tests {
             common: CommonProviderSettings {
                 destination_folder: None,
                 enabled: None,
-                sync: None,
-                sync_both: None,
+                sync_mode: None,
                 encryption_password: None,
             },
         };
@@ -181,7 +180,7 @@ mod tests {
                 format!("{}/upload", server.uri()),
             );
         let local_sim = LocalSimulation::new(provider_root.clone(), "Google Drive".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "Google Drive", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "Google Drive", SyncMode::TwoWay);
 
         // Upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -263,7 +262,7 @@ mod tests {
         let provider_root = temp_dir.path().join("gdrive_root");
         let inner = GoogleDriveProvider::new(credentials);
         let local_sim = LocalSimulation::new(provider_root.clone(), "Google Drive".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "Google Drive", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "Google Drive", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
@@ -300,7 +299,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("dropbox_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "Dropbox".to_string());
-        let provider = SimulatedFallback::<DropboxProvider>::new(None, local_sim, "Dropbox", true, true);
+        let provider = SimulatedFallback::<DropboxProvider>::new(None, local_sim, "Dropbox", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -404,8 +403,7 @@ mod tests {
             common: CommonProviderSettings {
                 destination_folder: None,
                 enabled: None,
-                sync: None,
-                sync_both: None,
+                sync_mode: None,
                 encryption_password: None,
             },
         };
@@ -418,7 +416,7 @@ mod tests {
                 format!("{}/content", server.uri()),
             );
         let local_sim = LocalSimulation::new(provider_root.clone(), "Dropbox".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "Dropbox", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "Dropbox", SyncMode::TwoWay);
 
         // Upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -500,7 +498,7 @@ mod tests {
         let provider_root = temp_dir.path().join("dropbox_root");
         let inner = DropboxProvider::new(credentials);
         let local_sim = LocalSimulation::new(provider_root.clone(), "Dropbox".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "Dropbox", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "Dropbox", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
@@ -537,7 +535,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("onedrive_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "OneDrive".to_string());
-        let provider = SimulatedFallback::<OneDriveProvider>::new(None, local_sim, "OneDrive", true, true);
+        let provider = SimulatedFallback::<OneDriveProvider>::new(None, local_sim, "OneDrive", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -632,8 +630,7 @@ mod tests {
             common: CommonProviderSettings {
                 destination_folder: None,
                 enabled: None,
-                sync: None,
-                sync_both: None,
+                sync_mode: None,
                 encryption_password: None,
             },
         };
@@ -645,7 +642,7 @@ mod tests {
                 server.uri(),
             );
         let local_sim = LocalSimulation::new(provider_root.clone(), "OneDrive".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "OneDrive", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "OneDrive", SyncMode::TwoWay);
 
         // Upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -727,7 +724,7 @@ mod tests {
         let provider_root = temp_dir.path().join("onedrive_root");
         let inner = OneDriveProvider::new(credentials);
         let local_sim = LocalSimulation::new(provider_root.clone(), "OneDrive".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "OneDrive", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "OneDrive", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
@@ -764,7 +761,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("webdav_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "WebDAV".to_string());
-        let provider = SimulatedFallback::<WebDAVProvider>::new(None, local_sim, "WebDAV", true, true);
+        let provider = SimulatedFallback::<WebDAVProvider>::new(None, local_sim, "WebDAV", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -871,8 +868,7 @@ mod tests {
             common: CommonProviderSettings {
                 destination_folder: Some("MySyncFolder".to_string()),
                 enabled: None,
-                sync: None,
-                sync_both: None,
+                sync_mode: None,
                 encryption_password: None,
             },
         };
@@ -880,7 +876,7 @@ mod tests {
         // Create provider and set endpoints to mock server
         let inner = WebDAVProvider::new(creds).with_endpoints(server.uri());
         let local_sim = LocalSimulation::new(provider_root.clone(), "WebDAV".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "WebDAV", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "WebDAV", SyncMode::TwoWay);
 
         // Upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -959,7 +955,7 @@ mod tests {
         let provider_root = temp_dir.path().join("webdav_root");
         let inner = WebDAVProvider::new(credentials);
         let local_sim = LocalSimulation::new(provider_root.clone(), "WebDAV".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "WebDAV", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "WebDAV", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
@@ -996,7 +992,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("s3_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "S3".to_string());
-        let provider = SimulatedFallback::<S3Provider>::new(None, local_sim, "S3", true, true);
+        let provider = SimulatedFallback::<S3Provider>::new(None, local_sim, "S3", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1091,8 +1087,7 @@ mod tests {
             common: CommonProviderSettings {
                 destination_folder: Some("MySyncFolder".to_string()),
                 enabled: None,
-                sync: None,
-                sync_both: None,
+                sync_mode: None,
                 encryption_password: None,
             },
         };
@@ -1100,7 +1095,7 @@ mod tests {
         // Create provider and set endpoints to mock server
         let inner = S3Provider::new(creds).with_endpoints(server.uri());
         let local_sim = LocalSimulation::new(provider_root.clone(), "S3".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "S3", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "S3", SyncMode::TwoWay);
 
         // Upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1179,7 +1174,7 @@ mod tests {
         let provider_root = temp_dir.path().join("s3_root");
         let inner = S3Provider::new(credentials);
         let local_sim = LocalSimulation::new(provider_root.clone(), "S3".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "S3", true, true);
+        let provider = SimulatedFallback::new(Some(inner), local_sim, "S3", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
@@ -1216,7 +1211,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("sftp_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "SFTP".to_string());
-        let provider = SimulatedFallback::<SFTPProvider>::new(None, local_sim, "SFTP", true, true);
+        let provider = SimulatedFallback::<SFTPProvider>::new(None, local_sim, "SFTP", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1253,7 +1248,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("nextcloud_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "Nextcloud".to_string());
-        let provider = SimulatedFallback::<NextcloudProvider>::new(None, local_sim, "Nextcloud", true, true);
+        let provider = SimulatedFallback::<NextcloudProvider>::new(None, local_sim, "Nextcloud", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1290,7 +1285,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("box_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "Box".to_string());
-        let provider = SimulatedFallback::<BoxProvider>::new(None, local_sim, "Box", true, true);
+        let provider = SimulatedFallback::<BoxProvider>::new(None, local_sim, "Box", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1327,7 +1322,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("mega_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "MEGA".to_string());
-        let provider = SimulatedFallback::<MegaProvider>::new(None, local_sim, "MEGA", true, true);
+        let provider = SimulatedFallback::<MegaProvider>::new(None, local_sim, "MEGA", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1364,7 +1359,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("azure_blob_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "Azure Blob".to_string());
-        let provider = SimulatedFallback::<AzureBlobProvider>::new(None, local_sim, "Azure Blob", true, true);
+        let provider = SimulatedFallback::<AzureBlobProvider>::new(None, local_sim, "Azure Blob", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1401,7 +1396,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("gcs_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "GCS".to_string());
-        let provider = SimulatedFallback::<GCSProvider>::new(None, local_sim, "GCS", true, true);
+        let provider = SimulatedFallback::<GCSProvider>::new(None, local_sim, "GCS", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1438,7 +1433,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("b2_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "B2".to_string());
-        let provider = SimulatedFallback::<B2Provider>::new(None, local_sim, "B2", true, true);
+        let provider = SimulatedFallback::<B2Provider>::new(None, local_sim, "B2", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1475,7 +1470,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("pcloud_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "pCloud".to_string());
-        let provider = SimulatedFallback::<PCloudProvider>::new(None, local_sim, "pCloud", true, true);
+        let provider = SimulatedFallback::<PCloudProvider>::new(None, local_sim, "pCloud", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -1512,7 +1507,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("ipfs_root");
         let local_sim = LocalSimulation::new(provider_root.clone(), "IPFS".to_string());
-        let provider = SimulatedFallback::<IPFSProvider>::new(None, local_sim, "IPFS", true, true);
+        let provider = SimulatedFallback::<IPFSProvider>::new(None, local_sim, "IPFS", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");

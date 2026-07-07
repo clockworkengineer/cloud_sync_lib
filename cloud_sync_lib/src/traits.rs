@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use thiserror::Error;
+use crate::providers::SyncMode;
 
 /// Storage errors that can occur when executing storage backend operations.
 #[derive(Debug, Error)]
@@ -35,26 +36,26 @@ pub enum StorageError {
     Reqwest(#[from] reqwest::Error),
 }
 
-/// Metadata describing a single file or folder in a storage backend.
-#[derive(Debug, Clone)]
+/// Common metadata returned by listings or query commands.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageItem {
-    /// Relative path of the item within the remote storage root.
+    /// Relative path representing the remote storage resource.
     pub path: PathBuf,
-    /// Size of the item in bytes.
+    /// Exact file size in bytes (set to 0 for directories).
     pub size: u64,
-    /// Last modified timestamp of the item.
+    /// Last modification date from the storage provider.
     pub modified: SystemTime,
-    /// True if the item is a folder, false if it is a file.
+    /// Indicates whether the item is a folder or directory.
     pub is_dir: bool,
 }
 
-/// The core trait defining capabilities of a cloud storage provider.
+/// Generic trait representing any storage target (e.g. S3, Google Drive, Local Simulation).
 ///
-/// Any provider implementing this trait can be used by the daemon to sync files
-/// bidirectionally or unidirectionally.
+/// Implements standard REST-like commands for manipulation and query,
+/// with support for custom prefixes, directories, and error handling.
 #[async_trait::async_trait]
 pub trait StorageBackend: Send + Sync {
-    /// Returns the user-friendly name of the storage backend (e.g. "Google Drive").
+    /// Returns the user-friendly name of the storage backend.
     fn name(&self) -> &str;
 
     /// Uploads a file from `local_path` to the cloud's `remote_path`.
@@ -74,13 +75,24 @@ pub trait StorageBackend: Send + Sync {
         Ok(())
     }
 
+    /// Returns the sync mode for the backend.
+    fn sync_mode(&self) -> SyncMode {
+        SyncMode::OneWay
+    }
+
     /// Returns whether the backend should sync deletions.
     fn sync(&self) -> bool {
-        true
+        match self.sync_mode() {
+            SyncMode::TwoWay | SyncMode::OneWay => true,
+            SyncMode::OneWayNoDeletions => false,
+        }
     }
 
     /// Returns whether the backend should sync both ways (bidirectionally).
     fn sync_both(&self) -> bool {
-        false
+        match self.sync_mode() {
+            SyncMode::TwoWay => true,
+            SyncMode::OneWay | SyncMode::OneWayNoDeletions => false,
+        }
     }
 }

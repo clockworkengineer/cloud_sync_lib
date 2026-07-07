@@ -18,8 +18,7 @@ client_secret = "PLACEHOLDER_CLIENT_SECRET"
 refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
 destination_folder = ""
 enabled = true
-sync = true
-sync_both = false
+sync_mode = "two-way"
 
 [dropbox_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"
@@ -27,8 +26,7 @@ client_secret = "PLACEHOLDER_CLIENT_SECRET"
 refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
 destination_folder = ""
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [onedrive_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"
@@ -36,8 +34,7 @@ client_secret = "PLACEHOLDER_CLIENT_SECRET"
 refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
 destination_folder = ""
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [webdav_credentials]
 url = "http://127.0.0.1:8080"
@@ -45,8 +42,7 @@ username = "PLACEHOLDER_USERNAME"
 password = "PLACEHOLDER_PASSWORD"
 destination_folder = ""
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [s3_credentials]
 bucket = "PLACEHOLDER_BUCKET"
@@ -56,8 +52,7 @@ secret_access_key = "PLACEHOLDER_SECRET_KEY"
 endpoint = "http://127.0.0.1:9000"
 destination_folder = ""
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [sftp_credentials]
 host = "127.0.0.1"
@@ -67,8 +62,7 @@ password = "PLACEHOLDER_PASSWORD"
 private_key_path = ""
 destination_folder = ""
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [nextcloud_credentials]
 url = "http://127.0.0.1:8080"
@@ -76,8 +70,7 @@ username = "PLACEHOLDER_USERNAME"
 app_password = "PLACEHOLDER_APP_PASSWORD"
 destination_folder = ""
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [box_credentials]
 client_id = "your_box_client_id"
@@ -85,16 +78,14 @@ client_secret = "your_box_client_secret"
 refresh_token = "your_box_refresh_token"
 destination_folder = "MySyncFolder"   # Optional: Folder name in Box root
 enabled = true
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [mega_credentials]
 email = "your-email@example.com"
 password = "your-mega-password"
 destination_folder = "PiSync" # Optional sub-folder name (creates it if missing)
 enabled = true                # Set to false to disable this provider
-sync = true                   # Set to false to disable deletion syncing
-sync_both = false             # Set to true to enable bidirectional syncing
+sync_mode = "two-way"             # Options: "two-way", "one-way", "one-way-no-deletions"
 
 [azure_blob_credentials]
 account_name = "devstoreaccount1"
@@ -103,8 +94,7 @@ container = "sync-container"
 # endpoint = "http://127.0.0.1:10000/devstoreaccount1" # Optional local Azurite emulator
 destination_folder = "MySyncFolder" # Optional
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [gcs_credentials]
 bucket = "test-bucket"
@@ -112,8 +102,7 @@ service_account_key_path = ""
 # endpoint = "http://127.0.0.1:4443" # Optional local fake-gcs-server emulator
 destination_folder = "MySyncFolder" # Optional
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [b2_credentials]
 bucket = "test-bucket"
@@ -122,16 +111,14 @@ application_key = ""
 # endpoint = "https://api.backblazeb2.com" # Optional custom endpoint / mock server
 destination_folder = "MySyncFolder" # Optional
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [pcloud_credentials]
 access_token = ""
 # endpoint = "https://api.pcloud.com" # Optional custom API endpoint (e.g. European accounts)
 destination_folder = "MySyncFolder" # Optional
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"
 
 [ipfs_credentials]
 jwt_token = ""
@@ -139,5 +126,4 @@ jwt_token = ""
 # gateway_url = "https://gateway.pinata.cloud/ipfs/" # Optional custom IPFS gateway
 destination_folder = "MySyncFolder" # Optional
 enabled = false
-sync = true
-sync_both = false
+sync_mode = "one-way"

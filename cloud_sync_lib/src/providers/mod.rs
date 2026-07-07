@@ -5,6 +5,18 @@
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum SyncMode {
+    /// Two-way sync: uploads/downloads changes and propagates deletions.
+    TwoWay,
+    /// One-way sync: uploads changes and propagates deletions from local to remote.
+    #[default]
+    OneWay,
+    /// One-way sync without propagating deletions.
+    OneWayNoDeletions,
+}
+
 /// Common configuration settings shared by all storage providers.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CommonProviderSettings {
@@ -12,10 +24,8 @@ pub struct CommonProviderSettings {
     pub destination_folder: Option<String>,
     /// Optional toggle to enable/disable the provider backend.
     pub enabled: Option<bool>,
-    /// Optional toggle to enable deletion syncing.
-    pub sync: Option<bool>,
-    /// Optional toggle to enable bidirectional (two-way) sync.
-    pub sync_both: Option<bool>,
+    /// Optional sync mode: two-way, one-way, one-way-no-deletions
+    pub sync_mode: Option<SyncMode>,
     /// Optional password for client-side encryption.
     pub encryption_password: Option<String>,
 }
@@ -27,12 +37,22 @@ pub trait ProviderConfig {
         self.common_settings().enabled.unwrap_or(true)
     }
 
+    fn sync_mode(&self) -> SyncMode {
+        self.common_settings().sync_mode.unwrap_or(SyncMode::OneWay)
+    }
+
     fn sync_deletions(&self) -> bool {
-        self.common_settings().sync.unwrap_or(true)
+        match self.sync_mode() {
+            SyncMode::TwoWay | SyncMode::OneWay => true,
+            SyncMode::OneWayNoDeletions => false,
+        }
     }
 
     fn sync_both(&self) -> bool {
-        self.common_settings().sync_both.unwrap_or(false)
+        match self.sync_mode() {
+            SyncMode::TwoWay => true,
+            SyncMode::OneWay | SyncMode::OneWayNoDeletions => false,
+        }
     }
 
     fn destination_folder(&self) -> Option<&str> {

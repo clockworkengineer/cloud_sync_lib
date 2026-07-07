@@ -144,8 +144,7 @@ mod tests {
             common: cloud_sync_lib::CommonProviderSettings {
                 destination_folder: None,
                 enabled: Some(false),
-                sync: None,
-                sync_both: None,
+                sync_mode: None,
                 encryption_password: None,
             },
         });
@@ -158,8 +157,7 @@ mod tests {
             common: cloud_sync_lib::CommonProviderSettings {
                 destination_folder: None,
                 enabled: Some(true),
-                sync: None,
-                sync_both: None,
+                sync_mode: None,
                 encryption_password: None,
             },
         });

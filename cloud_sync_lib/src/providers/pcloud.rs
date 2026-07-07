@@ -213,7 +213,8 @@ impl StorageBackend for PCloudProvider {
         Ok(items)
     }
 
-    fn sync(&self) -> bool {
-        self.credentials.common.sync.unwrap_or(true)
+    fn sync_mode(&self) -> super::SyncMode {
+        use super::ProviderConfig;
+        self.credentials.sync_mode()
     }
 }

@@ -131,12 +131,8 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         self.inner.create_folder(remote_path).await
     }
 
-    fn sync(&self) -> bool {
-        self.inner.sync()
-    }
-
-    fn sync_both(&self) -> bool {
-        self.inner.sync_both()
+    fn sync_mode(&self) -> super::SyncMode {
+        self.inner.sync_mode()
     }
 }
 

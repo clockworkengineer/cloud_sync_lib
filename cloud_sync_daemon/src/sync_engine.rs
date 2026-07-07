@@ -408,7 +408,7 @@ mod tests {
 
     struct TestBackendWrapper {
         sim: LocalSimulation,
-        sync_both: bool,
+        sync_mode: cloud_sync_lib::SyncMode,
     }
 
     #[async_trait::async_trait]
@@ -416,8 +416,8 @@ mod tests {
         fn name(&self) -> &str {
             "TestSim"
         }
-        fn sync_both(&self) -> bool {
-            self.sync_both
+        fn sync_mode(&self) -> cloud_sync_lib::SyncMode {
+            self.sync_mode
         }
         async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
             self.sim.upload(local_path, remote_path).await
@@ -452,7 +452,7 @@ mod tests {
 
         let local_path = &local_dir;
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
-        let remote_sim = TestBackendWrapper { sim, sync_both: true };
+        let remote_sim = TestBackendWrapper { sim, sync_mode: cloud_sync_lib::SyncMode::TwoWay };
         let state_file = local_path.join(".sync_state.json");
         let gitignore = ignore::gitignore::Gitignore::empty();
 
@@ -522,7 +522,7 @@ mod tests {
 
         let local_path = &local_dir;
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
-        let remote_sim = TestBackendWrapper { sim, sync_both: false };
+        let remote_sim = TestBackendWrapper { sim, sync_mode: cloud_sync_lib::SyncMode::OneWay };
         let state_file = local_path.join(".sync_state.json");
         let gitignore = ignore::gitignore::Gitignore::empty();
 
