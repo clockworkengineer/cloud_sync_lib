@@ -30,7 +30,7 @@ impl SFTPProvider {
         sess.set_tcp_stream(tcp);
         sess.handshake().map_err(|e| StorageError::Provider(e.to_string()))?;
 
-        let has_key = self.creds.private_key_path.as_ref().map_or(false, |p| !p.is_empty());
+        let has_key = self.creds.private_key_path.as_ref().is_some_and(|p| !p.is_empty());
         if has_key {
             let path = Path::new(self.creds.private_key_path.as_ref().unwrap());
             sess.userauth_pubkey_file(&self.creds.username, None, path, None)

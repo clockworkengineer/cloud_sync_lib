@@ -242,7 +242,7 @@ impl StorageBackend for GCSProvider {
 
                 // Parse GCS RFC3339 time format
                 let modified = chrono::DateTime::parse_from_rfc3339(&obj.updated)
-                    .map(|dt| SystemTime::from(dt))
+                    .map(SystemTime::from)
                     .unwrap_or(SystemTime::now());
 
                 let size = obj.size.parse::<u64>().unwrap_or(0);

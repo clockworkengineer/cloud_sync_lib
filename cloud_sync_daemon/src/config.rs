@@ -124,7 +124,7 @@ pub async fn load_or_create_config(path: &str) -> Result<AppConfig, Box<dyn std:
 
 /// Helper function to check if a provider is enabled based on its credentials config.
 pub fn is_provider_enabled<C: ProviderConfig>(credentials: &Option<C>) -> bool {
-    credentials.as_ref().map_or(true, |c| c.is_enabled())
+    credentials.as_ref().is_none_or(|c| c.is_enabled())
 }
 
 #[cfg(test)]

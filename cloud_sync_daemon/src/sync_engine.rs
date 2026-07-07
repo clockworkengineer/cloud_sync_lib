@@ -69,6 +69,7 @@ async fn get_remote_mtime(backend: &dyn StorageBackend, rel_path: &str) -> Optio
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn resolve_conflict(
     watch_dir: &Path,
     rel_path: &str,
@@ -105,7 +106,7 @@ async fn resolve_conflict(
     next_files_state.insert(rel_path.to_string(), FileState {
         size: remote_size,
         local_modified: replaced_local_mtime,
-        remote_modified: remote_modified,
+        remote_modified,
         is_dir: Some(false),
     });
 

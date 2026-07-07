@@ -354,7 +354,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Handle::current();
     let mut watcher = RecommendedWatcher::new(
         move |res| {
-            let _ = rt.block_on(async {
+            rt.block_on(async {
                 tx.send(res).await.ok();
             });
         },

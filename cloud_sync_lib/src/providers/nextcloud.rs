@@ -244,7 +244,7 @@ impl StorageBackend for NextcloudProvider {
 
             let decoded = percent_decode(&href);
             let clean_href = decoded.trim_end_matches('/');
-            let name = clean_href.split('/').last().unwrap_or("").to_string();
+            let name = clean_href.split('/').next_back().unwrap_or("").to_string();
 
             if !name.is_empty() {
                 storage_items.push(StorageItem {

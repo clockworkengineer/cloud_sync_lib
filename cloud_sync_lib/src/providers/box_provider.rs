@@ -214,7 +214,7 @@ impl BoxProvider {
                 None => {
                     // Item not found. If it's not the last segment, or it's a directory segment we want to create:
                     let is_last = i == segments.len() - 1;
-                    if create_folders && (!is_last || (is_last && is_dir)) {
+                    if create_folders && (!is_last || is_dir) {
                         // Create folder
                         let create_url = format!("{}/folders", self.api_url);
                         let body = serde_json::json!({

@@ -15,6 +15,8 @@ use crate::DaemonState;
 use crate::{DEBOUNCE_DELAY_MS, RETRY_DELAY_MS, MAX_SYNC_ATTEMPTS};
 use crate::utils::get_remote_path;
 
+pub type ActiveLocks = Arc<Mutex<HashMap<(String, PathBuf), Arc<tokio::sync::Mutex<()>>>>>;
+
 /// Builds a new Gitignore matcher based on .syncignore and app config excludes.
 pub fn build_gitignore(watch_dir: &Path, exclude_patterns: &Option<Vec<String>>) -> Gitignore {
     let mut builder = GitignoreBuilder::new(watch_dir);
@@ -139,11 +141,11 @@ pub async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBack
 pub async fn handle_event(
     event: Event,
     state: Arc<Mutex<DaemonState>>,
-    active_locks: Arc<Mutex<HashMap<(String, PathBuf), Arc<tokio::sync::Mutex<()>>>>>,
+    active_locks: ActiveLocks,
 ) {
     // Check if .syncignore itself changed
     let syncignore_changed = event.paths.iter().any(|p| {
-        p.file_name().map_or(false, |name| name == ".syncignore")
+        p.file_name().is_some_and(|name| name == ".syncignore")
     });
 
     if syncignore_changed {
