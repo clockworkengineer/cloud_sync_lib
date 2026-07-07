@@ -212,105 +212,113 @@ impl StorageBackend for WebDAVProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        self.ensure_parent_dirs(&clean_path).await?;
+        super::utils::execute_with_retry(self.name(), "upload", || async {
+            let clean_path = self.format_path(remote_path);
+            self.ensure_parent_dirs(&clean_path).await?;
 
-        info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
-        let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
+            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+            let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
-        let upload_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
-        let res = self.client.put(&upload_url)
-            .basic_auth(&self.credentials.username, Some(&self.credentials.password))
-            .header("Content-Type", "application/octet-stream")
-            .header("Content-Length", size.to_string())
-            .body(body)
-            .send()
-            .await?;
+            let upload_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
+            let res = self.client.put(&upload_url)
+                .basic_auth(&self.credentials.username, Some(&self.credentials.password))
+                .header("Content-Type", "application/octet-stream")
+                .header("Content-Length", size.to_string())
+                .body(body)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "upload").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "upload").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "download", || async {
+            let clean_path = self.format_path(remote_path);
 
-        let download_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
-        let res = self.client.get(&download_url)
-            .basic_auth(&self.credentials.username, Some(&self.credentials.password))
-            .send()
-            .await?;
+            let download_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
+            let res = self.client.get(&download_url)
+                .basic_auth(&self.credentials.username, Some(&self.credentials.password))
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "download").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "download").await);
+            }
 
-        super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
-        Ok(())
+            super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
+            Ok(())
+        }).await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "delete", || async {
+            let clean_path = self.format_path(remote_path);
 
-        let delete_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
-        let res = self.client.delete(&delete_url)
-            .basic_auth(&self.credentials.username, Some(&self.credentials.password))
-            .send()
-            .await?;
+            let delete_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
+            let res = self.client.delete(&delete_url)
+                .basic_auth(&self.credentials.username, Some(&self.credentials.password))
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "delete").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "delete").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let clean_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "list", || async {
+            let clean_path = self.format_path(remote_path);
 
-        let mut list_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
-        if !list_url.ends_with('/') {
-            list_url.push('/');
-        }
-        let res = self.client.request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &list_url)
-            .basic_auth(&self.credentials.username, Some(&self.credentials.password))
-            .header("Depth", "1")
-            .send()
-            .await?;
+            let mut list_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
+            if !list_url.ends_with('/') {
+                list_url.push('/');
+            }
+            let res = self.client.request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &list_url)
+                .basic_auth(&self.credentials.username, Some(&self.credentials.password))
+                .header("Depth", "1")
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "list").await);
-        }
-
-        let body = res.text().await?;
-        let items = parse_propfind_response(&body)?;
-
-        let mut storage_items = Vec::new();
-        let mut first = true;
-        for (href, size, is_dir) in items {
-            if first {
-                first = false;
-                continue;
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "list").await);
             }
 
-            let decoded = percent_decode(&href);
-            let clean_href = decoded.trim_end_matches('/');
-            let name = clean_href.split('/').next_back().unwrap_or("").to_string();
+            let body = res.text().await?;
+            let items = parse_propfind_response(&body)?;
 
-            if !name.is_empty() {
-                storage_items.push(StorageItem {
-                    path: PathBuf::from(name),
-                    size,
-                    modified: std::time::SystemTime::now(),
-                    is_dir,
-                    checksum: None,
-                });
+            let mut storage_items = Vec::new();
+            let mut first = true;
+            for (href, size, is_dir) in items {
+                if first {
+                    first = false;
+                    continue;
+                }
+
+                let decoded = percent_decode(&href);
+                let clean_href = decoded.trim_end_matches('/');
+                let name = clean_href.split('/').next_back().unwrap_or("").to_string();
+
+                if !name.is_empty() {
+                    storage_items.push(StorageItem {
+                        path: PathBuf::from(name),
+                        size,
+                        modified: std::time::SystemTime::now(),
+                        is_dir,
+                        checksum: None,
+                    });
+                }
             }
-        }
 
-        Ok(storage_items)
+            Ok(storage_items)
+        }).await
     }
 
     fn sync_mode(&self) -> super::SyncMode {

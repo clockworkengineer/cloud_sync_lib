@@ -109,155 +109,163 @@ impl StorageBackend for GCSProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+        super::utils::execute_with_retry(self.name(), "upload", || async {
+            let clean_path = self.format_path(remote_path);
+            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
 
-        let file_content = fs::read(local_path).await?;
-        let token = self.get_access_token().await?;
+            let file_content = fs::read(local_path).await?;
+            let token = self.get_access_token().await?;
 
-        // URL encode the object name
-        let encoded_name = url_encode(&clean_path);
-        let upload_url = format!(
-            "{}/upload/storage/v1/b/{}/o?uploadType=media&name={}",
-            self.api_url, self.credentials.bucket, encoded_name
-        );
+            // URL encode the object name
+            let encoded_name = url_encode(&clean_path);
+            let upload_url = format!(
+                "{}/upload/storage/v1/b/{}/o?uploadType=media&name={}",
+                self.api_url, self.credentials.bucket, encoded_name
+            );
 
-        let mut req = self.client.post(&upload_url)
-            .header("Content-Type", "application/octet-stream")
-            .body(file_content);
+            let mut req = self.client.post(&upload_url)
+                .header("Content-Type", "application/octet-stream")
+                .body(file_content);
 
-        if let Some(tok) = token {
-            req = req.bearer_auth(tok);
-        }
+            if let Some(tok) = &token {
+                req = req.bearer_auth(tok);
+            }
 
-        let res = req.send().await?;
+            let res = req.send().await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "upload").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "upload").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        let token = self.get_access_token().await?;
+        super::utils::execute_with_retry(self.name(), "download", || async {
+            let clean_path = self.format_path(remote_path);
+            let token = self.get_access_token().await?;
 
-        let encoded_name = url_encode(&clean_path);
-        let download_url = format!(
-            "{}/storage/v1/b/{}/o/{}?alt=media",
-            self.api_url, self.credentials.bucket, encoded_name
-        );
+            let encoded_name = url_encode(&clean_path);
+            let download_url = format!(
+                "{}/storage/v1/b/{}/o/{}?alt=media",
+                self.api_url, self.credentials.bucket, encoded_name
+            );
 
-        let mut req = self.client.get(&download_url);
-        if let Some(tok) = token {
-            req = req.bearer_auth(tok);
-        }
+            let mut req = self.client.get(&download_url);
+            if let Some(tok) = &token {
+                req = req.bearer_auth(tok);
+            }
 
-        let res = req.send().await?;
+            let res = req.send().await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "download").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "download").await);
+            }
 
-        if let Some(parent) = local_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        let bytes = res.bytes().await?;
-        fs::write(local_path, bytes).await?;
-        Ok(())
+            if let Some(parent) = local_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            let bytes = res.bytes().await?;
+            fs::write(local_path, bytes).await?;
+            Ok(())
+        }).await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        let token = self.get_access_token().await?;
+        super::utils::execute_with_retry(self.name(), "delete", || async {
+            let clean_path = self.format_path(remote_path);
+            let token = self.get_access_token().await?;
 
-        let encoded_name = url_encode(&clean_path);
-        let delete_url = format!(
-            "{}/storage/v1/b/{}/o/{}",
-            self.api_url, self.credentials.bucket, encoded_name
-        );
+            let encoded_name = url_encode(&clean_path);
+            let delete_url = format!(
+                "{}/storage/v1/b/{}/o/{}",
+                self.api_url, self.credentials.bucket, encoded_name
+            );
 
-        let mut req = self.client.delete(&delete_url);
-        if let Some(tok) = token {
-            req = req.bearer_auth(tok);
-        }
+            let mut req = self.client.delete(&delete_url);
+            if let Some(tok) = &token {
+                req = req.bearer_auth(tok);
+            }
 
-        let res = req.send().await?;
+            let res = req.send().await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "delete").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "delete").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let clean_path = self.format_path(remote_path);
-        let token = self.get_access_token().await?;
+        super::utils::execute_with_retry(self.name(), "list", || async {
+            let clean_path = self.format_path(remote_path);
+            let token = self.get_access_token().await?;
 
-        let prefix_query = if clean_path.is_empty() {
-            "".to_string()
-        } else {
-            // GCS expects prefix parameter
-            let prefix = if clean_path.ends_with('/') {
-                clean_path.clone()
+            let prefix_query = if clean_path.is_empty() {
+                "".to_string()
             } else {
-                format!("{}/", clean_path)
+                // GCS expects prefix parameter
+                let prefix = if clean_path.ends_with('/') {
+                    clean_path.clone()
+                } else {
+                    format!("{}/", clean_path)
+                };
+                format!("&prefix={}", url_encode(&prefix))
             };
-            format!("&prefix={}", url_encode(&prefix))
-        };
 
-        let list_url = format!(
-            "{}/storage/v1/b/{}/o?{}",
-            self.api_url, self.credentials.bucket, prefix_query
-        );
+            let list_url = format!(
+                "{}/storage/v1/b/{}/o?{}",
+                self.api_url, self.credentials.bucket, prefix_query
+            );
 
-        let mut req = self.client.get(&list_url);
-        if let Some(tok) = token {
-            req = req.bearer_auth(tok);
-        }
+            let mut req = self.client.get(&list_url);
+            if let Some(tok) = &token {
+                req = req.bearer_auth(tok);
+            }
 
-        let res = req.send().await?;
+            let res = req.send().await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "list").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "list").await);
+            }
 
-        let list_response: GCSListResponse = res.json().await?;
-        let mut items = Vec::new();
+            let list_response: GCSListResponse = res.json().await?;
+            let mut items = Vec::new();
 
-        if let Some(objects) = list_response.items {
-            for obj in objects {
-                // Strip prefix destination_folder if present
-                let mut item_path = PathBuf::from(&obj.name);
-                if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                    let clean_dest = dest_folder.trim_matches('/');
-                    if !clean_dest.is_empty() {
-                        if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                            item_path = stripped.to_path_buf();
+            if let Some(objects) = list_response.items {
+                for obj in objects {
+                    // Strip prefix destination_folder if present
+                    let mut item_path = PathBuf::from(&obj.name);
+                    if let Some(ref dest_folder) = self.credentials.common.destination_folder {
+                        let clean_dest = dest_folder.trim_matches('/');
+                        if !clean_dest.is_empty() {
+                            if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
+                                item_path = stripped.to_path_buf();
+                            }
                         }
                     }
+
+                    // Parse GCS RFC3339 time format
+                    let modified = chrono::DateTime::parse_from_rfc3339(&obj.updated)
+                        .map(SystemTime::from)
+                        .unwrap_or(SystemTime::now());
+
+                    let size = obj.size.parse::<u64>().unwrap_or(0);
+
+                    items.push(StorageItem {
+                        path: item_path,
+                        size,
+                        modified,
+                        is_dir: false, // GCS is a flat namespace, virtual directories are simulated
+                        checksum: None,
+                    });
                 }
-
-                // Parse GCS RFC3339 time format
-                let modified = chrono::DateTime::parse_from_rfc3339(&obj.updated)
-                    .map(SystemTime::from)
-                    .unwrap_or(SystemTime::now());
-
-                let size = obj.size.parse::<u64>().unwrap_or(0);
-
-                items.push(StorageItem {
-                    path: item_path,
-                    size,
-                    modified,
-                    is_dir: false, // GCS is a flat namespace, virtual directories are simulated
-                    checksum: None,
-                });
             }
-        }
 
-        Ok(items)
+            Ok(items)
+        }).await
     }
 
     fn sync_mode(&self) -> super::SyncMode {

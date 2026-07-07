@@ -139,222 +139,230 @@ impl StorageBackend for AzureBlobProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+        super::utils::execute_with_retry(self.name(), "upload", || async {
+            let clean_path = self.format_path(remote_path);
+            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
 
-        let file_content = fs::read(local_path).await?;
-        let len = file_content.len() as u64;
+            let file_content = fs::read(local_path).await?;
+            let len = file_content.len() as u64;
 
-        let date_str = httpdate::fmt_http_date(SystemTime::now());
-        let version_str = "2021-08-06";
-        let blob_type = "BlockBlob";
+            let date_str = httpdate::fmt_http_date(SystemTime::now());
+            let version_str = "2021-08-06";
+            let blob_type = "BlockBlob";
 
-        let path_and_query = format!("/{}", clean_path);
-        let auth = self.sign_request(
-            "PUT",
-            &path_and_query,
-            Some(len),
-            Some("application/octet-stream"),
-            &[
-                ("x-ms-date", &date_str),
-                ("x-ms-version", version_str),
-                ("x-ms-blob-type", blob_type),
-            ],
-        )?;
+            let path_and_query = format!("/{}", clean_path);
+            let auth = self.sign_request(
+                "PUT",
+                &path_and_query,
+                Some(len),
+                Some("application/octet-stream"),
+                &[
+                    ("x-ms-date", &date_str),
+                    ("x-ms-version", version_str),
+                    ("x-ms-blob-type", blob_type),
+                ],
+            )?;
 
-        let upload_url = format!("{}/{}/{}", self.api_url, self.credentials.container, clean_path);
-        let res = self.client.put(&upload_url)
-            .header("x-ms-date", &date_str)
-            .header("x-ms-version", version_str)
-            .header("x-ms-blob-type", blob_type)
-            .header("Authorization", &auth)
-            .header("Content-Type", "application/octet-stream")
-            .body(file_content)
-            .send()
-            .await?;
+            let upload_url = format!("{}/{}/{}", self.api_url, self.credentials.container, clean_path);
+            let res = self.client.put(&upload_url)
+                .header("x-ms-date", &date_str)
+                .header("x-ms-version", version_str)
+                .header("x-ms-blob-type", blob_type)
+                .header("Authorization", &auth)
+                .header("Content-Type", "application/octet-stream")
+                .body(file_content)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "upload").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "upload").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "download", || async {
+            let clean_path = self.format_path(remote_path);
 
-        let date_str = httpdate::fmt_http_date(SystemTime::now());
-        let version_str = "2021-08-06";
+            let date_str = httpdate::fmt_http_date(SystemTime::now());
+            let version_str = "2021-08-06";
 
-        let path_and_query = format!("/{}", clean_path);
-        let auth = self.sign_request(
-            "GET",
-            &path_and_query,
-            None,
-            None,
-            &[
-                ("x-ms-date", &date_str),
-                ("x-ms-version", version_str),
-            ],
-        )?;
+            let path_and_query = format!("/{}", clean_path);
+            let auth = self.sign_request(
+                "GET",
+                &path_and_query,
+                None,
+                None,
+                &[
+                    ("x-ms-date", &date_str),
+                    ("x-ms-version", version_str),
+                ],
+            )?;
 
-        let download_url = format!("{}/{}/{}", self.api_url, self.credentials.container, clean_path);
-        let res = self.client.get(&download_url)
-            .header("x-ms-date", &date_str)
-            .header("x-ms-version", version_str)
-            .header("Authorization", &auth)
-            .send()
-            .await?;
+            let download_url = format!("{}/{}/{}", self.api_url, self.credentials.container, clean_path);
+            let res = self.client.get(&download_url)
+                .header("x-ms-date", &date_str)
+                .header("x-ms-version", version_str)
+                .header("Authorization", &auth)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "download").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "download").await);
+            }
 
-        if let Some(parent) = local_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        let bytes = res.bytes().await?;
-        fs::write(local_path, bytes).await?;
-        Ok(())
+            if let Some(parent) = local_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            let bytes = res.bytes().await?;
+            fs::write(local_path, bytes).await?;
+            Ok(())
+        }).await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "delete", || async {
+            let clean_path = self.format_path(remote_path);
 
-        let date_str = httpdate::fmt_http_date(SystemTime::now());
-        let version_str = "2021-08-06";
+            let date_str = httpdate::fmt_http_date(SystemTime::now());
+            let version_str = "2021-08-06";
 
-        let path_and_query = format!("/{}", clean_path);
-        let auth = self.sign_request(
-            "DELETE",
-            &path_and_query,
-            None,
-            None,
-            &[
-                ("x-ms-date", &date_str),
-                ("x-ms-version", version_str),
-            ],
-        )?;
+            let path_and_query = format!("/{}", clean_path);
+            let auth = self.sign_request(
+                "DELETE",
+                &path_and_query,
+                None,
+                None,
+                &[
+                    ("x-ms-date", &date_str),
+                    ("x-ms-version", version_str),
+                ],
+            )?;
 
-        let delete_url = format!("{}/{}/{}", self.api_url, self.credentials.container, clean_path);
-        let res = self.client.delete(&delete_url)
-            .header("x-ms-date", &date_str)
-            .header("x-ms-version", version_str)
-            .header("Authorization", &auth)
-            .send()
-            .await?;
+            let delete_url = format!("{}/{}/{}", self.api_url, self.credentials.container, clean_path);
+            let res = self.client.delete(&delete_url)
+                .header("x-ms-date", &date_str)
+                .header("x-ms-version", version_str)
+                .header("Authorization", &auth)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "delete").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "delete").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let clean_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "list", || async {
+            let clean_path = self.format_path(remote_path);
 
-        let date_str = httpdate::fmt_http_date(SystemTime::now());
-        let version_str = "2021-08-06";
+            let date_str = httpdate::fmt_http_date(SystemTime::now());
+            let version_str = "2021-08-06";
 
-        // Query params must be sorted lexicographically in CanonicalizedResource
-        // ?comp=list&prefix=prefix&restype=container
-        let mut path_and_query = "/?comp=list&restype=container".to_string();
-        if !clean_path.is_empty() {
-            // Azure expects prefix to end with '/' to list a folder's content
-            let prefix = if clean_path.ends_with('/') {
-                clean_path.clone()
-            } else {
-                format!("{}/", clean_path)
-            };
-            path_and_query.push_str(&format!("&prefix={}", prefix));
-        }
+            // Query params must be sorted lexicographically in CanonicalizedResource
+            // ?comp=list&prefix=prefix&restype=container
+            let mut path_and_query = "/?comp=list&restype=container".to_string();
+            if !clean_path.is_empty() {
+                // Azure expects prefix to end with '/' to list a folder's content
+                let prefix = if clean_path.ends_with('/') {
+                    clean_path.clone()
+                } else {
+                    format!("{}/", clean_path)
+                };
+                path_and_query.push_str(&format!("&prefix={}", prefix));
+            }
 
-        let auth = self.sign_request(
-            "GET",
-            &path_and_query,
-            None,
-            None,
-            &[
-                ("x-ms-date", &date_str),
-                ("x-ms-version", version_str),
-            ],
-        )?;
+            let auth = self.sign_request(
+                "GET",
+                &path_and_query,
+                None,
+                None,
+                &[
+                    ("x-ms-date", &date_str),
+                    ("x-ms-version", version_str),
+                ],
+            )?;
 
-        let list_url = format!("{}/{}{}", self.api_url, self.credentials.container, &path_and_query[1..]);
-        let res = self.client.get(&list_url)
-            .header("x-ms-date", &date_str)
-            .header("x-ms-version", version_str)
-            .header("Authorization", &auth)
-            .send()
-            .await?;
+            let list_url = format!("{}/{}{}", self.api_url, self.credentials.container, &path_and_query[1..]);
+            let res = self.client.get(&list_url)
+                .header("x-ms-date", &date_str)
+                .header("x-ms-version", version_str)
+                .header("Authorization", &auth)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "list").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "list").await);
+            }
 
-        let body = res.text().await?;
-        let mut reader = Reader::from_str(&body);
-        let mut buf = Vec::new();
+            let body = res.text().await?;
+            let mut reader = Reader::from_str(&body);
+            let mut buf = Vec::new();
 
-        let mut items = Vec::new();
-        let mut current_name = String::new();
-        let mut current_size = 0;
-        let mut current_modified = SystemTime::now();
-        let mut active_tag = String::new();
+            let mut items = Vec::new();
+            let mut current_name = String::new();
+            let mut current_size = 0;
+            let mut current_modified = SystemTime::now();
+            let mut active_tag = String::new();
 
-        loop {
-            match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(ref e)) => {
-                    active_tag = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
-                }
-                Ok(Event::End(ref e)) => {
-                    let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
-                    active_tag.clear();
-                    if name == "Blob" {
-                        // Strip prefix destination_folder if present
-                        let mut item_path = PathBuf::from(&current_name);
-                        if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                            let clean_dest = dest_folder.trim_matches('/');
-                            if !clean_dest.is_empty() {
-                                if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                                    item_path = stripped.to_path_buf();
+            loop {
+                match reader.read_event_into(&mut buf) {
+                    Ok(Event::Start(ref e)) => {
+                        active_tag = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                    }
+                    Ok(Event::End(ref e)) => {
+                        let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                        active_tag.clear();
+                        if name == "Blob" {
+                            // Strip prefix destination_folder if present
+                            let mut item_path = PathBuf::from(&current_name);
+                            if let Some(ref dest_folder) = self.credentials.common.destination_folder {
+                                let clean_dest = dest_folder.trim_matches('/');
+                                if !clean_dest.is_empty() {
+                                    if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
+                                        item_path = stripped.to_path_buf();
+                                    }
                                 }
                             }
-                        }
 
-                        items.push(StorageItem {
-                            path: item_path,
-                            size: current_size,
-                            modified: current_modified,
-                            is_dir: false, // Blobs are always files (Azure Blob Storage has virtual directories)
-                            checksum: None,
-                        });
-                        current_name.clear();
-                        current_size = 0;
-                        current_modified = SystemTime::now();
-                    }
-                }
-                Ok(Event::Text(ref e)) => {
-                    let text = e.unescape().unwrap_or_default().into_owned();
-                    if active_tag == "Name" {
-                        current_name = text;
-                    } else if active_tag == "Content-Length" {
-                        current_size = text.parse::<u64>().unwrap_or(0);
-                    } else if active_tag == "Last-Modified" {
-                        if let Ok(time) = httpdate::parse_http_date(&text) {
-                            current_modified = time;
+                            items.push(StorageItem {
+                                path: item_path,
+                                size: current_size,
+                                modified: current_modified,
+                                is_dir: false, // Blobs are always files (Azure Blob Storage has virtual directories)
+                                checksum: None,
+                            });
+                            current_name.clear();
+                            current_size = 0;
+                            current_modified = SystemTime::now();
                         }
                     }
+                    Ok(Event::Text(ref e)) => {
+                        let text = e.unescape().unwrap_or_default().into_owned();
+                        if active_tag == "Name" {
+                            current_name = text;
+                        } else if active_tag == "Content-Length" {
+                            current_size = text.parse::<u64>().unwrap_or(0);
+                        } else if active_tag == "Last-Modified" {
+                            if let Ok(time) = httpdate::parse_http_date(&text) {
+                                current_modified = time;
+                            }
+                        }
+                    }
+                    Ok(Event::Eof) => break,
+                    Err(e) => return Err(StorageError::Provider(format!("XML parse error: {}", e))),
+                    _ => {}
                 }
-                Ok(Event::Eof) => break,
-                Err(e) => return Err(StorageError::Provider(format!("XML parse error: {}", e))),
-                _ => {}
+                buf.clear();
             }
-            buf.clear();
-        }
 
-        Ok(items)
+            Ok(items)
+        }).await
     }
 
     fn sync_mode(&self) -> super::SyncMode {

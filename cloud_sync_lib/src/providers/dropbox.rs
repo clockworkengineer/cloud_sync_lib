@@ -122,121 +122,129 @@ impl StorageBackend for DropboxProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let token = self.get_access_token().await?;
-        let dbx_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "upload", || async {
+            let token = self.get_access_token().await?;
+            let dbx_path = self.format_path(remote_path);
 
-        info!("[{}] Real upload starting for '{}'", self.name(), dbx_path);
-        let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
+            info!("[{}] Real upload starting for '{}'", self.name(), dbx_path);
+            let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
-        let api_arg = serde_json::json!({
-            "path": dbx_path,
-            "mode": "overwrite",
-            "autorename": false,
-            "mute": false,
-            "strict_conflict": false
-        });
+            let api_arg = serde_json::json!({
+                "path": dbx_path,
+                "mode": "overwrite",
+                "autorename": false,
+                "mute": false,
+                "strict_conflict": false
+            });
 
-        let upload_url = format!("{}/upload", self.content_url);
-        let res = self.client.post(&upload_url)
-            .bearer_auth(&token)
-            .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
-            .header("Content-Type", "application/octet-stream")
-            .header("Content-Length", size.to_string())
-            .body(body)
-            .send()
-            .await?;
+            let upload_url = format!("{}/upload", self.content_url);
+            let res = self.client.post(&upload_url)
+                .bearer_auth(&token)
+                .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
+                .header("Content-Type", "application/octet-stream")
+                .header("Content-Length", size.to_string())
+                .body(body)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "upload").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "upload").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let token = self.get_access_token().await?;
-        let dbx_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "download", || async {
+            let token = self.get_access_token().await?;
+            let dbx_path = self.format_path(remote_path);
 
-        let api_arg = serde_json::json!({
-            "path": dbx_path
-        });
+            let api_arg = serde_json::json!({
+                "path": dbx_path
+            });
 
-        let download_url = format!("{}/download", self.content_url);
-        let res = self.client.post(&download_url)
-            .bearer_auth(&token)
-            .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
-            .header("Content-Type", "")
-            .send()
-            .await?;
+            let download_url = format!("{}/download", self.content_url);
+            let res = self.client.post(&download_url)
+                .bearer_auth(&token)
+                .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
+                .header("Content-Type", "")
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "download").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "download").await);
+            }
 
-        super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
-        Ok(())
+            super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
+            Ok(())
+        }).await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let token = self.get_access_token().await?;
-        let dbx_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "delete", || async {
+            let token = self.get_access_token().await?;
+            let dbx_path = self.format_path(remote_path);
 
-        let body = serde_json::json!({
-            "path": dbx_path
-        });
+            let body = serde_json::json!({
+                "path": dbx_path
+            });
 
-        let delete_url = format!("{}/delete_v2", self.api_url);
-        let res = self.client.post(&delete_url)
-            .bearer_auth(&token)
-            .json(&body)
-            .send()
-            .await?;
+            let delete_url = format!("{}/delete_v2", self.api_url);
+            let res = self.client.post(&delete_url)
+                .bearer_auth(&token)
+                .json(&body)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "delete").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "delete").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let token = self.get_access_token().await?;
-        let dbx_path = self.format_path(remote_path);
+        super::utils::execute_with_retry(self.name(), "list", || async {
+            let token = self.get_access_token().await?;
+            let dbx_path = self.format_path(remote_path);
 
-        let body = serde_json::json!({
-            "path": dbx_path,
-            "recursive": false
-        });
+            let body = serde_json::json!({
+                "path": dbx_path,
+                "recursive": false
+            });
 
-        let list_url = format!("{}/list_folder", self.api_url);
-        let res = self.client.post(&list_url)
-            .bearer_auth(&token)
-            .json(&body)
-            .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
+            let list_url = format!("{}/list_folder", self.api_url);
+            let res = self.client.post(&list_url)
+                .bearer_auth(&token)
+                .json(&body)
+                .send()
+                .await?
+                .json::<serde_json::Value>()
+                .await?;
 
-        let mut items = Vec::new();
-        if let Some(entries) = res["entries"].as_array() {
-            for entry in entries {
-                let name = entry["name"].as_str().unwrap_or("").to_string();
-                let size = entry["size"].as_u64().unwrap_or(0);
-                let tag = entry[".tag"].as_str().unwrap_or("");
-                let is_dir = tag == "folder";
-                let checksum = entry["content_hash"].as_str().map(|s| s.to_string());
+            let mut items = Vec::new();
+            if let Some(entries) = res["entries"].as_array() {
+                for entry in entries {
+                    let name = entry["name"].as_str().unwrap_or("").to_string();
+                    let size = entry["size"].as_u64().unwrap_or(0);
+                    let tag = entry[".tag"].as_str().unwrap_or("");
+                    let is_dir = tag == "folder";
+                    let checksum = entry["content_hash"].as_str().map(|s| s.to_string());
 
-                items.push(StorageItem {
-                    path: PathBuf::from(name),
-                    size,
-                    modified: std::time::SystemTime::now(),
-                    is_dir,
-                    checksum,
-                });
+                    items.push(StorageItem {
+                        path: PathBuf::from(name),
+                        size,
+                        modified: std::time::SystemTime::now(),
+                        is_dir,
+                        checksum,
+                    });
+                }
             }
-        }
 
-        Ok(items)
+            Ok(items)
+        }).await
     }
 
     fn sync_mode(&self) -> super::SyncMode {

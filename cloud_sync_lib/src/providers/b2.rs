@@ -220,175 +220,183 @@ impl StorageBackend for B2Provider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+        super::utils::execute_with_retry(self.name(), "upload", || async {
+            let clean_path = self.format_path(remote_path);
+            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
 
-        let auth = self.authorize().await?;
-        let bucket_id = self.get_bucket_id(&auth).await?;
-        let file_content = fs::read(local_path).await?;
-        let len = file_content.len() as u64;
+            let auth = self.authorize().await?;
+            let bucket_id = self.get_bucket_id(&auth).await?;
+            let file_content = fs::read(local_path).await?;
+            let len = file_content.len() as u64;
 
-        // 1. Get Upload URL
-        let get_url_endpoint = format!("{}/b2api/v2/b2_get_upload_url", auth.api_url);
-        let res = self.client.post(&get_url_endpoint)
-            .header("Authorization", &auth.auth_token)
-            .json(&GetUploadUrlRequest { bucket_id })
-            .send()
-            .await?;
+            // 1. Get Upload URL
+            let get_url_endpoint = format!("{}/b2api/v2/b2_get_upload_url", auth.api_url);
+            let res = self.client.post(&get_url_endpoint)
+                .header("Authorization", &auth.auth_token)
+                .json(&GetUploadUrlRequest { bucket_id })
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "get_upload_url").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "get_upload_url").await);
+            }
 
-        let upload_info: B2UploadUrlResponse = res.json().await?;
+            let upload_info: B2UploadUrlResponse = res.json().await?;
 
-        // 2. Upload file
-        let encoded_name = url_encode(&clean_path);
-        let upload_res = self.client.post(&upload_info.upload_url)
-            .header("Authorization", &upload_info.authorization_token)
-            .header("X-Bz-File-Name", &encoded_name)
-            .header("Content-Type", "b2/x-auto")
-            .header("Content-Length", len)
-            .header("X-Bz-Content-Sha1", "do_not_verify")
-            .body(file_content)
-            .send()
-            .await?;
+            // 2. Upload file
+            let encoded_name = url_encode(&clean_path);
+            let upload_res = self.client.post(&upload_info.upload_url)
+                .header("Authorization", &upload_info.authorization_token)
+                .header("X-Bz-File-Name", &encoded_name)
+                .header("Content-Type", "b2/x-auto")
+                .header("Content-Length", len)
+                .header("X-Bz-Content-Sha1", "do_not_verify")
+                .body(file_content)
+                .send()
+                .await?;
 
-        if !upload_res.status().is_success() {
-            return Err(parse_response_error(upload_res, self.name(), "upload").await);
-        }
+            if !upload_res.status().is_success() {
+                return Err(parse_response_error(upload_res, self.name(), "upload").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        let auth = self.authorize().await?;
+        super::utils::execute_with_retry(self.name(), "download", || async {
+            let clean_path = self.format_path(remote_path);
+            let auth = self.authorize().await?;
 
-        // B2 download URL format: {downloadUrl}/file/{bucketName}/{fileName}
-        let encoded_name = url_encode(&clean_path);
-        let download_url = format!("{}/file/{}/{}", auth.download_url, self.credentials.bucket, encoded_name);
+            // B2 download URL format: {downloadUrl}/file/{bucketName}/{fileName}
+            let encoded_name = url_encode(&clean_path);
+            let download_url = format!("{}/file/{}/{}", auth.download_url, self.credentials.bucket, encoded_name);
 
-        let res = self.client.get(&download_url)
-            .header("Authorization", &auth.auth_token)
-            .send()
-            .await?;
+            let res = self.client.get(&download_url)
+                .header("Authorization", &auth.auth_token)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "download").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "download").await);
+            }
 
-        if let Some(parent) = local_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        let bytes = res.bytes().await?;
-        fs::write(local_path, bytes).await?;
-        Ok(())
+            if let Some(parent) = local_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            let bytes = res.bytes().await?;
+            fs::write(local_path, bytes).await?;
+            Ok(())
+        }).await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        let auth = self.authorize().await?;
-        let bucket_id = self.get_bucket_id(&auth).await?;
+        super::utils::execute_with_retry(self.name(), "delete", || async {
+            let clean_path = self.format_path(remote_path);
+            let auth = self.authorize().await?;
+            let bucket_id = self.get_bucket_id(&auth).await?;
 
-        // 1. List file names starting with this filename to find the file ID
-        let list_url = format!("{}/b2api/v2/b2_list_file_names", auth.api_url);
-        let list_res = self.client.post(&list_url)
-            .header("Authorization", &auth.auth_token)
-            .json(&ListFileNamesRequest {
-                bucket_id: bucket_id.clone(),
-                start_file_name: Some(clean_path.clone()),
-                max_file_count: Some(1),
-                prefix: None,
-            })
-            .send()
-            .await?;
+            // 1. List file names starting with this filename to find the file ID
+            let list_url = format!("{}/b2api/v2/b2_list_file_names", auth.api_url);
+            let list_res = self.client.post(&list_url)
+                .header("Authorization", &auth.auth_token)
+                .json(&ListFileNamesRequest {
+                    bucket_id: bucket_id.clone(),
+                    start_file_name: Some(clean_path.clone()),
+                    max_file_count: Some(1),
+                    prefix: None,
+                })
+                .send()
+                .await?;
 
-        if !list_res.status().is_success() {
-            return Err(parse_response_error(list_res, self.name(), "list_for_delete").await);
-        }
+            if !list_res.status().is_success() {
+                return Err(parse_response_error(list_res, self.name(), "list_for_delete").await);
+            }
 
-        let list_body: ListFileNamesResponse = list_res.json().await?;
-        let file = list_body.files.first()
-            .filter(|f| f.file_name == clean_path)
-            .ok_or_else(|| StorageError::NotFound(format!("File '{}' not found", clean_path)))?;
+            let list_body: ListFileNamesResponse = list_res.json().await?;
+            let file = list_body.files.first()
+                .filter(|f| f.file_name == clean_path)
+                .ok_or_else(|| StorageError::NotFound(format!("File '{}' not found", clean_path)))?;
 
-        // 2. Delete the specific file version
-        let delete_url = format!("{}/b2api/v2/b2_delete_file_version", auth.api_url);
-        let del_res = self.client.post(&delete_url)
-            .header("Authorization", &auth.auth_token)
-            .json(&DeleteFileVersionRequest {
-                file_name: file.file_name.clone(),
-                file_id: file.file_id.clone(),
-            })
-            .send()
-            .await?;
+            // 2. Delete the specific file version
+            let delete_url = format!("{}/b2api/v2/b2_delete_file_version", auth.api_url);
+            let del_res = self.client.post(&delete_url)
+                .header("Authorization", &auth.auth_token)
+                .json(&DeleteFileVersionRequest {
+                    file_name: file.file_name.clone(),
+                    file_id: file.file_id.clone(),
+                })
+                .send()
+                .await?;
 
-        if !del_res.status().is_success() {
-            return Err(parse_response_error(del_res, self.name(), "delete").await);
-        }
+            if !del_res.status().is_success() {
+                return Err(parse_response_error(del_res, self.name(), "delete").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let clean_path = self.format_path(remote_path);
-        let auth = self.authorize().await?;
-        let bucket_id = self.get_bucket_id(&auth).await?;
+        super::utils::execute_with_retry(self.name(), "list", || async {
+            let clean_path = self.format_path(remote_path);
+            let auth = self.authorize().await?;
+            let bucket_id = self.get_bucket_id(&auth).await?;
 
-        let prefix = if clean_path.is_empty() {
-            None
-        } else {
-            if clean_path.ends_with('/') {
-                Some(clean_path.clone())
+            let prefix = if clean_path.is_empty() {
+                None
             } else {
-                Some(format!("{}/", clean_path))
+                if clean_path.ends_with('/') {
+                    Some(clean_path.clone())
+                } else {
+                    Some(format!("{}/", clean_path))
+                }
+            };
+
+            let list_url = format!("{}/b2api/v2/b2_list_file_names", auth.api_url);
+            let res = self.client.post(&list_url)
+                .header("Authorization", &auth.auth_token)
+                .json(&ListFileNamesRequest {
+                    bucket_id,
+                    start_file_name: None,
+                    max_file_count: None,
+                    prefix,
+                })
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "list").await);
             }
-        };
 
-        let list_url = format!("{}/b2api/v2/b2_list_file_names", auth.api_url);
-        let res = self.client.post(&list_url)
-            .header("Authorization", &auth.auth_token)
-            .json(&ListFileNamesRequest {
-                bucket_id,
-                start_file_name: None,
-                max_file_count: None,
-                prefix,
-            })
-            .send()
-            .await?;
+            let body: ListFileNamesResponse = res.json().await?;
+            let mut items = Vec::new();
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "list").await);
-        }
-
-        let body: ListFileNamesResponse = res.json().await?;
-        let mut items = Vec::new();
-
-        for file in body.files {
-            let mut item_path = PathBuf::from(&file.file_name);
-            if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                let clean_dest = dest_folder.trim_matches('/');
-                if !clean_dest.is_empty() {
-                    if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                        item_path = stripped.to_path_buf();
+            for file in body.files {
+                let mut item_path = PathBuf::from(&file.file_name);
+                if let Some(ref dest_folder) = self.credentials.common.destination_folder {
+                    let clean_dest = dest_folder.trim_matches('/');
+                    if !clean_dest.is_empty() {
+                        if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
+                            item_path = stripped.to_path_buf();
+                        }
                     }
                 }
+
+                // Convert B2 timestamp (milliseconds since epoch) to SystemTime
+                let modified = SystemTime::UNIX_EPOCH + Duration::from_millis(file.upload_timestamp);
+
+                items.push(StorageItem {
+                    path: item_path,
+                    size: file.content_length,
+                    modified,
+                    is_dir: false, // B2 is a flat namespace, folders are virtual
+                    checksum: None,
+                });
             }
 
-            // Convert B2 timestamp (milliseconds since epoch) to SystemTime
-            let modified = SystemTime::UNIX_EPOCH + Duration::from_millis(file.upload_timestamp);
-
-            items.push(StorageItem {
-                path: item_path,
-                size: file.content_length,
-                modified,
-                is_dir: false, // B2 is a flat namespace, folders are virtual
-                checksum: None,
-            });
-        }
-
-        Ok(items)
+            Ok(items)
+        }).await
     }
 
     fn sync_mode(&self) -> super::SyncMode {

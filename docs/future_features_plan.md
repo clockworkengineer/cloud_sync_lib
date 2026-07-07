@@ -42,7 +42,7 @@ Currently, the sync state relies entirely on file `size` and the `local_modified
 
 ---
 
-## 4. Transient Error Retries with Exponential Backoff
+## 4. Transient Error Retries with Exponential Backoff [Implemented]
 
 ### Background
 Currently, the storage clients fail immediately on any standard connection dropout or rate-limiting response (`HTTP 429` / `HTTP 503`), throwing a `StorageError::Reqwest` or `StorageError::Provider`.

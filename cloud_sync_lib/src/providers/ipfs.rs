@@ -108,131 +108,139 @@ impl StorageBackend for IPFSProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+        super::utils::execute_with_retry(self.name(), "upload", || async {
+            let clean_path = self.format_path(remote_path);
+            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
 
-        let file_content = fs::read(local_path).await?;
-        let file_name = Path::new(&clean_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&clean_path)
-            .to_string();
+            let file_content = fs::read(local_path).await?;
+            let file_name = Path::new(&clean_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&clean_path)
+                .to_string();
 
-        let upload_url = format!("{}/pinning/pinFileToIPFS", self.api_url);
+            let upload_url = format!("{}/pinning/pinFileToIPFS", self.api_url);
 
-        // Build pinataMetadata JSON string
-        let metadata_json = serde_json::json!({
-            "name": clean_path
-        }).to_string();
+            // Build pinataMetadata JSON string
+            let metadata_json = serde_json::json!({
+                "name": clean_path
+            }).to_string();
 
-        // Build multipart body
-        let form = reqwest::multipart::Form::new()
-            .part("file", reqwest::multipart::Part::bytes(file_content).file_name(file_name))
-            .text("pinataMetadata", metadata_json);
+            // Build multipart body
+            let form = reqwest::multipart::Form::new()
+                .part("file", reqwest::multipart::Part::bytes(file_content).file_name(file_name))
+                .text("pinataMetadata", metadata_json);
 
-        let res = self.client.post(&upload_url)
-            .bearer_auth(&self.credentials.jwt_token)
-            .multipart(form)
-            .send()
-            .await?;
+            let res = self.client.post(&upload_url)
+                .bearer_auth(&self.credentials.jwt_token)
+                .multipart(form)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "upload").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "upload").await);
+            }
 
-        let _body: PinataPinFileResponse = res.json().await?;
-        Ok(())
+            let _body: PinataPinFileResponse = res.json().await?;
+            Ok(())
+        }).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        let cid = self.resolve_cid(&clean_path).await?;
+        super::utils::execute_with_retry(self.name(), "download", || async {
+            let clean_path = self.format_path(remote_path);
+            let cid = self.resolve_cid(&clean_path).await?;
 
-        let download_url = if self.gateway_url.ends_with('/') {
-            format!("{}{}", self.gateway_url, cid)
-        } else {
-            format!("{}/{}", self.gateway_url, cid)
-        };
+            let download_url = if self.gateway_url.ends_with('/') {
+                format!("{}{}", self.gateway_url, cid)
+            } else {
+                format!("{}/{}", self.gateway_url, cid)
+            };
 
-        let dl_res = self.client.get(&download_url).send().await?;
+            let dl_res = self.client.get(&download_url).send().await?;
 
-        if !dl_res.status().is_success() {
-            return Err(parse_response_error(dl_res, self.name(), "download").await);
-        }
+            if !dl_res.status().is_success() {
+                return Err(parse_response_error(dl_res, self.name(), "download").await);
+            }
 
-        if let Some(parent) = local_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        let bytes = dl_res.bytes().await?;
-        fs::write(local_path, bytes).await?;
-        Ok(())
+            if let Some(parent) = local_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
+            let bytes = dl_res.bytes().await?;
+            fs::write(local_path, bytes).await?;
+            Ok(())
+        }).await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let clean_path = self.format_path(remote_path);
-        let cid = self.resolve_cid(&clean_path).await?;
+        super::utils::execute_with_retry(self.name(), "delete", || async {
+            let clean_path = self.format_path(remote_path);
+            let cid = self.resolve_cid(&clean_path).await?;
 
-        let unpin_url = format!("{}/pinning/unpin/{}", self.api_url, cid);
-        let res = self.client.delete(&unpin_url)
-            .bearer_auth(&self.credentials.jwt_token)
-            .send()
-            .await?;
+            let unpin_url = format!("{}/pinning/unpin/{}", self.api_url, cid);
+            let res = self.client.delete(&unpin_url)
+                .bearer_auth(&self.credentials.jwt_token)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "delete").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "delete").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let clean_path = self.format_path(remote_path);
-        let list_url = format!("{}/data/pinList", self.api_url);
+        super::utils::execute_with_retry(self.name(), "list", || async {
+            let clean_path = self.format_path(remote_path);
+            let list_url = format!("{}/data/pinList", self.api_url);
 
-        let mut req = self.client.get(&list_url)
-            .bearer_auth(&self.credentials.jwt_token)
-            .query(&[("status", "pinned")]);
+            let mut req = self.client.get(&list_url)
+                .bearer_auth(&self.credentials.jwt_token)
+                .query(&[("status", "pinned")]);
 
-        if !clean_path.is_empty() {
-            req = req.query(&[("metadata[name]", &clean_path)]);
-        }
-
-        let res = req.send().await?;
-
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "list").await);
-        }
-
-        let list_response: PinataPinListResponse = res.json().await?;
-        let mut items = Vec::new();
-
-        for row in list_response.rows {
-            let mut item_path = PathBuf::from(&row.metadata.name);
-            if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                let clean_dest = dest_folder.trim_matches('/');
-                if !clean_dest.is_empty() {
-                    if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                        item_path = stripped.to_path_buf();
-                    }
-                }
+            if !clean_path.is_empty() {
+                req = req.query(&[("metadata[name]", &clean_path)]);
             }
 
-            let modified = row.date_pinned
-                .as_ref()
-                .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                .map(SystemTime::from)
-                .unwrap_or(SystemTime::now());
+            let res = req.send().await?;
 
-            items.push(StorageItem {
-                path: item_path,
-                size: row.size,
-                modified,
-                is_dir: false,
-                checksum: None,
-            });
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "list").await);
+            }
 
-        Ok(items)
+            let list_response: PinataPinListResponse = res.json().await?;
+            let mut items = Vec::new();
+
+            for row in list_response.rows {
+                let mut item_path = PathBuf::from(&row.metadata.name);
+                if let Some(ref dest_folder) = self.credentials.common.destination_folder {
+                    let clean_dest = dest_folder.trim_matches('/');
+                    if !clean_dest.is_empty() {
+                        if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
+                            item_path = stripped.to_path_buf();
+                        }
+                    }
+                }
+
+                let modified = row.date_pinned
+                    .as_ref()
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .map(SystemTime::from)
+                    .unwrap_or(SystemTime::now());
+
+                items.push(StorageItem {
+                    path: item_path,
+                    size: row.size,
+                    modified,
+                    is_dir: false,
+                    checksum: None,
+                });
+            }
+
+            Ok(items)
+        }).await
     }
 
     fn sync_mode(&self) -> super::SyncMode {

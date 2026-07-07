@@ -264,148 +264,156 @@ impl StorageBackend for BoxProvider {
     }
 
     async fn list(&self, path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let token = self.get_access_token().await?;
-        let (folder_id, is_dir) = self.resolve_path(&token, path, false).await?;
+        super::utils::execute_with_retry(self.name(), "list", || async {
+            let token = self.get_access_token().await?;
+            let (folder_id, is_dir) = self.resolve_path(&token, path, false).await?;
 
-        if !is_dir {
-            return Err(StorageError::Provider("Target path is not a folder".to_string()));
-        }
-
-        let url = format!("{}/folders/{}/items", self.api_url, folder_id);
-        let res = self.client.get(&url)
-            .bearer_auth(&token)
-            .send()
-            .await?;
-
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "list").await);
-        }
-
-        let items = res.json::<BoxFolderItems>().await?;
-        let storage_items = items.entries.into_iter().map(|item| {
-            StorageItem {
-                path: PathBuf::from(item.name),
-                is_dir: item.item_type == "folder",
-                size: item.size.unwrap_or(0),
-                modified: std::time::SystemTime::now(),
-                checksum: None,
+            if !is_dir {
+                return Err(StorageError::Provider("Target path is not a folder".to_string()));
             }
-        }).collect();
 
-        Ok(storage_items)
+            let url = format!("{}/folders/{}/items", self.api_url, folder_id);
+            let res = self.client.get(&url)
+                .bearer_auth(&token)
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "list").await);
+            }
+
+            let items = res.json::<BoxFolderItems>().await?;
+            let storage_items = items.entries.into_iter().map(|item| {
+                StorageItem {
+                    path: PathBuf::from(item.name),
+                    is_dir: item.item_type == "folder",
+                    size: item.size.unwrap_or(0),
+                    modified: std::time::SystemTime::now(),
+                    checksum: None,
+                }
+            }).collect();
+
+            Ok(storage_items)
+        }).await
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let token = self.get_access_token().await?;
-        let (parent_id, file_name) = self.resolve_parent_and_name(&token, remote_path).await?;
+        super::utils::execute_with_retry(self.name(), "upload", || async {
+            let token = self.get_access_token().await?;
+            let (parent_id, file_name) = self.resolve_parent_and_name(&token, remote_path).await?;
 
-        // Check if file already exists in parent folder
-        let url = format!("{}/folders/{}/items", self.api_url, parent_id);
-        let res = self.client.get(&url)
-            .bearer_auth(&token)
-            .send()
-            .await?;
+            // Check if file already exists in parent folder
+            let url = format!("{}/folders/{}/items", self.api_url, parent_id);
+            let res = self.client.get(&url)
+                .bearer_auth(&token)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "check_existing_file").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "check_existing_file").await);
+            }
 
-        let folder_items = res.json::<BoxFolderItems>().await?;
-        let existing_file = folder_items.entries.into_iter()
-            .find(|item| item.name == file_name && item.item_type == "file");
+            let folder_items = res.json::<BoxFolderItems>().await?;
+            let existing_file = folder_items.entries.into_iter()
+                .find(|item| item.name == file_name && item.item_type == "file");
 
-        let file_bytes = fs::read(local_path).await?;
-        let file_part = reqwest::multipart::Part::bytes(file_bytes)
-            .file_name(file_name.clone());
+            let file_bytes = fs::read(local_path).await?;
+            let file_part = reqwest::multipart::Part::bytes(file_bytes)
+                .file_name(file_name.clone());
 
-        match existing_file {
-            Some(file) => {
-                // File exists: Upload new version (overwrite)
-                info!("[Box] Real upload starting (version update) for file ID: {}", file.id);
-                let upload_url = format!("{}/files/{}/content", self.upload_url, file.id);
-                let form = reqwest::multipart::Form::new().part("file", file_part);
+            match existing_file {
+                Some(file) => {
+                    // File exists: Upload new version (overwrite)
+                    info!("[Box] Real upload starting (version update) for file ID: {}", file.id);
+                    let upload_url = format!("{}/files/{}/content", self.upload_url, file.id);
+                    let form = reqwest::multipart::Form::new().part("file", file_part);
 
-                let upload_res = self.client.post(&upload_url)
-                    .bearer_auth(&token)
-                    .multipart(form)
-                    .send()
-                    .await?;
+                    let upload_res = self.client.post(&upload_url)
+                        .bearer_auth(&token)
+                        .multipart(form)
+                        .send()
+                        .await?;
 
-                if !upload_res.status().is_success() {
-                    return Err(parse_response_error(upload_res, self.name(), "upload_version").await);
+                    if !upload_res.status().is_success() {
+                        return Err(parse_response_error(upload_res, self.name(), "upload_version").await);
+                    }
+                }
+                None => {
+                    // File does not exist: Upload new file
+                    info!("[Box] Real upload starting (new file) for '{}'", file_name);
+                    let upload_url = format!("{}/files/content", self.upload_url);
+                    let attributes = serde_json::json!({
+                        "name": file_name,
+                        "parent": { "id": parent_id }
+                    }).to_string();
+
+                    let form = reqwest::multipart::Form::new()
+                        .text("attributes", attributes)
+                        .part("file", file_part);
+
+                    let upload_res = self.client.post(&upload_url)
+                        .bearer_auth(&token)
+                        .multipart(form)
+                        .send()
+                        .await?;
+
+                    if !upload_res.status().is_success() {
+                        return Err(parse_response_error(upload_res, self.name(), "upload_new").await);
+                    }
                 }
             }
-            None => {
-                // File does not exist: Upload new file
-                info!("[Box] Real upload starting (new file) for '{}'", file_name);
-                let upload_url = format!("{}/files/content", self.upload_url);
-                let attributes = serde_json::json!({
-                    "name": file_name,
-                    "parent": { "id": parent_id }
-                }).to_string();
 
-                let form = reqwest::multipart::Form::new()
-                    .text("attributes", attributes)
-                    .part("file", file_part);
-
-                let upload_res = self.client.post(&upload_url)
-                    .bearer_auth(&token)
-                    .multipart(form)
-                    .send()
-                    .await?;
-
-                if !upload_res.status().is_success() {
-                    return Err(parse_response_error(upload_res, self.name(), "upload_new").await);
-                }
-            }
-        }
-
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let token = self.get_access_token().await?;
-        let (file_id, is_dir) = self.resolve_path(&token, remote_path, false).await?;
+        super::utils::execute_with_retry(self.name(), "download", || async {
+            let token = self.get_access_token().await?;
+            let (file_id, is_dir) = self.resolve_path(&token, remote_path, false).await?;
 
-        if is_dir {
-            return Err(StorageError::Provider("Cannot download a directory".to_string()));
-        }
+            if is_dir {
+                return Err(StorageError::Provider("Cannot download a directory".to_string()));
+            }
 
-        let url = format!("{}/files/{}/content", self.api_url, file_id);
-        let res = self.client.get(&url)
-            .bearer_auth(&token)
-            .send()
-            .await?;
+            let url = format!("{}/files/{}/content", self.api_url, file_id);
+            let res = self.client.get(&url)
+                .bearer_auth(&token)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "download").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "download").await);
+            }
 
-        let bytes = res.bytes().await?;
-        fs::write(local_path, bytes).await?;
-        Ok(())
+            let bytes = res.bytes().await?;
+            fs::write(local_path, bytes).await?;
+            Ok(())
+        }).await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let token = self.get_access_token().await?;
-        let (item_id, is_dir) = self.resolve_path(&token, remote_path, false).await?;
+        super::utils::execute_with_retry(self.name(), "delete", || async {
+            let token = self.get_access_token().await?;
+            let (item_id, is_dir) = self.resolve_path(&token, remote_path, false).await?;
 
-        let url = if is_dir {
-            format!("{}/folders/{}", self.api_url, item_id)
-        } else {
-            format!("{}/files/{}", self.api_url, item_id)
-        };
+            let url = if is_dir {
+                format!("{}/folders/{}", self.api_url, item_id)
+            } else {
+                format!("{}/files/{}", self.api_url, item_id)
+            };
 
-        let res = self.client.delete(&url)
-            .bearer_auth(&token)
-            .send()
-            .await?;
+            let res = self.client.delete(&url)
+                .bearer_auth(&token)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "delete").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "delete").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     fn sync_mode(&self) -> super::SyncMode {

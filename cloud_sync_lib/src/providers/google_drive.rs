@@ -239,96 +239,104 @@ impl StorageBackend for GoogleDriveProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let token = self.get_access_token().await?;
-        let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
+        super::utils::execute_with_retry(self.name(), "upload", || async {
+            let token = self.get_access_token().await?;
+            let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
-        info!("[{}] Real upload starting for '{}' (ID: {})", self.name(), remote_path, file_id);
-        let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
-        
-        let upload_url = format!("{}/{}?uploadType=media", self.upload_url, file_id);
-        let res = self.client.patch(&upload_url)
-            .bearer_auth(&token)
-            .header("Content-Type", "application/octet-stream")
-            .header("Content-Length", size.to_string())
-            .body(body)
-            .send()
-            .await?;
+            info!("[{}] Real upload starting for '{}' (ID: {})", self.name(), remote_path, file_id);
+            let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
+            
+            let upload_url = format!("{}/{}?uploadType=media", self.upload_url, file_id);
+            let res = self.client.patch(&upload_url)
+                .bearer_auth(&token)
+                .header("Content-Type", "application/octet-stream")
+                .header("Content-Length", size.to_string())
+                .body(body)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "upload").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "upload").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let token = self.get_access_token().await?;
-        let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
+        super::utils::execute_with_retry(self.name(), "download", || async {
+            let token = self.get_access_token().await?;
+            let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
-        let download_url = format!("{}/{}?alt=media", self.api_url, file_id);
-        let res = self.client.get(&download_url)
-            .bearer_auth(&token)
-            .send()
-            .await?;
+            let download_url = format!("{}/{}?alt=media", self.api_url, file_id);
+            let res = self.client.get(&download_url)
+                .bearer_auth(&token)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "download").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "download").await);
+            }
 
-        super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
-        Ok(())
+            super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
+            Ok(())
+        }).await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let token = self.get_access_token().await?;
-        let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
+        super::utils::execute_with_retry(self.name(), "delete", || async {
+            let token = self.get_access_token().await?;
+            let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
-        let delete_url = format!("{}/{}", self.api_url, file_id);
-        let res = self.client.delete(&delete_url)
-            .bearer_auth(&token)
-            .send()
-            .await?;
+            let delete_url = format!("{}/{}", self.api_url, file_id);
+            let res = self.client.delete(&delete_url)
+                .bearer_auth(&token)
+                .send()
+                .await?;
 
-        if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "delete").await);
-        }
+            if !res.status().is_success() {
+                return Err(parse_response_error(res, self.name(), "delete").await);
+            }
 
-        Ok(())
+            Ok(())
+        }).await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let token = self.get_access_token().await?;
-        let folder_id = self.get_or_create_file_id(&token, remote_path, true).await?;
+        super::utils::execute_with_retry(self.name(), "list", || async {
+            let token = self.get_access_token().await?;
+            let folder_id = self.get_or_create_file_id(&token, remote_path, true).await?;
 
-        let query = format!("'{}' in parents and trashed = false", folder_id);
-        let res = self.client.get(&self.api_url)
-            .bearer_auth(&token)
-            .query(&[("q", &query), ("fields", &"files(id, name, size, mimeType, modifiedTime, md5Checksum)".to_string())])
-            .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
+            let query = format!("'{}' in parents and trashed = false", folder_id);
+            let res = self.client.get(&self.api_url)
+                .bearer_auth(&token)
+                .query(&[("q", &query), ("fields", &"files(id, name, size, mimeType, modifiedTime, md5Checksum)".to_string())])
+                .send()
+                .await?
+                .json::<serde_json::Value>()
+                .await?;
 
-        let mut items = Vec::new();
-        if let Some(files) = res["files"].as_array() {
-            for file in files {
-                let name = file["name"].as_str().unwrap_or("").to_string();
-                let size = file["size"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
-                let mime_type = file["mimeType"].as_str().unwrap_or("");
-                let is_dir = mime_type == "application/vnd.google-apps.folder";
-                let checksum = file["md5Checksum"].as_str().map(|s| s.to_string());
+            let mut items = Vec::new();
+            if let Some(files) = res["files"].as_array() {
+                for file in files {
+                    let name = file["name"].as_str().unwrap_or("").to_string();
+                    let size = file["size"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
+                    let mime_type = file["mimeType"].as_str().unwrap_or("");
+                    let is_dir = mime_type == "application/vnd.google-apps.folder";
+                    let checksum = file["md5Checksum"].as_str().map(|s| s.to_string());
 
-                items.push(StorageItem {
-                    path: PathBuf::from(name),
-                    size,
-                    modified: std::time::SystemTime::now(),
-                    is_dir,
-                    checksum,
-                });
+                    items.push(StorageItem {
+                        path: PathBuf::from(name),
+                        size,
+                        modified: std::time::SystemTime::now(),
+                        is_dir,
+                        checksum,
+                    });
+                }
             }
-        }
 
-        Ok(items)
+            Ok(items)
+        }).await
     }
 
     fn sync_mode(&self) -> super::SyncMode {

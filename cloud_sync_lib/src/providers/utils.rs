@@ -64,7 +64,11 @@ pub async fn parse_response_error(res: reqwest::Response, provider_name: &str, a
     } else {
         body
     };
-    StorageError::Provider(format!("Failed to {} on {}: {}", action, provider_name, detail))
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        StorageError::RateLimit(format!("Rate limit exceeded on {}: {}", provider_name, detail))
+    } else {
+        StorageError::Provider(format!("Failed to {} on {}: {}", action, provider_name, detail))
+    }
 }
 
 /// Formats a relative remote path, incorporating an optional destination folder prefix.
@@ -149,5 +153,150 @@ pub async fn download_rate_limited(
 
 use crate::rate_limit::{RateLimitedReader, RateLimitedStream};
 use tokio_util::io::ReaderStream;
+
+/// Checks if a `StorageError` is transient and should trigger a retry.
+pub fn is_transient_error(err: &StorageError) -> bool {
+    match err {
+        StorageError::RateLimit(_) => true,
+        StorageError::Reqwest(e) => {
+            if e.is_timeout() || e.is_connect() {
+                return true;
+            }
+            if let Some(status) = e.status() {
+                status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                    || status.is_server_error()
+            } else {
+                false
+            }
+        }
+        StorageError::Provider(msg) => {
+            msg.contains("429") || msg.contains("503") || msg.contains("504") || msg.contains("502")
+        }
+        _ => false,
+    }
+}
+
+/// Executes an asynchronous operation with exponential backoff on transient errors.
+pub async fn execute_with_retry<T, F, Fut>(
+    provider_name: &str,
+    action: &str,
+    f: F,
+) -> Result<T, StorageError>
+where
+    F: Fn() -> Fut + Send + Sync,
+    Fut: std::future::Future<Output = Result<T, StorageError>> + Send,
+{
+    let mut attempt = 0;
+    let max_attempts = 5;
+    let mut delay = if cfg!(test) {
+        std::time::Duration::from_millis(1)
+    } else {
+        std::time::Duration::from_millis(500)
+    };
+
+    loop {
+        match f().await {
+            Ok(val) => return Ok(val),
+            Err(e) => {
+                if is_transient_error(&e) && attempt < max_attempts - 1 {
+                    attempt += 1;
+                    tracing::warn!(
+                        "[{}] Transient error during {}: {}. Retrying in {:?} (attempt {}/{})",
+                        provider_name,
+                        action,
+                        e,
+                        delay,
+                        attempt,
+                        max_attempts
+                    );
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::StorageError;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_execute_with_retry_success() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+        
+        let result = execute_with_retry("test", "op", || {
+            let cnt = counter_clone.clone();
+            async move {
+                cnt.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, StorageError>("success")
+            }
+        }).await;
+
+        assert_eq!(result.unwrap(), "success");
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_retry_fail_non_transient() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let result = execute_with_retry("test", "op", || {
+            let cnt = counter_clone.clone();
+            async move {
+                cnt.fetch_add(1, Ordering::SeqCst);
+                Err::<(), StorageError>(StorageError::Authentication("Auth error".to_string()))
+            }
+        }).await;
+
+        assert!(matches!(result, Err(StorageError::Authentication(_))));
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_retry_retry_then_success() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let result = execute_with_retry("test", "op", || {
+            let cnt = counter_clone.clone();
+            async move {
+                let current = cnt.fetch_add(1, Ordering::SeqCst);
+                if current < 2 {
+                    Err(StorageError::RateLimit("Rate limit".to_string()))
+                } else {
+                    Ok("success")
+                }
+            }
+        }).await;
+
+        assert_eq!(result.unwrap(), "success");
+        assert_eq!(counter.load(Ordering::SeqCst), 3); // 0, 1 (retries) then 2 (success)
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_retry_max_attempts() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let result = execute_with_retry("test", "op", || {
+            let cnt = counter_clone.clone();
+            async move {
+                cnt.fetch_add(1, Ordering::SeqCst);
+                Err::<(), StorageError>(StorageError::RateLimit("Rate limit".to_string()))
+            }
+        }).await;
+
+        assert!(matches!(result, Err(StorageError::RateLimit(_))));
+        assert_eq!(counter.load(Ordering::SeqCst), 5); // 5 attempts max
+    }
+}
 
 
