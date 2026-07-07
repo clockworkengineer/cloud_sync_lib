@@ -16,7 +16,7 @@ This document details several high-value future features proposed for the `cloud
 
 ---
 
-## 2. Concurrent/Parallel Sync Engine
+## 2. Concurrent/Parallel Sync Engine [Implemented]
 
 ### Background
 Currently, the daemon's `sync_engine.rs` processes all file synchronization tasks sequentially. This results in poor throughput when syncing large numbers of small files due to cumulative network round-trip times.

@@ -58,6 +58,7 @@ pub struct AppConfig {
     pub max_upload_rate: Option<u64>,
     pub max_download_rate: Option<u64>,
     pub pull_interval_secs: Option<u64>,
+    pub max_concurrency: Option<usize>,
 }
 
 impl Default for AppConfig {
@@ -96,6 +97,7 @@ impl Default for AppConfig {
             max_upload_rate: None,
             max_download_rate: None,
             pull_interval_secs: Some(30),
+            max_concurrency: Some(4),
         }
     }
 }

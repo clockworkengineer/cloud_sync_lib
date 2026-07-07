@@ -554,6 +554,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "cloud_sync_lib",
+ "futures-util",
  "ignore",
  "notify",
  "serde",

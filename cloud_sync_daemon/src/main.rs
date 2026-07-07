@@ -80,6 +80,8 @@ pub struct DaemonState {
     pub upload_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
     /// Optional rate limiter for downloads.
     pub download_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
+    /// Maximum concurrent workers for synchronization.
+    pub max_concurrency: usize,
 }
 
 fn try_add_backend<C, P, F>(
@@ -386,6 +388,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         exclude,
         upload_limiter,
         download_limiter,
+        max_concurrency: config.max_concurrency.unwrap_or(4),
     }));
 
     // Set up mpsc channel for events
@@ -414,9 +417,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             interval.tick().await;
 
-            let (paused, backends, watch_dir, gitignore) = {
+            let (paused, backends, watch_dir, gitignore, max_concurrency) = {
                 let s = state_pull.lock().await;
-                (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone())
+                (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone(), s.max_concurrency)
             };
 
             if paused {
@@ -428,9 +431,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for backend in &backends {
                 if let Err(e) = sync_engine::sync_bidirectional(
                     &watch_dir,
-                    backend.as_ref(),
+                    backend.clone(),
                     &state_file_path,
                     &gitignore,
+                    max_concurrency,
                 ).await {
                     error!("Bidirectional sync failed for backend '{}': {}", backend.name(), e);
                 }
