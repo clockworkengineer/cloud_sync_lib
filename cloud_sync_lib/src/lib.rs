@@ -10,9 +10,11 @@ pub mod providers;
 pub mod traits;
 pub mod rate_limit;
 pub mod state;
+pub mod ignore;
 
 pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig, EncryptedBackend, SyncMode};
 pub use state::{SyncState, FileState};
+pub use ignore::SyncIgnore;
 #[cfg(feature = "google_drive")]
 pub use providers::GoogleDriveProvider;
 #[cfg(feature = "dropbox")]

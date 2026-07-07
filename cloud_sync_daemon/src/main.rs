@@ -73,7 +73,7 @@ pub struct DaemonState {
     /// The address of the Web UI server, if provided.
     pub ui_addr: Option<String>,
     /// Gitignore pattern matcher for exclusions.
-    pub gitignore: ignore::gitignore::Gitignore,
+    pub gitignore: cloud_sync_lib::SyncIgnore,
     /// Copy of the current exclude configurations.
     pub exclude: Option<Vec<String>>,
     /// Optional rate limiter for uploads.

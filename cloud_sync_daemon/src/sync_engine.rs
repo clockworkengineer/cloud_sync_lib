@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::SystemTime;
 use std::sync::Arc;
-use cloud_sync_lib::{StorageBackend, SyncState, FileState};
+use cloud_sync_lib::{StorageBackend, SyncState, FileState, SyncIgnore};
 use tracing::info;
 
 #[derive(Clone, Debug)]
@@ -17,6 +17,7 @@ struct FileInfo {
 /// Scans the remote storage directory recursively and builds a map of relative file paths to their metadata.
 async fn scan_remote_dir(
     backend: &dyn StorageBackend,
+    gitignore: &SyncIgnore,
 ) -> Result<HashMap<String, FileInfo>, Box<dyn std::error::Error>> {
     let mut files = HashMap::new();
     let mut queue = vec!["".to_string()];
@@ -26,6 +27,9 @@ async fn scan_remote_dir(
             Ok(items) => {
                 for item in items {
                     let path_str = item.path.to_string_lossy().to_string();
+                    if gitignore.is_ignored(&item.path, item.is_dir) {
+                        continue;
+                    }
                     if item.is_dir {
                         queue.push(path_str.clone());
                         files.insert(path_str, FileInfo {
@@ -307,7 +311,7 @@ pub async fn sync_bidirectional(
     watch_dir: &Path,
     backend: Arc<dyn StorageBackend>,
     state_file_path: &Path,
-    gitignore: &ignore::gitignore::Gitignore,
+    gitignore: &SyncIgnore,
     max_concurrency: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sync_both = backend.sync_both();
@@ -326,7 +330,7 @@ pub async fn sync_bidirectional(
             is_dir: item.is_dir,
         });
     }
-    let remote_files = scan_remote_dir(backend.as_ref()).await?;
+    let remote_files = scan_remote_dir(backend.as_ref(), gitignore).await?;
 
     // 3. Partition changes
     let mut next_files_state = HashMap::new();
@@ -533,7 +537,7 @@ mod tests {
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
         let remote_sim = Arc::new(TestBackendWrapper { sim, sync_mode: cloud_sync_lib::SyncMode::TwoWay });
         let state_file = local_path.join(".sync_state.json");
-        let gitignore = ignore::gitignore::Gitignore::empty();
+        let gitignore = SyncIgnore::empty();
 
         // 1. Initial State (Both empty)
         sync_bidirectional(local_path, remote_sim.clone(), &state_file, &gitignore, 4).await.unwrap();
@@ -603,7 +607,7 @@ mod tests {
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
         let remote_sim = Arc::new(TestBackendWrapper { sim, sync_mode: cloud_sync_lib::SyncMode::OneWay });
         let state_file = local_path.join(".sync_state.json");
-        let gitignore = ignore::gitignore::Gitignore::empty();
+        let gitignore = SyncIgnore::empty();
 
         // 1. Initial State (Both empty)
         sync_bidirectional(local_path, remote_sim.clone(), &state_file, &gitignore, 4).await.unwrap();

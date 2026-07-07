@@ -8,8 +8,7 @@ use tokio::fs;
 use tokio::sync::Mutex;
 use notify::{Event, EventKind};
 use tracing::{error, info, warn};
-use cloud_sync_lib::StorageBackend;
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use cloud_sync_lib::{StorageBackend, SyncIgnore};
 
 use crate::DaemonState;
 use crate::{DEBOUNCE_DELAY_MS, RETRY_DELAY_MS, MAX_SYNC_ATTEMPTS};
@@ -17,23 +16,10 @@ use crate::utils::get_remote_path;
 
 pub type ActiveLocks = Arc<Mutex<HashMap<(String, PathBuf), Arc<tokio::sync::Mutex<()>>>>>;
 
-/// Builds a new Gitignore matcher based on .syncignore and app config excludes.
-pub fn build_gitignore(watch_dir: &Path, exclude_patterns: &Option<Vec<String>>) -> Gitignore {
-    let mut builder = GitignoreBuilder::new(watch_dir);
-    let syncignore_path = watch_dir.join(".syncignore");
-    if syncignore_path.exists() {
-        if let Some(err) = builder.add(&syncignore_path) {
-            warn!("Error loading .syncignore at {:?}: {}", syncignore_path, err);
-        }
-    }
-    if let Some(ref excludes) = exclude_patterns {
-        for pattern in excludes {
-            if let Err(e) = builder.add_line(None, pattern) {
-                warn!("Error parsing exclude pattern '{}': {}", pattern, e);
-            }
-        }
-    }
-    builder.build().unwrap_or_else(|_| Gitignore::empty())
+/// Builds a new SyncIgnore matcher based on .syncignore and app config excludes.
+pub fn build_gitignore(watch_dir: &Path, exclude_patterns: &Option<Vec<String>>) -> SyncIgnore {
+    let excludes = exclude_patterns.as_ref().cloned().unwrap_or_default();
+    SyncIgnore::new(watch_dir, &excludes)
 }
 
 #[derive(Debug, Clone)]
@@ -47,13 +33,13 @@ pub struct ScannedItem {
 /// Recursively scans a local directory, building a map of relative file paths to their metadata, applying Gitignore pattern exclusions.
 pub async fn scan_local_directory(
     watch_dir: &Path,
-    gitignore: &Gitignore,
+    gitignore: &SyncIgnore,
 ) -> Result<HashMap<String, ScannedItem>, std::io::Error> {
     let mut files = HashMap::new();
     let mut queue = vec![watch_dir.to_path_buf()];
 
     while let Some(current_dir) = queue.pop() {
-        if current_dir != watch_dir && gitignore.matched_path_or_any_parents(&current_dir, true).is_ignore() {
+        if current_dir != watch_dir && gitignore.is_ignored(&current_dir, true) {
             continue;
         }
 
@@ -63,7 +49,7 @@ pub async fn scan_local_directory(
             let metadata = entry.metadata().await?;
 
             if metadata.is_dir() {
-                if gitignore.matched_path_or_any_parents(&path, true).is_ignore() {
+                if gitignore.is_ignored(&path, true) {
                     continue;
                 }
                 queue.push(path.clone());
@@ -79,7 +65,7 @@ pub async fn scan_local_directory(
                     }
                 }
             } else if metadata.is_file() {
-                if gitignore.matched_path_or_any_parents(&path, false).is_ignore() {
+                if gitignore.is_ignored(&path, false) {
                     continue;
                 }
                 if let Ok(rel_path) = path.strip_prefix(watch_dir) {
@@ -102,7 +88,7 @@ pub async fn scan_local_directory(
 }
 
 /// Scans the watch directory recursively and uploads all files to active backends.
-pub async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>], gitignore: &Gitignore) -> std::io::Result<()> {
+pub async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>], gitignore: &SyncIgnore) -> std::io::Result<()> {
     let items = scan_local_directory(watch_dir, gitignore).await?;
     for (remote_path_str, item) in items {
         for backend in backends {
@@ -176,7 +162,8 @@ pub async fn handle_event(
                 // Canonicalize event path
                 let abs_path = fs::canonicalize(&path).await.unwrap_or(path.clone());
 
-                if gitignore.matched_path_or_any_parents(&abs_path, false).is_ignore() {
+                let is_dir = path.is_dir();
+                if gitignore.is_ignored(&abs_path, is_dir) {
                     info!("Skipping excluded path: {:?}", abs_path);
                     continue;
                 }
@@ -261,7 +248,7 @@ pub async fn handle_event(
         }
         EventKind::Remove(_) => {
             for path in event.paths {
-                if gitignore.matched_path_or_any_parents(&path, false).is_ignore() {
+                if gitignore.is_ignored(&path, false) {
                     info!("Skipping deletion for excluded path: {:?}", path);
                     continue;
                 }
@@ -371,7 +358,7 @@ mod tests {
             config_file: "config.toml".to_string(),
             syncing: false,
             ui_addr: None,
-            gitignore: Gitignore::empty(),
+            gitignore: SyncIgnore::empty(),
             exclude: None,
             upload_limiter: None,
             download_limiter: None,
@@ -397,8 +384,8 @@ mod tests {
         let exclude = Some(vec!["*.log".to_string(), "temp/".to_string()]);
         let gitignore = build_gitignore(watch_dir, &exclude);
 
-        assert!(gitignore.matched_path_or_any_parents(Path::new("/home/user/watch/error.log"), false).is_ignore());
-        assert!(!gitignore.matched_path_or_any_parents(Path::new("/home/user/watch/error.txt"), false).is_ignore());
-        assert!(gitignore.matched_path_or_any_parents(Path::new("/home/user/watch/temp/file.txt"), false).is_ignore());
+        assert!(gitignore.is_ignored(Path::new("/home/user/watch/error.log"), false));
+        assert!(!gitignore.is_ignored(Path::new("/home/user/watch/error.txt"), false));
+        assert!(gitignore.is_ignored(Path::new("/home/user/watch/temp/file.txt"), false));
     }
 }

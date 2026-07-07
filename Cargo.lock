@@ -576,6 +576,7 @@ dependencies = [
  "futures-util",
  "hmac",
  "httpdate",
+ "ignore",
  "mega",
  "quick-xml 0.31.0",
  "rand",
