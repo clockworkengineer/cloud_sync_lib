@@ -16,7 +16,7 @@ async fn check_provider(name: &str, provider: &dyn StorageBackend) {
             println!("YES");
         }
         Err(e) => {
-            println!("NO ({:?})", e);
+            println!("NO ({})", e);
         }
     }
 }
