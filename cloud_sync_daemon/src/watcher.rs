@@ -159,16 +159,7 @@ pub async fn handle_event(
                     continue; // Skip if file was deleted before we could process it
                 }
 
-                // Canonicalize event path
-                let abs_path = fs::canonicalize(&path).await.unwrap_or(path.clone());
-
-                let is_dir = path.is_dir();
-                if gitignore.is_ignored(&abs_path, is_dir) {
-                    info!("Skipping excluded path: {:?}", abs_path);
-                    continue;
-                }
-
-                // Make sure it is a file (we don't sync empty directories in this simple logic, but can be extended)
+                // Make sure it is a file or directory
                 let metadata = match fs::metadata(&path).await {
                     Ok(m) => m,
                     Err(e) => {
@@ -179,6 +170,14 @@ pub async fn handle_event(
 
                 let is_directory = metadata.is_dir();
                 if !metadata.is_file() && !is_directory {
+                    continue;
+                }
+
+                // Canonicalize event path
+                let abs_path = fs::canonicalize(&path).await.unwrap_or(path.clone());
+
+                if gitignore.is_ignored(&abs_path, is_directory) {
+                    info!("Skipping excluded path: {:?}", abs_path);
                     continue;
                 }
 
@@ -248,7 +247,7 @@ pub async fn handle_event(
         }
         EventKind::Remove(_) => {
             for path in event.paths {
-                if gitignore.is_ignored(&path, false) {
+                if gitignore.is_ignored(&path, false) || gitignore.is_ignored(&path, true) {
                     info!("Skipping deletion for excluded path: {:?}", path);
                     continue;
                 }
@@ -380,12 +379,15 @@ mod tests {
 
     #[test]
     fn test_build_gitignore_and_matching() {
-        let watch_dir = Path::new("/home/user/watch");
+        let temp_dir = tempfile::tempdir().unwrap();
+        let watch_dir = temp_dir.path();
         let exclude = Some(vec!["*.log".to_string(), "temp/".to_string()]);
         let gitignore = build_gitignore(watch_dir, &exclude);
 
-        assert!(gitignore.is_ignored(Path::new("/home/user/watch/error.log"), false));
-        assert!(!gitignore.is_ignored(Path::new("/home/user/watch/error.txt"), false));
-        assert!(gitignore.is_ignored(Path::new("/home/user/watch/temp/file.txt"), false));
+        assert!(gitignore.is_ignored(watch_dir.join("error.log"), false));
+        assert!(!gitignore.is_ignored(watch_dir.join("error.txt"), false));
+        assert!(gitignore.is_ignored(watch_dir.join("temp/file.txt"), false));
+        // Verify that deleting a directory matched by trailing slash is ignored by checking both false and true
+        assert!(gitignore.is_ignored(watch_dir.join("temp"), false) || gitignore.is_ignored(watch_dir.join("temp"), true));
     }
 }

@@ -31,3 +31,7 @@ gcs = ["cloud_sync_lib/gcs"]
 b2 = ["cloud_sync_lib/b2"]
 pcloud = ["cloud_sync_lib/pcloud"]
 ipfs = ["cloud_sync_lib/ipfs"]
+
+[dev-dependencies]
+tempfile = "3.8"
+
