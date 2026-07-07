@@ -57,7 +57,7 @@ impl PCloudProvider {
         };
 
         Self {
-            client: reqwest::Client::new(),
+            client: super::utils::build_http_client(),
             credentials,
             api_url,
         }

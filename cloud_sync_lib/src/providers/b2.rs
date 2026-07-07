@@ -128,7 +128,7 @@ impl B2Provider {
     /// Creates a new `B2Provider` using the provided credentials.
     pub fn new(credentials: B2Credentials) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: super::utils::build_http_client(),
             credentials,
             auth_cache: Mutex::new(None),
             bucket_id_cache: Mutex::new(None),

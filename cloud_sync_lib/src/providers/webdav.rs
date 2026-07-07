@@ -33,7 +33,7 @@ impl WebDAVProvider {
     /// A new instance of `WebDAVProvider`.
     pub fn new(credentials: WebDAVCredentials) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: super::utils::build_http_client(),
             url: credentials.url.clone(),
             credentials,
         }
@@ -281,4 +281,10 @@ impl StorageBackend for WebDAVProvider {
 
         Ok(storage_items)
     }
+
+    fn sync_mode(&self) -> super::SyncMode {
+        use super::ProviderConfig;
+        self.credentials.sync_mode()
+    }
 }
+

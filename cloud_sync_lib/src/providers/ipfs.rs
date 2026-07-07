@@ -66,7 +66,7 @@ impl IPFSProvider {
         };
 
         Self {
-            client: reqwest::Client::new(),
+            client: super::utils::build_http_client(),
             credentials,
             api_url,
             gateway_url,

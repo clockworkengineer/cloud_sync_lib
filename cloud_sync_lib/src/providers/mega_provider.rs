@@ -125,7 +125,7 @@ impl StorageBackend for MegaProvider {
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
-                    .build(reqwest::Client::new())
+                    .build(super::utils::build_http_client())
                     .map_err(|e| StorageError::Provider(e.to_string()))?;
 
                 client.login(&email, &password, None).await
@@ -189,7 +189,7 @@ impl StorageBackend for MegaProvider {
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
-                    .build(reqwest::Client::new())
+                    .build(super::utils::build_http_client())
                     .map_err(|e| StorageError::Provider(e.to_string()))?;
 
                 client.login(&email, &password, None).await
@@ -227,7 +227,7 @@ impl StorageBackend for MegaProvider {
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
-                    .build(reqwest::Client::new())
+                    .build(super::utils::build_http_client())
                     .map_err(|e| StorageError::Provider(e.to_string()))?;
 
                 client.login(&email, &password, None).await
@@ -257,7 +257,7 @@ impl StorageBackend for MegaProvider {
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
-                    .build(reqwest::Client::new())
+                    .build(super::utils::build_http_client())
                     .map_err(|e| StorageError::Provider(e.to_string()))?;
 
                 client.login(&email, &password, None).await

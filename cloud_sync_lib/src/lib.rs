@@ -50,13 +50,16 @@ mod tests {
     use std::io::Write;
     use tempfile::tempdir;
 
-    #[tokio::test]
-    #[cfg(feature = "google_drive")]
-    async fn test_google_drive_provider_flow() {
+    /// Generic runner for SimulatedFallback flow test across different providers
+    async fn run_simulated_flow_test<B>(provider_name: &str)
+    where
+        B: StorageBackend + 'static,
+    {
         let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("gdrive_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "Google Drive".to_string());
-        let provider = SimulatedFallback::<GoogleDriveProvider>::new(None, local_sim, "Google Drive", SyncMode::TwoWay);
+        let safe_name = provider_name.to_lowercase().replace(' ', "_");
+        let provider_root = temp_dir.path().join(format!("{}_root", safe_name));
+        let local_sim = LocalSimulation::new(provider_root.clone(), provider_name.to_string());
+        let provider = SimulatedFallback::<B>::new(None, local_sim, provider_name, SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -85,6 +88,12 @@ mod tests {
         // Delete
         provider.delete("hello.txt").await.unwrap();
         assert!(!provider_root.join("hello.txt").exists());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "google_drive")]
+    async fn test_google_drive_provider_flow() {
+        run_simulated_flow_test::<GoogleDriveProvider>("Google Drive").await;
     }
 
     #[tokio::test]
@@ -296,38 +305,7 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "dropbox")]
     async fn test_dropbox_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("dropbox_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "Dropbox".to_string());
-        let provider = SimulatedFallback::<DropboxProvider>::new(None, local_sim, "Dropbox", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated cloud storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated cloud storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated cloud storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<DropboxProvider>("Dropbox").await;
     }
 
     #[tokio::test]
@@ -532,38 +510,7 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "onedrive")]
     async fn test_onedrive_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("onedrive_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "OneDrive".to_string());
-        let provider = SimulatedFallback::<OneDriveProvider>::new(None, local_sim, "OneDrive", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated cloud storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated cloud storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated cloud storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<OneDriveProvider>("OneDrive").await;
     }
 
     #[tokio::test]
@@ -758,38 +705,7 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "webdav")]
     async fn test_webdav_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("webdav_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "WebDAV".to_string());
-        let provider = SimulatedFallback::<WebDAVProvider>::new(None, local_sim, "WebDAV", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated cloud storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated cloud storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated cloud storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<WebDAVProvider>("WebDAV").await;
     }
 
     #[tokio::test]
@@ -989,38 +905,7 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "s3")]
     async fn test_s3_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("s3_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "S3".to_string());
-        let provider = SimulatedFallback::<S3Provider>::new(None, local_sim, "S3", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated cloud storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated cloud storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated cloud storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<S3Provider>("S3").await;
     }
 
     #[tokio::test]
@@ -1208,333 +1093,54 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "sftp")]
     async fn test_sftp_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("sftp_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "SFTP".to_string());
-        let provider = SimulatedFallback::<SFTPProvider>::new(None, local_sim, "SFTP", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated SFTP cloud storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated SFTP cloud storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated SFTP cloud storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<SFTPProvider>("SFTP").await;
     }
 
     #[tokio::test]
     #[cfg(feature = "nextcloud")]
     async fn test_nextcloud_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("nextcloud_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "Nextcloud".to_string());
-        let provider = SimulatedFallback::<NextcloudProvider>::new(None, local_sim, "Nextcloud", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated Nextcloud storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated Nextcloud storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated Nextcloud storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<NextcloudProvider>("Nextcloud").await;
     }
 
     #[tokio::test]
     #[cfg(feature = "box")]
     async fn test_box_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("box_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "Box".to_string());
-        let provider = SimulatedFallback::<BoxProvider>::new(None, local_sim, "Box", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated Box storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated Box storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated Box storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<BoxProvider>("Box").await;
     }
 
     #[tokio::test]
     #[cfg(feature = "mega")]
     async fn test_mega_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("mega_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "MEGA".to_string());
-        let provider = SimulatedFallback::<MegaProvider>::new(None, local_sim, "MEGA", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated MEGA storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated MEGA storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated MEGA storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<MegaProvider>("MEGA").await;
     }
 
     #[tokio::test]
     #[cfg(feature = "azure_blob")]
     async fn test_azure_blob_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("azure_blob_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "Azure Blob".to_string());
-        let provider = SimulatedFallback::<AzureBlobProvider>::new(None, local_sim, "Azure Blob", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated Azure Blob storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated Azure Blob storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated Azure Blob storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<AzureBlobProvider>("Azure Blob").await;
     }
 
     #[tokio::test]
     #[cfg(feature = "gcs")]
     async fn test_gcs_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("gcs_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "GCS".to_string());
-        let provider = SimulatedFallback::<GCSProvider>::new(None, local_sim, "GCS", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated GCS storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated GCS storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated GCS storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<GCSProvider>("GCS").await;
     }
 
     #[tokio::test]
     #[cfg(feature = "b2")]
     async fn test_b2_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("b2_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "B2".to_string());
-        let provider = SimulatedFallback::<B2Provider>::new(None, local_sim, "B2", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated B2 storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated B2 storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated B2 storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<B2Provider>("B2").await;
     }
 
     #[tokio::test]
     #[cfg(feature = "pcloud")]
     async fn test_pcloud_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("pcloud_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "pCloud".to_string());
-        let provider = SimulatedFallback::<PCloudProvider>::new(None, local_sim, "pCloud", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated pCloud storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated pCloud storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated pCloud storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<PCloudProvider>("pCloud").await;
     }
 
     #[tokio::test]
     #[cfg(feature = "ipfs")]
     async fn test_ipfs_provider_simulated_flow() {
-        let temp_dir = tempdir().unwrap();
-        let provider_root = temp_dir.path().join("ipfs_root");
-        let local_sim = LocalSimulation::new(provider_root.clone(), "IPFS".to_string());
-        let provider = SimulatedFallback::<IPFSProvider>::new(None, local_sim, "IPFS", SyncMode::TwoWay);
-
-        // Create a local temporary file to upload
-        let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated IPFS storage!").unwrap();
-
-        // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
-
-        // Verify remote file exists
-        let remote_file = provider_root.join("hello.txt");
-        assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated IPFS storage!");
-
-        // List
-        let items = provider.list("").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path.to_string_lossy(), "hello.txt");
-
-        // Download
-        let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
-        assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated IPFS storage!");
-
-        // Delete
-        provider.delete("hello.txt").await.unwrap();
-        assert!(!provider_root.join("hello.txt").exists());
+        run_simulated_flow_test::<IPFSProvider>("IPFS").await;
     }
 }

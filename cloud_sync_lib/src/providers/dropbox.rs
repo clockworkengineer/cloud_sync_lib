@@ -35,7 +35,7 @@ impl DropboxProvider {
     /// A new instance of `DropboxProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: super::utils::build_http_client(),
             credentials,
             auth_url: "https://api.dropbox.com/oauth2/token".to_string(),
             api_url: "https://api.dropboxapi.com/2/files".to_string(),
@@ -206,4 +206,10 @@ impl StorageBackend for DropboxProvider {
 
         Ok(items)
     }
+
+    fn sync_mode(&self) -> super::SyncMode {
+        use super::ProviderConfig;
+        self.credentials.sync_mode()
+    }
 }
+

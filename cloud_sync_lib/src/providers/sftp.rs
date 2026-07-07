@@ -218,4 +218,10 @@ impl StorageBackend for SFTPProvider {
         .await
         .map_err(|e| StorageError::Provider(e.to_string()))?
     }
+
+    fn sync_mode(&self) -> super::SyncMode {
+        use super::ProviderConfig;
+        self.creds.sync_mode()
+    }
 }
+

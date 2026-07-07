@@ -209,4 +209,10 @@ impl StorageBackend for S3Provider {
 
         Ok(items)
     }
+
+    fn sync_mode(&self) -> super::SyncMode {
+        use super::ProviderConfig;
+        self.credentials.sync_mode()
+    }
 }
+

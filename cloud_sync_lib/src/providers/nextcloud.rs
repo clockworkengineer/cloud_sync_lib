@@ -29,7 +29,7 @@ impl NextcloudProvider {
         let mut base_url = credentials.url.trim_end_matches('/').to_string();
         base_url = format!("{}/remote.php/dav/files/{}", base_url, credentials.username);
         Self {
-            client: reqwest::Client::new(),
+            client: super::utils::build_http_client(),
             url: base_url,
             credentials,
         }
@@ -258,4 +258,10 @@ impl StorageBackend for NextcloudProvider {
 
         Ok(storage_items)
     }
+
+    fn sync_mode(&self) -> super::SyncMode {
+        use super::ProviderConfig;
+        self.credentials.sync_mode()
+    }
 }
+
