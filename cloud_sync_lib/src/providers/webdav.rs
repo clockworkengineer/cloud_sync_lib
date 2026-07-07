@@ -8,7 +8,6 @@ use crate::providers::WebDAVCredentials;
 use crate::providers::utils::parse_response_error;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
-use tokio::fs;
 use tracing::info;
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -21,6 +20,10 @@ pub struct WebDAVProvider {
     credentials: WebDAVCredentials,
     /// Active base URL of the WebDAV server.
     url: String,
+    /// Optional upload rate limiter.
+    upload_limiter: Option<crate::rate_limit::TokenBucket>,
+    /// Optional download rate limiter.
+    download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
 impl WebDAVProvider {
@@ -32,11 +35,30 @@ impl WebDAVProvider {
     /// # Returns
     /// A new instance of `WebDAVProvider`.
     pub fn new(credentials: WebDAVCredentials) -> Self {
+        let upload_limiter = credentials.common.max_upload_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
+        let download_limiter = credentials.common.max_download_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         Self {
             client: super::utils::build_http_client(),
             url: credentials.url.clone(),
             credentials,
+            upload_limiter,
+            download_limiter,
         }
+    }
+
+    /// Sets the upload and download rate limiters.
+    pub fn with_limiters(
+        mut self,
+        upload_limiter: Option<crate::rate_limit::TokenBucket>,
+        download_limiter: Option<crate::rate_limit::TokenBucket>,
+    ) -> Self {
+        if self.upload_limiter.is_none() {
+            self.upload_limiter = upload_limiter;
+        }
+        if self.download_limiter.is_none() {
+            self.download_limiter = download_limiter;
+        }
+        self
     }
 
     /// Configures custom endpoints, useful for mocking during tests.
@@ -178,18 +200,30 @@ impl StorageBackend for WebDAVProvider {
         "WebDAV"
     }
 
+    fn with_limiters(
+        self,
+        upload_limiter: Option<crate::rate_limit::TokenBucket>,
+        download_limiter: Option<crate::rate_limit::TokenBucket>,
+    ) -> Self
+    where
+        Self: Sized,
+    {
+        self.with_limiters(upload_limiter, download_limiter)
+    }
+
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let clean_path = self.format_path(remote_path);
         self.ensure_parent_dirs(&clean_path).await?;
 
         info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
-        let file_content = fs::read(local_path).await?;
+        let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
         let upload_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
         let res = self.client.put(&upload_url)
             .basic_auth(&self.credentials.username, Some(&self.credentials.password))
             .header("Content-Type", "application/octet-stream")
-            .body(file_content)
+            .header("Content-Length", size.to_string())
+            .body(body)
             .send()
             .await?;
 
@@ -213,11 +247,7 @@ impl StorageBackend for WebDAVProvider {
             return Err(parse_response_error(res, self.name(), "download").await);
         }
 
-        if let Some(parent) = local_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        let bytes = res.bytes().await?;
-        fs::write(local_path, bytes).await?;
+        super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
         Ok(())
     }
 

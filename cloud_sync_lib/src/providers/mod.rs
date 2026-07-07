@@ -28,6 +28,10 @@ pub struct CommonProviderSettings {
     pub sync_mode: Option<SyncMode>,
     /// Optional password for client-side encryption.
     pub encryption_password: Option<String>,
+    /// Optional upload rate limit in KB/s.
+    pub max_upload_rate: Option<u64>,
+    /// Optional download rate limit in KB/s.
+    pub max_download_rate: Option<u64>,
 }
 
 pub trait ProviderConfig {
@@ -61,6 +65,14 @@ pub trait ProviderConfig {
 
     fn encryption_password(&self) -> Option<&str> {
         self.common_settings().encryption_password.as_deref()
+    }
+
+    fn max_upload_rate(&self) -> Option<u64> {
+        self.common_settings().max_upload_rate
+    }
+
+    fn max_download_rate(&self) -> Option<u64> {
+        self.common_settings().max_download_rate
     }
 }
 

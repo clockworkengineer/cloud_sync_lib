@@ -8,7 +8,6 @@ use crate::providers::OAuthCredentials;
 use crate::providers::utils::{refresh_oauth2_token, parse_response_error};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
-use tokio::fs;
 use tracing::info;
 
 /// Storage provider client for Google Drive REST API.
@@ -23,6 +22,10 @@ pub struct GoogleDriveProvider {
     api_url: String,
     /// The base upload API URL.
     upload_url: String,
+    /// Optional upload rate limiter.
+    upload_limiter: Option<crate::rate_limit::TokenBucket>,
+    /// Optional download rate limiter.
+    download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
 impl GoogleDriveProvider {
@@ -34,13 +37,32 @@ impl GoogleDriveProvider {
     /// # Returns
     /// A new instance of `GoogleDriveProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
+        let upload_limiter = credentials.common.max_upload_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
+        let download_limiter = credentials.common.max_download_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         Self {
             client: super::utils::build_http_client(),
             credentials,
             auth_url: "https://oauth2.googleapis.com/token".to_string(),
             api_url: "https://www.googleapis.com/drive/v3/files".to_string(),
             upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
+            upload_limiter,
+            download_limiter,
         }
+    }
+
+    /// Sets the upload and download rate limiters.
+    pub fn with_limiters(
+        mut self,
+        upload_limiter: Option<crate::rate_limit::TokenBucket>,
+        download_limiter: Option<crate::rate_limit::TokenBucket>,
+    ) -> Self {
+        if self.upload_limiter.is_none() {
+            self.upload_limiter = upload_limiter;
+        }
+        if self.download_limiter.is_none() {
+            self.download_limiter = download_limiter;
+        }
+        self
     }
 
     /// Configures custom endpoints, useful for mocking during tests.
@@ -205,18 +227,30 @@ impl StorageBackend for GoogleDriveProvider {
         "Google Drive"
     }
 
+    fn with_limiters(
+        self,
+        upload_limiter: Option<crate::rate_limit::TokenBucket>,
+        download_limiter: Option<crate::rate_limit::TokenBucket>,
+    ) -> Self
+    where
+        Self: Sized,
+    {
+        self.with_limiters(upload_limiter, download_limiter)
+    }
+
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let token = self.get_access_token().await?;
         let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
         info!("[{}] Real upload starting for '{}' (ID: {})", self.name(), remote_path, file_id);
-        let file_content = fs::read(local_path).await?;
+        let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
         
         let upload_url = format!("{}/{}?uploadType=media", self.upload_url, file_id);
         let res = self.client.patch(&upload_url)
             .bearer_auth(&token)
             .header("Content-Type", "application/octet-stream")
-            .body(file_content)
+            .header("Content-Length", size.to_string())
+            .body(body)
             .send()
             .await?;
 
@@ -241,11 +275,7 @@ impl StorageBackend for GoogleDriveProvider {
             return Err(parse_response_error(res, self.name(), "download").await);
         }
 
-        if let Some(parent) = local_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        let bytes = res.bytes().await?;
-        fs::write(local_path, bytes).await?;
+        super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
         Ok(())
     }
 

@@ -58,6 +58,18 @@ pub trait StorageBackend: Send + Sync {
     /// Returns the user-friendly name of the storage backend.
     fn name(&self) -> &str;
 
+    /// Configures the upload and download rate limiters on the backend.
+    fn with_limiters(
+        self,
+        _upload_limiter: Option<crate::rate_limit::TokenBucket>,
+        _download_limiter: Option<crate::rate_limit::TokenBucket>,
+    ) -> Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+
     /// Uploads a file from `local_path` to the cloud's `remote_path`.
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError>;
 

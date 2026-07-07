@@ -97,9 +97,23 @@ fn try_add_backend<C, P, F>(
 {
     if is_provider_enabled(creds_option) {
         let sync_mode = creds_option.as_ref().map(|c| c.sync_mode()).unwrap_or(cloud_sync_lib::SyncMode::OneWay);
-        let inner = creds_option.clone().map(builder);
+        
+        let provider_upload_limiter = creds_option.as_ref()
+            .and_then(|c| c.max_upload_rate())
+            .map(|rate| cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024))
+            .or_else(|| upload_limiter.clone());
+
+        let provider_download_limiter = creds_option.as_ref()
+            .and_then(|c| c.max_download_rate())
+            .map(|rate| cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024))
+            .or_else(|| download_limiter.clone());
+
+        let inner = creds_option.clone()
+            .map(builder)
+            .map(|p| p.with_limiters(provider_upload_limiter.clone(), provider_download_limiter.clone()));
+
         let local_sim = LocalSimulation::new(sim_root, provider_name.to_string())
-            .with_limiters(upload_limiter, download_limiter);
+            .with_limiters(provider_upload_limiter, provider_download_limiter);
         let fallback = SimulatedFallback::new(inner, local_sim, provider_name, sync_mode);
 
         if let Some(password) = creds_option.as_ref().and_then(|c| c.encryption_password()) {

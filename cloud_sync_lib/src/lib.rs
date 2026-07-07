@@ -178,6 +178,7 @@ mod tests {
                 enabled: None,
                 sync_mode: None,
                 encryption_password: None,
+                ..Default::default()
             },
         };
 
@@ -383,6 +384,7 @@ mod tests {
                 enabled: None,
                 sync_mode: None,
                 encryption_password: None,
+                ..Default::default()
             },
         };
 
@@ -579,6 +581,7 @@ mod tests {
                 enabled: None,
                 sync_mode: None,
                 encryption_password: None,
+                ..Default::default()
             },
         };
 
@@ -786,6 +789,7 @@ mod tests {
                 enabled: None,
                 sync_mode: None,
                 encryption_password: None,
+                ..Default::default()
             },
         };
 
@@ -974,6 +978,7 @@ mod tests {
                 enabled: None,
                 sync_mode: None,
                 encryption_password: None,
+                ..Default::default()
             },
         };
 

@@ -146,6 +146,7 @@ mod tests {
                 enabled: Some(false),
                 sync_mode: None,
                 encryption_password: None,
+                ..Default::default()
             },
         });
         assert!(!is_provider_enabled(&creds_disabled));
@@ -159,6 +160,7 @@ mod tests {
                 enabled: Some(true),
                 sync_mode: None,
                 encryption_password: None,
+                ..Default::default()
             },
         });
         assert!(is_provider_enabled(&creds_enabled));

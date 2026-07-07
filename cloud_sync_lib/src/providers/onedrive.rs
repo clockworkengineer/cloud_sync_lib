@@ -8,7 +8,6 @@ use crate::providers::OAuthCredentials;
 use crate::providers::utils::{refresh_oauth2_token, parse_response_error};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
-use tokio::fs;
 use tracing::info;
 
 /// Storage provider client for Microsoft OneDrive REST API.
@@ -21,6 +20,10 @@ pub struct OneDriveProvider {
     auth_url: String,
     /// The base API URL.
     api_url: String,
+    /// Optional upload rate limiter.
+    upload_limiter: Option<crate::rate_limit::TokenBucket>,
+    /// Optional download rate limiter.
+    download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
 impl OneDriveProvider {
@@ -32,12 +35,31 @@ impl OneDriveProvider {
     /// # Returns
     /// A new instance of `OneDriveProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
+        let upload_limiter = credentials.common.max_upload_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
+        let download_limiter = credentials.common.max_download_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         Self {
             client: super::utils::build_http_client(),
             credentials,
             auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token".to_string(),
             api_url: "https://graph.microsoft.com/v1.0".to_string(),
+            upload_limiter,
+            download_limiter,
         }
+    }
+
+    /// Sets the upload and download rate limiters.
+    pub fn with_limiters(
+        mut self,
+        upload_limiter: Option<crate::rate_limit::TokenBucket>,
+        download_limiter: Option<crate::rate_limit::TokenBucket>,
+    ) -> Self {
+        if self.upload_limiter.is_none() {
+            self.upload_limiter = upload_limiter;
+        }
+        if self.download_limiter.is_none() {
+            self.download_limiter = download_limiter;
+        }
+        self
     }
 
     /// Configures custom endpoints, useful for mocking during tests.
@@ -83,18 +105,30 @@ impl StorageBackend for OneDriveProvider {
         "OneDrive"
     }
 
+    fn with_limiters(
+        self,
+        upload_limiter: Option<crate::rate_limit::TokenBucket>,
+        download_limiter: Option<crate::rate_limit::TokenBucket>,
+    ) -> Self
+    where
+        Self: Sized,
+    {
+        self.with_limiters(upload_limiter, download_limiter)
+    }
+
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let token = self.get_access_token().await?;
         let clean_path = self.format_path(remote_path);
 
         info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
-        let file_content = fs::read(local_path).await?;
+        let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
         let upload_url = format!("{}/me/drive/root:/{}:/content", self.api_url, clean_path);
         let res = self.client.put(&upload_url)
             .bearer_auth(&token)
             .header("Content-Type", "application/octet-stream")
-            .body(file_content)
+            .header("Content-Length", size.to_string())
+            .body(body)
             .send()
             .await?;
 
@@ -119,11 +153,7 @@ impl StorageBackend for OneDriveProvider {
             return Err(parse_response_error(res, self.name(), "download").await);
         }
 
-        if let Some(parent) = local_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        let bytes = res.bytes().await?;
-        fs::write(local_path, bytes).await?;
+        super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
         Ok(())
     }
 

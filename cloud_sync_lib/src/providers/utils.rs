@@ -110,4 +110,44 @@ pub fn build_http_client() -> reqwest::Client {
         .unwrap_or_else(|_| reqwest::Client::new())
 }
 
+/// Creates a rate-limited reqwest::Body from a local file and returns the body along with its size.
+pub async fn get_upload_body(
+    local_path: &std::path::Path,
+    limiter: Option<crate::rate_limit::TokenBucket>,
+) -> Result<(reqwest::Body, u64), StorageError> {
+    let file = tokio::fs::File::open(local_path).await?;
+    let metadata = file.metadata().await?;
+    let size = metadata.len();
+    let reader = RateLimitedReader::new(file, limiter);
+    let stream = ReaderStream::new(reader);
+    let body = reqwest::Body::wrap_stream(stream);
+    Ok((body, size))
+}
+
+/// Downloads a response body stream, limiting its rate, and writes it to a file.
+pub async fn download_rate_limited(
+    res: reqwest::Response,
+    local_path: &std::path::Path,
+    limiter: Option<crate::rate_limit::TokenBucket>,
+) -> Result<(), StorageError> {
+    if let Some(parent) = local_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let mut file = tokio::fs::File::create(local_path).await?;
+    let byte_stream = res.bytes_stream();
+    let mut rate_limited_stream = RateLimitedStream::new(byte_stream, limiter);
+    use futures_util::stream::StreamExt;
+    use tokio::io::AsyncWriteExt;
+    
+    while let Some(chunk_result) = rate_limited_stream.next().await {
+        let chunk = chunk_result.map_err(StorageError::Reqwest)?;
+        file.write_all(&chunk).await?;
+    }
+    file.flush().await?;
+    Ok(())
+}
+
+use crate::rate_limit::{RateLimitedReader, RateLimitedStream};
+use tokio_util::io::ReaderStream;
+
 
