@@ -328,6 +328,7 @@ impl StorageBackend for AzureBlobProvider {
                             size: current_size,
                             modified: current_modified,
                             is_dir: false, // Blobs are always files (Azure Blob Storage has virtual directories)
+                            checksum: None,
                         });
                         current_name.clear();
                         current_size = 0;

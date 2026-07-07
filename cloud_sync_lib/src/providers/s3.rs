@@ -179,11 +179,14 @@ impl StorageBackend for S3Provider {
                     continue;
                 }
 
+                let checksum = object.e_tag.as_ref().map(|tag| tag.trim_matches('"').to_string());
+
                 items.push(StorageItem {
                     path: PathBuf::from(relative_name),
                     size: object.size,
                     modified: std::time::SystemTime::now(),
                     is_dir: false,
+                    checksum,
                 });
             }
 
@@ -203,6 +206,7 @@ impl StorageBackend for S3Provider {
                     size: 0,
                     modified: std::time::SystemTime::now(),
                     is_dir: true,
+                    checksum: None,
                 });
             }
         }

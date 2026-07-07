@@ -203,6 +203,7 @@ impl StorageBackend for OneDriveProvider {
                     size,
                     modified: std::time::SystemTime::now(),
                     is_dir,
+                    checksum: None,
                 });
             }
         }

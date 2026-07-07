@@ -47,6 +47,8 @@ pub struct StorageItem {
     pub modified: SystemTime,
     /// Indicates whether the item is a folder or directory.
     pub is_dir: bool,
+    /// Optional checksum of the file (typically SHA-256, MD5, or provider-specific hash).
+    pub checksum: Option<String>,
 }
 
 /// Generic trait representing any storage target (e.g. S3, Google Drive, Local Simulation).

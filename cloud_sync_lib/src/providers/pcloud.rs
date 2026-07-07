@@ -205,6 +205,7 @@ impl StorageBackend for PCloudProvider {
                         size: entry.size.unwrap_or(0),
                         modified,
                         is_dir: false,
+                        checksum: None,
                     });
                 }
             }

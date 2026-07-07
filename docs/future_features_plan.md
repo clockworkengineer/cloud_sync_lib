@@ -28,7 +28,7 @@ Currently, the daemon's `sync_engine.rs` processes all file synchronization task
 
 ---
 
-## 3. Checksum-Based File Integrity
+## 3. Checksum-Based File Integrity [Implemented]
 
 ### Background
 Currently, the sync state relies entirely on file `size` and the `local_modified`/`remote_modified` timestamps. If a file gets corrupted during transmission or is modified without changing size/timestamp, it can escape detection.

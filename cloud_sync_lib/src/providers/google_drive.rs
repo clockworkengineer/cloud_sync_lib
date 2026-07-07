@@ -303,7 +303,7 @@ impl StorageBackend for GoogleDriveProvider {
         let query = format!("'{}' in parents and trashed = false", folder_id);
         let res = self.client.get(&self.api_url)
             .bearer_auth(&token)
-            .query(&[("q", &query), ("fields", &"files(id, name, size, mimeType, modifiedTime)".to_string())])
+            .query(&[("q", &query), ("fields", &"files(id, name, size, mimeType, modifiedTime, md5Checksum)".to_string())])
             .send()
             .await?
             .json::<serde_json::Value>()
@@ -316,12 +316,14 @@ impl StorageBackend for GoogleDriveProvider {
                 let size = file["size"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
                 let mime_type = file["mimeType"].as_str().unwrap_or("");
                 let is_dir = mime_type == "application/vnd.google-apps.folder";
+                let checksum = file["md5Checksum"].as_str().map(|s| s.to_string());
 
                 items.push(StorageItem {
                     path: PathBuf::from(name),
                     size,
                     modified: std::time::SystemTime::now(),
                     is_dir,
+                    checksum,
                 });
             }
         }

@@ -224,12 +224,14 @@ impl StorageBackend for DropboxProvider {
                 let size = entry["size"].as_u64().unwrap_or(0);
                 let tag = entry[".tag"].as_str().unwrap_or("");
                 let is_dir = tag == "folder";
+                let checksum = entry["content_hash"].as_str().map(|s| s.to_string());
 
                 items.push(StorageItem {
                     path: PathBuf::from(name),
                     size,
                     modified: std::time::SystemTime::now(),
                     is_dir,
+                    checksum,
                 });
             }
         }

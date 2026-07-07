@@ -384,6 +384,7 @@ impl StorageBackend for B2Provider {
                 size: file.content_length,
                 modified,
                 is_dir: false, // B2 is a flat namespace, folders are virtual
+                checksum: None,
             });
         }
 

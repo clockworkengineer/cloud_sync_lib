@@ -285,6 +285,7 @@ impl StorageBackend for MegaProvider {
                                 .map(|dt| SystemTime::from(*dt))
                                 .unwrap_or_else(SystemTime::now),
                             is_dir,
+                            checksum: None,
                         }
                     })
                     .collect();

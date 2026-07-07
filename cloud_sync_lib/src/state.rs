@@ -15,6 +15,9 @@ pub struct FileState {
     /// Whether this entry represents a directory rather than a file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_dir: Option<bool>,
+    /// Optional checksum of the file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
 }
 
 /// Represents the overall catalog state of the synchronization.

@@ -288,6 +288,7 @@ impl StorageBackend for BoxProvider {
                 is_dir: item.item_type == "folder",
                 size: item.size.unwrap_or(0),
                 modified: std::time::SystemTime::now(),
+                checksum: None,
             }
         }).collect();
 

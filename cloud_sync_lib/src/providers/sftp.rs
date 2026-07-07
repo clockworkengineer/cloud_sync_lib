@@ -210,6 +210,7 @@ impl StorageBackend for SFTPProvider {
                     size: stat.size.unwrap_or(0),
                     modified: std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(stat.mtime.unwrap_or(0)),
                     is_dir: stat.is_dir(),
+                    checksum: None,
                 });
             }
 

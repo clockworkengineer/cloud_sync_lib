@@ -10,6 +10,7 @@ struct FileInfo {
     size: u64,
     modified: SystemTime,
     is_dir: bool,
+    checksum: Option<String>,
 }
 
 
@@ -36,12 +37,14 @@ async fn scan_remote_dir(
                             size: 0,
                             modified: item.modified,
                             is_dir: true,
+                            checksum: None,
                         });
                     } else {
                         files.insert(path_str, FileInfo {
                             size: item.size,
                             modified: item.modified,
                             is_dir: false,
+                            checksum: item.checksum,
                         });
                     }
                 }
@@ -58,7 +61,7 @@ async fn get_local_mtime(path: &Path) -> Option<SystemTime> {
     tokio::fs::metadata(path).await.ok().and_then(|m| m.modified().ok())
 }
 
-async fn get_remote_mtime(backend: &dyn StorageBackend, rel_path: &str) -> Option<SystemTime> {
+async fn get_remote_file_info(backend: &dyn StorageBackend, rel_path: &str) -> Option<FileInfo> {
     let path = Path::new(rel_path);
     let parent = path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
     let file_name = path.file_name()?.to_string_lossy();
@@ -67,11 +70,78 @@ async fn get_remote_mtime(backend: &dyn StorageBackend, rel_path: &str) -> Optio
     for item in items {
         if let Some(item_name) = item.path.file_name() {
             if item_name.to_string_lossy() == file_name {
-                return Some(item.modified);
+                return Some(FileInfo {
+                    size: item.size,
+                    modified: item.modified,
+                    is_dir: item.is_dir,
+                    checksum: item.checksum,
+                });
             }
         }
     }
     None
+}
+
+async fn get_remote_mtime(backend: &dyn StorageBackend, rel_path: &str) -> Option<SystemTime> {
+    get_remote_file_info(backend, rel_path).await.map(|info| info.modified)
+}
+
+async fn verified_upload(
+    backend: &dyn StorageBackend,
+    local_path: &Path,
+    remote_path: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let local_checksum = cloud_sync_lib::checksum::compute_sha256(local_path).await.ok();
+    let mut retries = 0;
+    loop {
+        backend.upload(local_path, remote_path).await?;
+        if let Some(remote_info) = get_remote_file_info(backend, remote_path).await {
+            if let (Some(ref local_hash), Some(ref remote_hash)) = (&local_checksum, &remote_info.checksum) {
+                if local_hash != remote_hash {
+                    if retries < 3 {
+                        retries += 1;
+                        tracing::warn!("Checksum mismatch on upload for '{}' (local: {}, remote: {}). Retrying... ({}/3)", remote_path, local_hash, remote_hash, retries);
+                        continue;
+                    } else {
+                        return Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Checksum verification failed for '{}' after 3 upload attempts", remote_path)
+                        )));
+                    }
+                }
+            }
+            return Ok(remote_info.checksum);
+        }
+        return Ok(None);
+    }
+}
+
+async fn verified_download(
+    backend: &dyn StorageBackend,
+    remote_path: &str,
+    local_path: &Path,
+    remote_checksum: Option<&str>,
+) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut retries = 0;
+    loop {
+        backend.download(remote_path, local_path).await?;
+        let local_checksum = cloud_sync_lib::checksum::compute_sha256(local_path).await.ok();
+        if let (Some(ref local_hash), Some(ref remote_hash)) = (&local_checksum, &remote_checksum) {
+            if local_hash != *remote_hash {
+                if retries < 3 {
+                    retries += 1;
+                    tracing::warn!("Checksum mismatch on download for '{}' (local: {}, remote: {}). Retrying... ({}/3)", remote_path, local_hash, remote_hash, retries);
+                    continue;
+                } else {
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Checksum verification failed for '{}' after 3 download attempts", remote_path)
+                    )));
+                }
+            }
+        }
+        return Ok(local_checksum);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -91,8 +161,12 @@ async fn sync_single_file(
     match (local_opt, remote_opt, state_opt) {
         // Case 1: Exists everywhere (check for modifications)
         (Some(local), Some(remote), Some(state)) => {
-            let local_changed = local.size != state.size || local.modified != state.local_modified;
-            let remote_changed = remote.size != state.size || remote.modified != state.remote_modified;
+            let local_changed = local.size != state.size 
+                || local.modified != state.local_modified
+                || (local.checksum.is_some() && state.checksum.is_some() && local.checksum != state.checksum);
+            let remote_changed = remote.size != state.size 
+                || remote.modified != state.remote_modified
+                || (remote.checksum.is_some() && state.checksum.is_some() && remote.checksum != state.checksum);
 
             if local_changed && remote_changed {
                 if sync_both {
@@ -103,19 +177,20 @@ async fn sync_single_file(
                     tokio::fs::rename(&local_file_path, &conflict_local_path).await?;
 
                     info!("Uploading conflict copy '{}' to remote", conflict_rel_path);
-                    backend.upload(&conflict_local_path, &conflict_rel_path).await?;
+                    let conflict_remote_checksum = verified_upload(backend.as_ref(), &conflict_local_path, &conflict_rel_path).await?;
                     let conflict_remote_mtime = get_remote_mtime(backend.as_ref(), &conflict_rel_path).await.unwrap_or(SystemTime::now());
                     let conflict_local_mtime = get_local_mtime(&conflict_local_path).await.unwrap_or(SystemTime::now());
 
-                    updates.push((conflict_rel_path, FileState {
+                    updates.push((conflict_rel_path.clone(), FileState {
                         size: local.size,
                         local_modified: conflict_local_mtime,
                         remote_modified: conflict_remote_mtime,
                         is_dir: Some(false),
+                        checksum: conflict_remote_checksum.or(local.checksum.clone()),
                     }));
 
                     info!("Downloading remote file '{}' to original local path", rel_path);
-                    backend.download(&rel_path, &local_file_path).await?;
+                    let local_checksum = verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?;
                     let replaced_local_mtime = get_local_mtime(&local_file_path).await.unwrap_or(SystemTime::now());
 
                     updates.push((rel_path.clone(), FileState {
@@ -123,36 +198,42 @@ async fn sync_single_file(
                         local_modified: replaced_local_mtime,
                         remote_modified: remote.modified,
                         is_dir: Some(false),
+                        checksum: local_checksum.or(remote.checksum.clone()),
                     }));
                 } else {
                     info!("Unidirectional: overwriting remote file '{}' (conflict, local is source of truth)", rel_path);
-                    backend.upload(&local_file_path, &rel_path).await?;
+                    let remote_checksum = verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?;
+                    let remote_info = get_remote_file_info(backend.as_ref(), &rel_path).await.unwrap_or(remote);
                     updates.push((rel_path.clone(), FileState {
                         size: local.size,
                         local_modified: local.modified,
-                        remote_modified: get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(remote.modified),
+                        remote_modified: remote_info.modified,
                         is_dir: Some(false),
+                        checksum: remote_checksum.or(local.checksum),
                     }));
                 }
             } else if local_changed {
                 info!("Bidirectional: uploading local modification '{}' to remote", rel_path);
-                backend.upload(&local_file_path, &rel_path).await?;
+                let remote_checksum = verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?;
+                let remote_info = get_remote_file_info(backend.as_ref(), &rel_path).await.unwrap_or(remote);
                 updates.push((rel_path.clone(), FileState {
                     size: local.size,
                     local_modified: local.modified,
-                    remote_modified: get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(remote.modified),
+                    remote_modified: remote_info.modified,
                     is_dir: Some(false),
+                    checksum: remote_checksum.or(local.checksum),
                 }));
             } else if remote_changed {
                 if sync_both {
                     info!("Bidirectional: downloading remote modification '{}' to local", rel_path);
-                    backend.download(&rel_path, &local_file_path).await?;
+                    let local_checksum = verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?;
                     let new_local_mtime = get_local_mtime(&local_file_path).await.unwrap_or(local.modified);
                     updates.push((rel_path.clone(), FileState {
                         size: remote.size,
                         local_modified: new_local_mtime,
                         remote_modified: remote.modified,
                         is_dir: Some(false),
+                        checksum: local_checksum.or(remote.checksum),
                     }));
                 } else {
                     updates.push((rel_path.clone(), FileState {
@@ -160,6 +241,7 @@ async fn sync_single_file(
                         local_modified: local.modified,
                         remote_modified: remote.modified,
                         is_dir: Some(false),
+                        checksum: remote.checksum.or(state.checksum),
                     }));
                 }
             } else {
@@ -168,12 +250,17 @@ async fn sync_single_file(
         }
         // Case 2: Local & Remote, but not in state catalog (e.g. concurrent initial additions)
         (Some(local), Some(remote), None) => {
-            if local.size == remote.size {
+            let same_checksum = match (&local.checksum, &remote.checksum) {
+                (Some(lc), Some(rc)) => lc == rc,
+                _ => false,
+            };
+            if local.size == remote.size || same_checksum {
                 updates.push((rel_path.clone(), FileState {
                     size: local.size,
                     local_modified: local.modified,
                     remote_modified: remote.modified,
                     is_dir: Some(false),
+                    checksum: remote.checksum.or(local.checksum),
                 }));
             } else {
                 if sync_both {
@@ -184,7 +271,7 @@ async fn sync_single_file(
                     tokio::fs::rename(&local_file_path, &conflict_local_path).await?;
 
                     info!("Uploading conflict copy '{}' to remote", conflict_rel_path);
-                    backend.upload(&conflict_local_path, &conflict_rel_path).await?;
+                    let conflict_remote_checksum = verified_upload(backend.as_ref(), &conflict_local_path, &conflict_rel_path).await?;
                     let conflict_remote_mtime = get_remote_mtime(backend.as_ref(), &conflict_rel_path).await.unwrap_or(SystemTime::now());
                     let conflict_local_mtime = get_local_mtime(&conflict_local_path).await.unwrap_or(SystemTime::now());
 
@@ -193,10 +280,11 @@ async fn sync_single_file(
                         local_modified: conflict_local_mtime,
                         remote_modified: conflict_remote_mtime,
                         is_dir: Some(false),
+                        checksum: conflict_remote_checksum.or(local.checksum.clone()),
                     }));
 
                     info!("Downloading remote file '{}' to original local path", rel_path);
-                    backend.download(&rel_path, &local_file_path).await?;
+                    let local_checksum = verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?;
                     let replaced_local_mtime = get_local_mtime(&local_file_path).await.unwrap_or(SystemTime::now());
 
                     updates.push((rel_path.clone(), FileState {
@@ -204,15 +292,18 @@ async fn sync_single_file(
                         local_modified: replaced_local_mtime,
                         remote_modified: remote.modified,
                         is_dir: Some(false),
+                        checksum: local_checksum.or(remote.checksum),
                     }));
                 } else {
                     info!("Unidirectional: overwriting remote file '{}' (initial diff, local is source of truth)", rel_path);
-                    backend.upload(&local_file_path, &rel_path).await?;
+                    let remote_checksum = verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?;
+                    let remote_info = get_remote_file_info(backend.as_ref(), &rel_path).await.unwrap_or(remote);
                     updates.push((rel_path.clone(), FileState {
                         size: local.size,
                         local_modified: local.modified,
-                        remote_modified: get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(remote.modified),
+                        remote_modified: remote_info.modified,
                         is_dir: Some(false),
+                        checksum: remote_checksum.or(local.checksum),
                     }));
                 }
             }
@@ -220,39 +311,46 @@ async fn sync_single_file(
         // Case 3: Local-only, not in state catalog (New local file)
         (Some(local), None, None) => {
             info!("Bidirectional: uploading new local file '{}' to remote", rel_path);
-            backend.upload(&local_file_path, &rel_path).await?;
+            let remote_checksum = verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?;
+            let remote_mtime = get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(SystemTime::now());
             updates.push((rel_path.clone(), FileState {
                 size: local.size,
                 local_modified: local.modified,
-                remote_modified: get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(SystemTime::now()),
+                remote_modified: remote_mtime,
                 is_dir: Some(false),
+                checksum: remote_checksum.or(local.checksum),
             }));
         }
         // Case 4: Remote-only, not in state catalog (New remote file)
         (None, Some(remote), None) => {
             if sync_both {
                 info!("Bidirectional: downloading new remote file '{}' to local", rel_path);
-                backend.download(&rel_path, &local_file_path).await?;
+                let local_checksum = verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?;
                 let new_local_mtime = get_local_mtime(&local_file_path).await.unwrap_or(SystemTime::now());
                 updates.push((rel_path.clone(), FileState {
                     size: remote.size,
                     local_modified: new_local_mtime,
                     remote_modified: remote.modified,
                     is_dir: Some(false),
+                    checksum: local_checksum.or(remote.checksum),
                 }));
             }
         }
         // Case 5: Local & State, but missing remote (Deleted remotely)
         (Some(local), None, Some(state)) => {
-            let local_changed = local.size != state.size || local.modified != state.local_modified;
+            let local_changed = local.size != state.size 
+                || local.modified != state.local_modified
+                || (local.checksum.is_some() && state.checksum.is_some() && local.checksum != state.checksum);
             if local_changed {
                 info!("Bidirectional: re-uploading modified local file '{}' that was deleted remotely", rel_path);
-                backend.upload(&local_file_path, &rel_path).await?;
+                let remote_checksum = verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?;
+                let remote_mtime = get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(SystemTime::now());
                 updates.push((rel_path.clone(), FileState {
                     size: local.size,
                     local_modified: local.modified,
-                    remote_modified: get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(SystemTime::now()),
+                    remote_modified: remote_mtime,
                     is_dir: Some(false),
+                    checksum: remote_checksum.or(local.checksum),
                 }));
             } else {
                 if sync_both {
@@ -260,29 +358,34 @@ async fn sync_single_file(
                     let _ = tokio::fs::remove_file(local_file_path).await;
                 } else {
                     info!("Unidirectional: recreating remote file '{}' (deleted remotely)", rel_path);
-                    backend.upload(&local_file_path, &rel_path).await?;
+                    let remote_checksum = verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?;
+                    let remote_mtime = get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(SystemTime::now());
                     updates.push((rel_path.clone(), FileState {
                         size: local.size,
                         local_modified: local.modified,
-                        remote_modified: get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(SystemTime::now()),
+                        remote_modified: remote_mtime,
                         is_dir: Some(false),
+                        checksum: remote_checksum.or(local.checksum),
                     }));
                 }
             }
         }
         // Case 6: Remote & State, but missing local (Deleted locally)
         (None, Some(remote), Some(state)) => {
-            let remote_changed = remote.size != state.size || remote.modified != state.remote_modified;
+            let remote_changed = remote.size != state.size 
+                || remote.modified != state.remote_modified
+                || (remote.checksum.is_some() && state.checksum.is_some() && remote.checksum != state.checksum);
             if remote_changed {
                 if sync_both {
                     info!("Bidirectional: re-downloading modified remote file '{}' that was deleted locally", rel_path);
-                    backend.download(&rel_path, &local_file_path).await?;
+                    let local_checksum = verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?;
                     let new_local_mtime = get_local_mtime(&local_file_path).await.unwrap_or(remote.modified);
                     updates.push((rel_path.clone(), FileState {
                         size: remote.size,
                         local_modified: new_local_mtime,
                         remote_modified: remote.modified,
                         is_dir: Some(false),
+                        checksum: local_checksum.or(remote.checksum),
                     }));
                 } else {
                     if sync_deletions {
@@ -324,10 +427,16 @@ pub async fn sync_bidirectional(
     let local_scanned = crate::watcher::scan_local_directory(watch_dir, gitignore).await?;
     let mut local_files = HashMap::new();
     for (rel_path, item) in local_scanned {
+        let checksum = if item.is_dir {
+            None
+        } else {
+            cloud_sync_lib::checksum::compute_sha256(&item.path).await.ok()
+        };
         local_files.insert(rel_path, FileInfo {
             size: item.size,
             modified: item.modified,
             is_dir: item.is_dir,
+            checksum,
         });
     }
     let remote_files = scan_remote_dir(backend.as_ref(), gitignore).await?;
@@ -378,6 +487,7 @@ pub async fn sync_bidirectional(
                     local_modified: local.modified,
                     remote_modified: remote.modified,
                     is_dir: Some(true),
+                    checksum: None,
                 });
             }
             (Some(local), None, None) => {
@@ -390,6 +500,7 @@ pub async fn sync_bidirectional(
                     local_modified: local.modified,
                     remote_modified: get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(SystemTime::now()),
                     is_dir: Some(true),
+                    checksum: None,
                 });
             }
             (None, Some(remote), None) => {
@@ -405,6 +516,7 @@ pub async fn sync_bidirectional(
                         local_modified: new_local_mtime,
                         remote_modified: remote.modified,
                         is_dir: Some(true),
+                        checksum: None,
                     });
                 }
             }
@@ -425,6 +537,7 @@ pub async fn sync_bidirectional(
                         local_modified: local.modified,
                         remote_modified: get_remote_mtime(backend.as_ref(), &rel_path).await.unwrap_or(SystemTime::now()),
                         is_dir: Some(true),
+                        checksum: None,
                     });
                 }
             }
@@ -643,5 +756,57 @@ mod tests {
         // Clean up
         let _ = tokio::fs::remove_dir_all(&local_dir).await;
         let _ = tokio::fs::remove_dir_all(&remote_dir).await;
+    }
+
+    #[tokio::test]
+    async fn test_checksum_based_change_detection() {
+        let watch_dir = tempfile::tempdir().unwrap();
+        let local_path = watch_dir.path().join("test.txt");
+        tokio::fs::write(&local_path, "modified content").await.unwrap();
+        let local_mtime = get_local_mtime(&local_path).await.unwrap();
+
+        let sim_dir = tempfile::tempdir().unwrap();
+        let sim = LocalSimulation::new(sim_dir.path().to_path_buf(), "TestSim".to_string());
+        let backend = Arc::new(TestBackendWrapper { sim, sync_mode: cloud_sync_lib::SyncMode::TwoWay });
+
+        // Construct a state where size and mtime are matching, but checksum is different
+        let state = FileState {
+            size: 16,
+            local_modified: local_mtime,
+            remote_modified: SystemTime::UNIX_EPOCH,
+            is_dir: Some(false),
+            checksum: Some("old_checksum".to_string()),
+        };
+
+        let local_info = FileInfo {
+            size: 16,
+            modified: local_mtime,
+            is_dir: false,
+            checksum: Some("new_checksum".to_string()),
+        };
+
+        let remote_info = FileInfo {
+            size: 16,
+            modified: SystemTime::UNIX_EPOCH,
+            is_dir: false,
+            checksum: Some("old_checksum".to_string()),
+        };
+
+        let updates = sync_single_file(
+            watch_dir.path().to_path_buf(),
+            "test.txt".to_string(),
+            backend.clone(),
+            true, // sync_both
+            true, // sync_deletions
+            Some(local_info),
+            Some(remote_info),
+            Some(state),
+        ).await.unwrap();
+
+        // It should have detected local change due to checksum mismatch and triggered upload
+        assert!(!updates.is_empty());
+        let (path, new_state) = &updates[0];
+        assert_eq!(path, "test.txt");
+        assert_eq!(new_state.size, 16);
     }
 }

@@ -228,6 +228,7 @@ impl StorageBackend for IPFSProvider {
                 size: row.size,
                 modified,
                 is_dir: false,
+                checksum: None,
             });
         }
 

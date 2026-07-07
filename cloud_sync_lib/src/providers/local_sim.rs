@@ -150,11 +150,18 @@ impl LocalSimulation {
         let mut entries = fs::read_dir(&target).await?;
         while let Some(entry) = entries.next_entry().await? {
             let metadata = entry.metadata().await?;
+            let is_dir = metadata.is_dir();
+            let checksum = if is_dir {
+                None
+            } else {
+                crate::checksum::compute_sha256(&entry.path()).await.ok()
+            };
             items.push(StorageItem {
                 path: entry.path().strip_prefix(&self.root_dir).unwrap_or(&entry.path()).to_path_buf(),
                 size: metadata.len(),
                 modified: metadata.modified().unwrap_or(std::time::SystemTime::now()),
-                is_dir: metadata.is_dir(),
+                is_dir,
+                checksum,
             });
         }
         Ok(items)

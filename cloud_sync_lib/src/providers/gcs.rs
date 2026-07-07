@@ -252,6 +252,7 @@ impl StorageBackend for GCSProvider {
                     size,
                     modified,
                     is_dir: false, // GCS is a flat namespace, virtual directories are simulated
+                    checksum: None,
                 });
             }
         }
