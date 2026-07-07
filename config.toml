@@ -85,7 +85,7 @@ email = "your-email@example.com"
 password = "your-mega-password"
 destination_folder = "PiSync" # Optional sub-folder name (creates it if missing)
 enabled = true                # Set to false to disable this provider
-sync_mode = "two-way"             # Options: "two-way", "one-way", "one-way-no-deletions"
+sync_mode = "one-way"             # Options: "two-way", "one-way", "one-way-no-deletions"
 
 [azure_blob_credentials]
 account_name = "devstoreaccount1"
