@@ -145,6 +145,7 @@ mod tests {
                 destination_folder: None,
                 enabled: Some(false),
                 sync: None,
+                sync_both: None,
                 encryption_password: None,
             },
         });
@@ -158,6 +159,7 @@ mod tests {
                 destination_folder: None,
                 enabled: Some(true),
                 sync: None,
+                sync_both: None,
                 encryption_password: None,
             },
         });

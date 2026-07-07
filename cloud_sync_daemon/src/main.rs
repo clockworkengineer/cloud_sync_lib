@@ -97,10 +97,11 @@ fn try_add_backend<C, P, F>(
 {
     if is_provider_enabled(creds_option) {
         let sync = creds_option.as_ref().map(|c| c.sync_deletions()).unwrap_or(true);
+        let sync_both = creds_option.as_ref().map(|c| c.sync_both()).unwrap_or(false);
         let inner = creds_option.clone().map(builder);
         let local_sim = LocalSimulation::new(sim_root, provider_name.to_string())
             .with_limiters(upload_limiter, download_limiter);
-        let fallback = SimulatedFallback::new(inner, local_sim, provider_name, sync);
+        let fallback = SimulatedFallback::new(inner, local_sim, provider_name, sync, sync_both);
 
         if let Some(password) = creds_option.as_ref().and_then(|c| c.encryption_password()) {
             backends.push(Arc::new(cloud_sync_lib::EncryptedBackend::new(fallback, password)));

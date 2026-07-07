@@ -19,6 +19,8 @@ pub struct SimulatedFallback<B: StorageBackend> {
     name: String,
     /// Whether this connection has sync (deletions) enabled.
     sync: bool,
+    /// Whether this connection has bidirectional sync enabled.
+    sync_both: bool,
 }
 
 impl<B: StorageBackend> SimulatedFallback<B> {
@@ -29,15 +31,17 @@ impl<B: StorageBackend> SimulatedFallback<B> {
     /// * `local_sim` - The simulation backend to use as a fallback.
     /// * `name` - The user-friendly name of the storage backend.
     /// * `sync` - Whether deletions should be synced.
+    /// * `sync_both` - Whether bidirectional sync is enabled.
     ///
     /// # Returns
     /// A new instance of `SimulatedFallback`.
-    pub fn new(inner: Option<B>, local_sim: LocalSimulation, name: &str, sync: bool) -> Self {
+    pub fn new(inner: Option<B>, local_sim: LocalSimulation, name: &str, sync: bool, sync_both: bool) -> Self {
         Self {
             inner,
             local_sim,
             name: name.to_string(),
             sync,
+            sync_both,
         }
     }
 }
@@ -90,5 +94,9 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
 
     fn sync(&self) -> bool {
         self.sync
+    }
+
+    fn sync_both(&self) -> bool {
+        self.sync_both
     }
 }

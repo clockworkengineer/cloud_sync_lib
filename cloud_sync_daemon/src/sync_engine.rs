@@ -120,6 +120,8 @@ pub async fn sync_bidirectional(
     state_file_path: &Path,
     gitignore: &ignore::gitignore::Gitignore,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let sync_both = backend.sync_both();
+
     // 1. Load sync state catalog
     let mut sync_state = SyncState::load(state_file_path).await.unwrap_or_default();
 
@@ -181,24 +183,39 @@ pub async fn sync_bidirectional(
                     });
                 }
                 (None, Some(remote), None) => {
-                    info!("Bidirectional: creating local directory '{}'", rel_path);
-                    let local_path = watch_dir.join(&rel_path);
-                    if let Err(e) = tokio::fs::create_dir_all(&local_path).await {
-                        info!("Failed to create local directory '{:?}': {}", local_path, e);
+                    if sync_both {
+                        info!("Bidirectional: creating local directory '{}'", rel_path);
+                        let local_path = watch_dir.join(&rel_path);
+                        if let Err(e) = tokio::fs::create_dir_all(&local_path).await {
+                            info!("Failed to create local directory '{:?}': {}", local_path, e);
+                        }
+                        let new_local_mtime = get_local_mtime(&local_path).await.unwrap_or(SystemTime::now());
+                        next_files_state.insert(rel_path.clone(), FileState {
+                            size: 0,
+                            local_modified: new_local_mtime,
+                            remote_modified: remote.modified,
+                            is_dir: Some(true),
+                        });
                     }
-                    let new_local_mtime = get_local_mtime(&local_path).await.unwrap_or(SystemTime::now());
-                    next_files_state.insert(rel_path.clone(), FileState {
-                        size: 0,
-                        local_modified: new_local_mtime,
-                        remote_modified: remote.modified,
-                        is_dir: Some(true),
-                    });
                 }
-                (Some(_local), None, Some(_state)) => {
-                    info!("Bidirectional: deleting local directory '{}' (deleted remotely)", rel_path);
-                    let local_path = watch_dir.join(&rel_path);
-                    if local_path.exists() {
-                        let _ = tokio::fs::remove_dir_all(&local_path).await;
+                (Some(local), None, Some(_state)) => {
+                    if sync_both {
+                        info!("Bidirectional: deleting local directory '{}' (deleted remotely)", rel_path);
+                        let local_path = watch_dir.join(&rel_path);
+                        if local_path.exists() {
+                            let _ = tokio::fs::remove_dir_all(&local_path).await;
+                        }
+                    } else {
+                        info!("Unidirectional: recreating remote directory '{}' (deleted remotely)", rel_path);
+                        if let Err(e) = backend.create_folder(&rel_path).await {
+                            info!("Failed to create remote directory '{}': {}", rel_path, e);
+                        }
+                        next_files_state.insert(rel_path.clone(), FileState {
+                            size: 0,
+                            local_modified: local.modified,
+                            remote_modified: get_remote_mtime(backend, &rel_path).await.unwrap_or(SystemTime::now()),
+                            is_dir: Some(true),
+                        });
                     }
                 }
                 (None, Some(_remote), Some(_state)) => {
@@ -220,7 +237,18 @@ pub async fn sync_bidirectional(
                 let remote_changed = remote.size != state.size || remote.modified != state.remote_modified;
 
                 if local_changed && remote_changed {
-                    resolve_conflict(watch_dir, &rel_path, backend, local.size, local.modified, remote.size, remote.modified, &mut next_files_state).await?;
+                    if sync_both {
+                        resolve_conflict(watch_dir, &rel_path, backend, local.size, local.modified, remote.size, remote.modified, &mut next_files_state).await?;
+                    } else {
+                        info!("Unidirectional: overwriting remote file '{}' (conflict, local is source of truth)", rel_path);
+                        backend.upload(&watch_dir.join(&rel_path), &rel_path).await?;
+                        next_files_state.insert(rel_path.clone(), FileState {
+                            size: local.size,
+                            local_modified: local.modified,
+                            remote_modified: get_remote_mtime(backend, &rel_path).await.unwrap_or(remote.modified),
+                            is_dir: Some(false),
+                        });
+                    }
                 } else if local_changed {
                     info!("Bidirectional: uploading local modification '{}' to remote", rel_path);
                     backend.upload(&watch_dir.join(&rel_path), &rel_path).await?;
@@ -231,15 +259,24 @@ pub async fn sync_bidirectional(
                         is_dir: Some(false),
                     });
                 } else if remote_changed {
-                    info!("Bidirectional: downloading remote modification '{}' to local", rel_path);
-                    backend.download(&rel_path, &watch_dir.join(&rel_path)).await?;
-                    let new_local_mtime = get_local_mtime(&watch_dir.join(&rel_path)).await.unwrap_or(local.modified);
-                    next_files_state.insert(rel_path.clone(), FileState {
-                        size: remote.size,
-                        local_modified: new_local_mtime,
-                        remote_modified: remote.modified,
-                        is_dir: Some(false),
-                    });
+                    if sync_both {
+                        info!("Bidirectional: downloading remote modification '{}' to local", rel_path);
+                        backend.download(&rel_path, &watch_dir.join(&rel_path)).await?;
+                        let new_local_mtime = get_local_mtime(&watch_dir.join(&rel_path)).await.unwrap_or(local.modified);
+                        next_files_state.insert(rel_path.clone(), FileState {
+                            size: remote.size,
+                            local_modified: new_local_mtime,
+                            remote_modified: remote.modified,
+                            is_dir: Some(false),
+                        });
+                    } else {
+                        next_files_state.insert(rel_path.clone(), FileState {
+                            size: remote.size,
+                            local_modified: local.modified,
+                            remote_modified: remote.modified,
+                            is_dir: Some(false),
+                        });
+                    }
                 } else {
                     next_files_state.insert(rel_path.clone(), state.clone());
                 }
@@ -254,7 +291,18 @@ pub async fn sync_bidirectional(
                         is_dir: Some(false),
                     });
                 } else {
-                    resolve_conflict(watch_dir, &rel_path, backend, local.size, local.modified, remote.size, remote.modified, &mut next_files_state).await?;
+                    if sync_both {
+                        resolve_conflict(watch_dir, &rel_path, backend, local.size, local.modified, remote.size, remote.modified, &mut next_files_state).await?;
+                    } else {
+                        info!("Unidirectional: overwriting remote file '{}' (initial diff, local is source of truth)", rel_path);
+                        backend.upload(&watch_dir.join(&rel_path), &rel_path).await?;
+                        next_files_state.insert(rel_path.clone(), FileState {
+                            size: local.size,
+                            local_modified: local.modified,
+                            remote_modified: get_remote_mtime(backend, &rel_path).await.unwrap_or(remote.modified),
+                            is_dir: Some(false),
+                        });
+                    }
                 }
             }
             // Case 3: Local-only, not in state catalog (New local file)
@@ -270,15 +318,17 @@ pub async fn sync_bidirectional(
             }
             // Case 4: Remote-only, not in state catalog (New remote file)
             (None, Some(remote), None) => {
-                info!("Bidirectional: downloading new remote file '{}' to local", rel_path);
-                backend.download(&rel_path, &watch_dir.join(&rel_path)).await?;
-                let new_local_mtime = get_local_mtime(&watch_dir.join(&rel_path)).await.unwrap_or(SystemTime::now());
-                next_files_state.insert(rel_path.clone(), FileState {
-                    size: remote.size,
-                    local_modified: new_local_mtime,
-                    remote_modified: remote.modified,
-                    is_dir: Some(false),
-                });
+                if sync_both {
+                    info!("Bidirectional: downloading new remote file '{}' to local", rel_path);
+                    backend.download(&rel_path, &watch_dir.join(&rel_path)).await?;
+                    let new_local_mtime = get_local_mtime(&watch_dir.join(&rel_path)).await.unwrap_or(SystemTime::now());
+                    next_files_state.insert(rel_path.clone(), FileState {
+                        size: remote.size,
+                        local_modified: new_local_mtime,
+                        remote_modified: remote.modified,
+                        is_dir: Some(false),
+                    });
+                }
             }
             // Case 5: Local & State, but missing remote (Deleted remotely)
             (Some(local), None, Some(state)) => {
@@ -293,24 +343,42 @@ pub async fn sync_bidirectional(
                         is_dir: Some(false),
                     });
                 } else {
-                    info!("Bidirectional: deleting local file '{}' since it was deleted remotely", rel_path);
-                    let local_path = watch_dir.join(&rel_path);
-                    let _ = tokio::fs::remove_file(local_path).await;
+                    if sync_both {
+                        info!("Bidirectional: deleting local file '{}' since it was deleted remotely", rel_path);
+                        let local_path = watch_dir.join(&rel_path);
+                        let _ = tokio::fs::remove_file(local_path).await;
+                    } else {
+                        info!("Unidirectional: recreating remote file '{}' (deleted remotely)", rel_path);
+                        backend.upload(&watch_dir.join(&rel_path), &rel_path).await?;
+                        next_files_state.insert(rel_path.clone(), FileState {
+                            size: local.size,
+                            local_modified: local.modified,
+                            remote_modified: get_remote_mtime(backend, &rel_path).await.unwrap_or(SystemTime::now()),
+                            is_dir: Some(false),
+                        });
+                    }
                 }
             }
             // Case 6: Remote & State, but missing local (Deleted locally)
             (None, Some(remote), Some(state)) => {
                 let remote_changed = remote.size != state.size || remote.modified != state.remote_modified;
                 if remote_changed {
-                    info!("Bidirectional: re-downloading modified remote file '{}' that was deleted locally", rel_path);
-                    backend.download(&rel_path, &watch_dir.join(&rel_path)).await?;
-                    let new_local_mtime = get_local_mtime(&watch_dir.join(&rel_path)).await.unwrap_or(remote.modified);
-                    next_files_state.insert(rel_path.clone(), FileState {
-                        size: remote.size,
-                        local_modified: new_local_mtime,
-                        remote_modified: remote.modified,
-                        is_dir: Some(false),
-                    });
+                    if sync_both {
+                        info!("Bidirectional: re-downloading modified remote file '{}' that was deleted locally", rel_path);
+                        backend.download(&rel_path, &watch_dir.join(&rel_path)).await?;
+                        let new_local_mtime = get_local_mtime(&watch_dir.join(&rel_path)).await.unwrap_or(remote.modified);
+                        next_files_state.insert(rel_path.clone(), FileState {
+                            size: remote.size,
+                            local_modified: new_local_mtime,
+                            remote_modified: remote.modified,
+                            is_dir: Some(false),
+                        });
+                    } else {
+                        if backend.sync() {
+                            info!("Unidirectional: deleting remote file '{}' since it was deleted locally", rel_path);
+                            let _ = backend.delete(&rel_path).await;
+                        }
+                    }
                 } else {
                     if backend.sync() {
                         info!("Bidirectional: deleting remote file '{}' since it was deleted locally", rel_path);
@@ -340,12 +408,16 @@ mod tests {
 
     struct TestBackendWrapper {
         sim: LocalSimulation,
+        sync_both: bool,
     }
 
     #[async_trait::async_trait]
     impl StorageBackend for TestBackendWrapper {
         fn name(&self) -> &str {
             "TestSim"
+        }
+        fn sync_both(&self) -> bool {
+            self.sync_both
         }
         async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
             self.sim.upload(local_path, remote_path).await
@@ -380,7 +452,7 @@ mod tests {
 
         let local_path = &local_dir;
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
-        let remote_sim = TestBackendWrapper { sim };
+        let remote_sim = TestBackendWrapper { sim, sync_both: true };
         let state_file = local_path.join(".sync_state.json");
         let gitignore = ignore::gitignore::Gitignore::empty();
 
@@ -428,6 +500,62 @@ mod tests {
         sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
         assert!(local_path.join("remote_empty_dir").exists());
         assert!(local_path.join("remote_empty_dir").is_dir());
+
+        // Clean up
+        let _ = tokio::fs::remove_dir_all(&local_dir).await;
+        let _ = tokio::fs::remove_dir_all(&remote_dir).await;
+    }
+
+    #[tokio::test]
+    async fn test_unidirectional_sync_flows() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        let temp_base = std::env::temp_dir();
+        let local_dir = temp_base.join(format!("local_uni_{}", unique_id));
+        let remote_dir = temp_base.join(format!("remote_uni_{}", unique_id));
+
+        tokio::fs::create_dir_all(&local_dir).await.unwrap();
+        tokio::fs::create_dir_all(&remote_dir).await.unwrap();
+
+        let local_path = &local_dir;
+        let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
+        let remote_sim = TestBackendWrapper { sim, sync_both: false };
+        let state_file = local_path.join(".sync_state.json");
+        let gitignore = ignore::gitignore::Gitignore::empty();
+
+        // 1. Initial State (Both empty)
+        sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
+
+        // 2. Add local file -> should upload
+        let file1_path = local_path.join("file1.txt");
+        tokio::fs::write(&file1_path, "local data").await.unwrap();
+        sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
+        assert!(remote_sim.sim.resolve("file1.txt").exists());
+
+        // 3. Add remote file -> should NOT download (since sync_both is false)
+        let remote_file2 = remote_sim.sim.resolve("file2.txt");
+        tokio::fs::write(&remote_file2, "remote data").await.unwrap();
+        sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
+        assert!(!local_path.join("file2.txt").exists());
+
+        // 4. Modify remote file -> should NOT download
+        tokio::fs::write(&remote_file2, "remote modified data").await.unwrap();
+        sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
+        assert!(!local_path.join("file2.txt").exists());
+
+        // 5. Delete remote file (exists locally) -> should recreate remote file (since local is source of truth)
+        tokio::fs::remove_file(&remote_file2).await.unwrap();
+        sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
+        // Wait, file1.txt was deleted remotely but is still present locally, so unidirectional sync recreates it
+        assert!(remote_sim.sim.resolve("file1.txt").exists());
+
+        // 6. Delete local file -> should delete remote file
+        tokio::fs::remove_file(&file1_path).await.unwrap();
+        sync_bidirectional(local_path, &remote_sim, &state_file, &gitignore).await.unwrap();
+        assert!(!remote_sim.sim.resolve("file1.txt").exists());
 
         // Clean up
         let _ = tokio::fs::remove_dir_all(&local_dir).await;

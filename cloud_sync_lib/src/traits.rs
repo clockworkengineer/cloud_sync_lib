@@ -78,4 +78,9 @@ pub trait StorageBackend: Send + Sync {
     fn sync(&self) -> bool {
         true
     }
+
+    /// Returns whether the backend should sync both ways (bidirectionally).
+    fn sync_both(&self) -> bool {
+        false
+    }
 }

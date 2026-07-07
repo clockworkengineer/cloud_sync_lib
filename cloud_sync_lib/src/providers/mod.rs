@@ -12,8 +12,10 @@ pub struct CommonProviderSettings {
     pub destination_folder: Option<String>,
     /// Optional toggle to enable/disable the provider backend.
     pub enabled: Option<bool>,
-    /// Optional toggle to enable/disable deletion syncing.
+    /// Optional toggle to enable deletion syncing.
     pub sync: Option<bool>,
+    /// Optional toggle to enable bidirectional (two-way) sync.
+    pub sync_both: Option<bool>,
     /// Optional password for client-side encryption.
     pub encryption_password: Option<String>,
 }
@@ -27,6 +29,10 @@ pub trait ProviderConfig {
 
     fn sync_deletions(&self) -> bool {
         self.common_settings().sync.unwrap_or(true)
+    }
+
+    fn sync_both(&self) -> bool {
+        self.common_settings().sync_both.unwrap_or(false)
     }
 
     fn destination_folder(&self) -> Option<&str> {

@@ -19,6 +19,7 @@ refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
 destination_folder = ""
 enabled = true
 sync = true
+sync_both = false
 
 [dropbox_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"
@@ -27,6 +28,7 @@ refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
 destination_folder = ""
 enabled = false
 sync = true
+sync_both = false
 
 [onedrive_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"
@@ -35,6 +37,7 @@ refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
 destination_folder = ""
 enabled = false
 sync = true
+sync_both = false
 
 [webdav_credentials]
 url = "http://127.0.0.1:8080"
@@ -43,6 +46,7 @@ password = "PLACEHOLDER_PASSWORD"
 destination_folder = ""
 enabled = false
 sync = true
+sync_both = false
 
 [s3_credentials]
 bucket = "PLACEHOLDER_BUCKET"
@@ -53,6 +57,7 @@ endpoint = "http://127.0.0.1:9000"
 destination_folder = ""
 enabled = false
 sync = true
+sync_both = false
 
 [sftp_credentials]
 host = "127.0.0.1"
@@ -63,6 +68,7 @@ private_key_path = ""
 destination_folder = ""
 enabled = false
 sync = true
+sync_both = false
 
 [nextcloud_credentials]
 url = "http://127.0.0.1:8080"
@@ -71,6 +77,7 @@ app_password = "PLACEHOLDER_APP_PASSWORD"
 destination_folder = ""
 enabled = false
 sync = true
+sync_both = false
 
 [box_credentials]
 client_id = "your_box_client_id"
@@ -79,6 +86,7 @@ refresh_token = "your_box_refresh_token"
 destination_folder = "MySyncFolder"   # Optional: Folder name in Box root
 enabled = true
 sync = true
+sync_both = false
 
 [mega_credentials]
 email = "your-email@example.com"
@@ -86,6 +94,7 @@ password = "your-mega-password"
 destination_folder = "PiSync" # Optional sub-folder name (creates it if missing)
 enabled = true                # Set to false to disable this provider
 sync = true                   # Set to false to disable deletion syncing
+sync_both = false             # Set to true to enable bidirectional syncing
 
 [azure_blob_credentials]
 account_name = "devstoreaccount1"
@@ -95,6 +104,7 @@ container = "sync-container"
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync = true
+sync_both = false
 
 [gcs_credentials]
 bucket = "test-bucket"
@@ -103,6 +113,7 @@ service_account_key_path = ""
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync = true
+sync_both = false
 
 [b2_credentials]
 bucket = "test-bucket"
@@ -112,6 +123,7 @@ application_key = ""
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync = true
+sync_both = false
 
 [pcloud_credentials]
 access_token = ""
@@ -119,6 +131,7 @@ access_token = ""
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync = true
+sync_both = false
 
 [ipfs_credentials]
 jwt_token = ""
@@ -127,3 +140,4 @@ jwt_token = ""
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync = true
+sync_both = false

@@ -1,2 +1,0 @@
-Hello Sync Daemon! This file should be copied to all three mock services automatically.
-Updated content to trigger sync.

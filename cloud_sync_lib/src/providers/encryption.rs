@@ -134,6 +134,10 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
     fn sync(&self) -> bool {
         self.inner.sync()
     }
+
+    fn sync_both(&self) -> bool {
+        self.inner.sync_both()
+    }
 }
 
 #[cfg(test)]
