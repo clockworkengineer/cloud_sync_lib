@@ -53,7 +53,7 @@ Currently, the storage clients fail immediately on any standard connection dropo
 
 ---
 
-## 5. Glob-based Exclusions (`.syncignore`)
+## 5. Glob-based Exclusions (`.syncignore`) [Implemented]
 
 ### Background
 The watcher and sync engine currently monitor and synchronize every file in the directory root, which can include heavy system directories or temporary files (like `.DS_Store` or `.git/`).
