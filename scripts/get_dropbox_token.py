@@ -72,7 +72,12 @@ def run_server():
     return OAuthHandler.auth_code
 
 def read_config():
-    # Check private_config.toml first, then config.toml
+    """
+    Reads the configuration files to auto-detect Dropbox credentials.
+
+    Returns:
+        tuple: A tuple containing (client_id, client_secret, source_filename) or (None, None, None).
+    """
     for filename in ["private_config.toml", "config.toml"]:
         path = Path(filename)
         if path.exists():
@@ -92,6 +97,12 @@ def read_config():
     return None, None, None
 
 def update_config_files(refresh_token):
+    """
+    Updates the configuration TOML files with the newly retrieved Dropbox refresh token.
+
+    Args:
+        refresh_token (str): The newly retrieved Dropbox refresh token.
+    """
     for filename in ["config.toml", "private_config.toml"]:
         path = Path(filename)
         if path.exists():

@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+get_box_token.py
+
+Automates retrieving a Box OAuth2 refresh token by spinning up
+a temporary local HTTP redirect server and opening the authorization page.
+"""
+
 import sys
 import urllib.parse
 import urllib.request
@@ -8,23 +16,31 @@ import re
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Global variable to hold captured code
+# Global variables and constants
 authorization_code = None
 PORT = 8080
 REDIRECT_URI = f"http://localhost:{PORT}/oauth/callback"
 
 class OAuthCallbackHandler(BaseHTTPRequestHandler):
+    """
+    HTTP Request Handler to receive the OAuth2 authorization code callback from Box.
+    """
     def log_message(self, format, *args):
-        # Suppress logging to keep output clean
+        """
+        Suppresses console logging of requests to keep the output clean.
+        """
         pass
 
     def do_GET(self):
+        """
+        Handles the HTTP GET request from Box's redirect containing the authorization code.
+        """
         global authorization_code
         parsed_url = urllib.parse.urlparse(self.path)
         query = parsed_url.query
         params = urllib.parse.parse_qs(query)
         
-        # Ignore favicon probes
+        # Ignore favicon requests
         if parsed_url.path == "/favicon.ico":
             self.send_response(404)
             self.end_headers()
@@ -43,12 +59,30 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"<h1>OAuth Server Active</h1><p>Waiting for callback code...</p>")
 
 def run_local_server(port):
+    """
+    Runs a temporary local web server to capture the authorization code.
+
+    Args:
+        port (int): The port number to listen on.
+    """
     server = HTTPServer(('localhost', port), OAuthCallbackHandler)
     print(f"[*] Temporary server listening on http://localhost:{port}...")
     while authorization_code is None:
         server.handle_request()
 
 def exchange_code_for_token(client_id, client_secret, redirect_uri, code):
+    """
+    Exchanges the authorization code for an OAuth2 token payload.
+
+    Args:
+        client_id (str): Box application client ID.
+        client_secret (str): Box application client secret.
+        redirect_uri (str): Redirect URI configured in Box.
+        code (str): Authorization code captured from callback.
+
+    Returns:
+        dict: Parsed JSON response containing tokens if successful, or None.
+    """
     url = "https://api.box.com/oauth2/token"
     data = urllib.parse.urlencode({
         'grant_type': 'authorization_code',
@@ -71,7 +105,12 @@ def exchange_code_for_token(client_id, client_secret, redirect_uri, code):
         return None
 
 def read_config():
-    # Check private_config.toml first, then config.toml
+    """
+    Reads config files to auto-detect Box credentials.
+
+    Returns:
+        tuple: (client_id, client_secret, source_filename) or (None, None, None).
+    """
     for filename in ["private_config.toml", "config.toml"]:
         path = Path(filename)
         if path.exists():
@@ -91,12 +130,17 @@ def read_config():
     return None, None, None
 
 def update_config_files(refresh_token):
+    """
+    Updates the config files with the new refresh token.
+
+    Args:
+        refresh_token (str): The rotated refresh token to save.
+    """
     for filename in ["config.toml", "private_config.toml"]:
         path = Path(filename)
         if path.exists():
             try:
                 content = path.read_text()
-                # Replace refresh_token specifically under [box_credentials]
                 pattern = r'(\[box_credentials\][\s\S]*?refresh_token\s*=\s*").*?(")'
                 new_content = re.sub(pattern, rf'\g<1>{refresh_token}\g<2>', content)
                 path.write_text(new_content)
@@ -105,6 +149,9 @@ def update_config_files(refresh_token):
                 print(f"[-] Could not update {filename}: {e}")
 
 def main():
+    """
+    Main execution entry point.
+    """
     print("==================================================")
     print("      Box OAuth 2.0 Token Exchange Helper")
     print("==================================================")
