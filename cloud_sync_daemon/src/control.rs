@@ -44,19 +44,21 @@ pub async fn handle_control_command(
                     val.is_empty() || val.contains("PLACEHOLDER") || val.contains("your_") || val.contains("your-")
                 };
 
-                let mut add_if_placeholder = |name: &str, token: &str| {
-                    if is_placeholder(token) && !failed_backends.contains(&name.to_string()) {
-                        failed_backends.push(name.to_string());
-                    }
-                };
+                macro_rules! add_if_placeholder {
+                    ($name:expr, $token:expr) => {
+                        if is_placeholder($token) && !failed_backends.contains(&$name.to_string()) {
+                            failed_backends.push($name.to_string());
+                        }
+                    };
+                }
 
-                if let Some(ref creds) = config.google_credentials { add_if_placeholder("Google Drive", &creds.refresh_token); }
-                if let Some(ref creds) = config.dropbox_credentials { add_if_placeholder("Dropbox", &creds.refresh_token); }
-                if let Some(ref creds) = config.onedrive_credentials { add_if_placeholder("OneDrive", &creds.refresh_token); }
-                if let Some(ref creds) = config.box_credentials { add_if_placeholder("Box", &creds.refresh_token); }
-                if let Some(ref creds) = config.mega_credentials { add_if_placeholder("MEGA", &creds.password); }
-                if let Some(ref creds) = config.webdav_credentials { add_if_placeholder("WebDAV", &creds.password); }
-                if let Some(ref creds) = config.s3_credentials { add_if_placeholder("S3", &creds.secret_access_key); }
+                if let Some(ref creds) = config.google_credentials { add_if_placeholder!("Google Drive", &creds.refresh_token); }
+                if let Some(ref creds) = config.dropbox_credentials { add_if_placeholder!("Dropbox", &creds.refresh_token); }
+                if let Some(ref creds) = config.onedrive_credentials { add_if_placeholder!("OneDrive", &creds.refresh_token); }
+                if let Some(ref creds) = config.box_credentials { add_if_placeholder!("Box", &creds.refresh_token); }
+                if let Some(ref creds) = config.mega_credentials { add_if_placeholder!("MEGA", &creds.password); }
+                if let Some(ref creds) = config.webdav_credentials { add_if_placeholder!("WebDAV", &creds.password); }
+                if let Some(ref creds) = config.s3_credentials { add_if_placeholder!("S3", &creds.secret_access_key); }
                 if let Some(ref creds) = config.sftp_credentials {
                     let pw_placeholder = creds.password.as_ref().is_some_and(|p| is_placeholder(p));
                     let key_placeholder = creds.private_key_path.as_ref().is_none_or(|k| is_placeholder(k));
@@ -64,16 +66,16 @@ pub async fn handle_control_command(
                         failed_backends.push("SFTP".to_string());
                     }
                 }
-                if let Some(ref creds) = config.nextcloud_credentials { add_if_placeholder("Nextcloud", &creds.app_password); }
+                if let Some(ref creds) = config.nextcloud_credentials { add_if_placeholder!("Nextcloud", &creds.app_password); }
                 if let Some(ref creds) = config.azure_blob_credentials {
                     if (is_placeholder(&creds.account_key) || creds.account_key == "devstoreaccount1") && !failed_backends.contains(&"Azure Blob".to_string()) {
                         failed_backends.push("Azure Blob".to_string());
                     }
                 }
-                if let Some(ref creds) = config.gcs_credentials { add_if_placeholder("Google Cloud Storage", &creds.service_account_key_path); }
-                if let Some(ref creds) = config.b2_credentials { add_if_placeholder("Backblaze B2", &creds.application_key); }
-                if let Some(ref creds) = config.pcloud_credentials { add_if_placeholder("pCloud", &creds.access_token); }
-                if let Some(ref creds) = config.ipfs_credentials { add_if_placeholder("IPFS", &creds.jwt_token); }
+                if let Some(ref creds) = config.gcs_credentials { add_if_placeholder!("Google Cloud Storage", &creds.service_account_key_path); }
+                if let Some(ref creds) = config.b2_credentials { add_if_placeholder!("Backblaze B2", &creds.application_key); }
+                if let Some(ref creds) = config.pcloud_credentials { add_if_placeholder!("pCloud", &creds.access_token); }
+                if let Some(ref creds) = config.ipfs_credentials { add_if_placeholder!("IPFS", &creds.jwt_token); }
             }
 
             format!(
