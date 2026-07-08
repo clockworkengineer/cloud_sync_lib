@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-get_refresh_token.py
+get_dropbox_token.py
 
-Automates retrieving a Google Drive OAuth2 refresh token.
+Automates retrieving a Dropbox OAuth2 refresh token.
 """
 
 import http.server
@@ -14,6 +14,7 @@ import urllib.request
 import json
 import re
 import sys
+import base64
 from pathlib import Path
 
 PORT = 8080
@@ -80,13 +81,13 @@ def read_config():
             for i in range(1, len(sections), 2):
                 sec_name = sections[i].strip()
                 sec_content = sections[i+1]
-                if sec_name == "google_credentials":
+                if sec_name == "dropbox_credentials":
                     client_id_match = re.search(r'client_id\s*=\s*"([^"]+)"', sec_content)
                     client_secret_match = re.search(r'client_secret\s*=\s*"([^"]+)"', sec_content)
                     if client_id_match and client_secret_match:
                         cid = client_id_match.group(1)
                         csec = client_secret_match.group(1)
-                        if "PLACEHOLDER" not in cid and "your_google" not in cid:
+                        if "PLACEHOLDER" not in cid and "YOUR_APP_KEY" not in cid:
                             return cid, csec, filename
     return None, None, None
 
@@ -96,8 +97,8 @@ def update_config_files(refresh_token):
         if path.exists():
             try:
                 content = path.read_text()
-                # Replace refresh_token specifically under [google_credentials]
-                pattern = r'(\[google_credentials\][\s\S]*?refresh_token\s*=\s*").*?(")'
+                # Replace refresh_token specifically under [dropbox_credentials]
+                pattern = r'(\[dropbox_credentials\][\s\S]*?refresh_token\s*=\s*").*?(")'
                 new_content = re.sub(pattern, rf'\g<1>{refresh_token}\g<2>', content)
                 path.write_text(new_content)
                 print(f"[+] Successfully updated {filename} with the new refresh_token!")
@@ -105,16 +106,22 @@ def update_config_files(refresh_token):
                 print(f"[-] Could not update {filename}: {e}")
 
 def exchange_code_for_token(code, client_id, client_secret):
-    url = "https://oauth2.googleapis.com/token"
+    url = "https://api.dropboxapi.com/oauth2/token"
+    
     data = urllib.parse.urlencode({
         "code": code,
-        "client_id": client_id,
-        "client_secret": client_secret,
+        "grant_type": "authorization_code",
         "redirect_uri": REDIRECT_URI,
-        "grant_type": "authorization_code"
     }).encode("utf-8")
     
+    # Prepare HTTP Basic Auth header for client_id:client_secret
+    auth_str = f"{client_id}:{client_secret}"
+    b64_auth_str = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
+    
     req = urllib.request.Request(url, data=data)
+    req.add_header("Authorization", f"Basic {b64_auth_str}")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    
     try:
         with urllib.request.urlopen(req) as response:
             res_data = json.loads(response.read().decode("utf-8"))
@@ -127,7 +134,7 @@ def exchange_code_for_token(code, client_id, client_secret):
 
 def main():
     print("==================================================")
-    print("   Google Drive OAuth 2.0 Token Exchange Helper")
+    print("      Dropbox OAuth 2.0 Token Exchange Helper")
     print("==================================================")
     
     client_id, client_secret, config_file = read_config()
@@ -135,16 +142,14 @@ def main():
     if client_id and client_secret:
         print(f"[+] Auto-detected credentials in {config_file}")
     else:
-        client_id = input("Enter your Google Client ID: ").strip()
-        client_secret = input("Enter your Google Client Secret: ").strip()
+        client_id = input("Enter your Dropbox App Key (Client ID): ").strip()
+        client_secret = input("Enter your Dropbox App Secret (Client Secret): ").strip()
         
     # Build OAuth URL
     auth_url = (
-        "https://accounts.google.com/o/oauth2/v2/auth?"
-        "scope=https://www.googleapis.com/auth/drive&"
-        "access_type=offline&"
-        "prompt=consent&"
+        "https://www.dropbox.com/oauth2/authorize?"
         "response_type=code&"
+        "token_access_type=offline&"
         f"redirect_uri={urllib.parse.quote(REDIRECT_URI)}&"
         f"client_id={client_id}"
     )

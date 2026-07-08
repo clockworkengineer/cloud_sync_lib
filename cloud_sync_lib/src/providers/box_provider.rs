@@ -82,7 +82,7 @@ impl BoxProvider {
 
     /// Helper to update local config files when the Box refresh token rotates.
     fn update_config_files(&self, new_refresh_token: &str) {
-        for filename in &[".toml", "private_config.toml"] {
+        for filename in &["config.toml", "private_config.toml"] {
             if let Ok(content) = std::fs::read_to_string(filename) {
                 if let Some(box_idx) = content.find("[box_credentials]") {
                     let suffix = &content[box_idx..];
