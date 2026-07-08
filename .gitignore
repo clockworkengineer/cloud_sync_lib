@@ -3,3 +3,4 @@
 # Local developer config
 # config.toml
 private_config.toml
+watched_folder/.sync_state.json
