@@ -39,36 +39,19 @@ By default, new Dropbox apps do not have file write permissions. You must enable
 ---
 
 ## Step 4: Generate the Refresh Token
-Dropbox access tokens expire after 4 hours. You must request a **refresh token** (using `token_access_type=offline`) for long-term sync:
 
-### 1. Construct the Authorization URL
-Open a browser and navigate to the following URL (replace `YOUR_APP_KEY` with your App Key / Client ID):
+An automated helper script is provided in the workspace to capture the authorization code and exchange it for a refresh token automatically.
 
-```text
-https://www.dropbox.com/oauth2/authorize?
-client_id=YOUR_APP_KEY&
-response_type=code&
-redirect_uri=http://localhost:8080&
-token_access_type=offline
-```
-
-### 2. Authorize and copy the code
-1. Click **Continue** and authorize the app.
-2. The browser will redirect to a page that fails to load (e.g., `http://localhost:8080/?code=A1B2C3D...`).
-3. Copy the value after `code=` in the browser's address bar.
-
-### 3. Exchange the Code for a Refresh Token
-Run this curl command in your terminal (replacing placeholders with your values):
-
+Run the following command in your terminal:
 ```bash
-curl -X POST https://api.dropboxapi.com/oauth2/token \
-  -d code="YOUR_AUTHORIZATION_CODE" \
-  -d grant_type="authorization_code" \
-  -d redirect_uri="http://localhost:8080" \
-  -u "YOUR_APP_KEY:YOUR_APP_SECRET"
+python3 scripts/get_dropbox_token.py
 ```
 
-This will return a JSON response containing the `"refresh_token"`.
+The script will:
+1. Auto-detect your configured `client_id` and `client_secret` under `[dropbox_credentials]` inside `private_config.toml` (or `config.toml`).
+2. Open your web browser to sign in and authorize the application.
+3. Automatically capture the redirected callback code.
+4. Exchange it for a `refresh_token` and save it directly to your configuration files.
 
 ---
 

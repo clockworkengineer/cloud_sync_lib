@@ -58,6 +58,13 @@ For a detailed look at component interactions, design decisions, and system diag
    * Refer to the [OneDrive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/onedrive_setup.md)
    * Refer to the [Box API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/box_setup.md)
    * Refer to the [MEGA Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/mega_setup.md)
+
+4. **Automated OAuth Token Retrieval**:
+   For backends requiring OAuth 2.0 (Google Drive, Dropbox, OneDrive, Box), you can easily generate and save refresh tokens by running the provided Python helper scripts after entering your `client_id` and `client_secret` in `private_config.toml`:
+   * **Google Drive**: `python3 scripts/get_refresh_token.py`
+   * **Dropbox**: `python3 scripts/get_dropbox_token.py`
+   * **OneDrive**: `python3 scripts/get_onedrive_token.py`
+   * **Box**: `python3 scripts/get_box_token.py`
    * Refer to the [WebDAV Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/webdav_setup.md)
    * Refer to the [S3 Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/s3_setup.md)
    * Refer to the [SFTP Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/sftp_setup.md)

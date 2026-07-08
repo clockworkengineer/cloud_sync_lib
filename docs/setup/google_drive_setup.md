@@ -51,7 +51,21 @@ Before you can generate credentials, you need to configure the consent screen:
 
 ---
 
-## Step 5: Generate the Refresh Token (Using OAuth Playground)
+## Step 5: Generate the Refresh Token
+
+You can generate the refresh token using either the automated local script (recommended) or the manual Google OAuth Playground.
+
+### Option A: Use the Local Helper Script (Recommended)
+1. In the Google Cloud Console (under **APIs & Services** > **Credentials**), ensure you have added `http://localhost:8080` to your client's **Authorized redirect URIs**.
+2. Run the helper script in your terminal:
+   ```bash
+   python3 scripts/get_refresh_token.py
+   ```
+3. The script will auto-detect your configured Google `client_id` and `client_secret` under `[google_credentials]` from your `private_config.toml` (or `config.toml`).
+4. It will open your web browser to sign in. Log in using your added Google Test User account and grant authorization.
+5. The script will automatically capture the token and save it directly to your configuration files.
+
+### Option B: Use Google OAuth Playground (Manual)
 1. Navigate to the [Google OAuth 2.0 Playground](https://developers.google.com/oauthplayground/).
 2. Click the **Gear icon (settings)** in the top right corner.
 3. Check the box for **"Use your own OAuth credentials"**.

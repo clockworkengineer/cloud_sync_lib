@@ -46,38 +46,19 @@ This guide provides a step-by-step walkthrough to configure an application in th
 ---
 
 ## Step 5: Generate the Refresh Token
-Since OneDrive uses standard OAuth 2.0, you can use a manual browser flow to get your refresh token:
 
-### 1. Construct the Authorization URL
-Open a browser and navigate to the following URL (replace `YOUR_CLIENT_ID` with your actual Application Client ID):
+An automated helper script is provided in the workspace to capture the authorization code and exchange it for a refresh token automatically.
 
-```text
-https://login.microsoftonline.com/common/oauth2/v2.0/authorize?
-client_id=YOUR_CLIENT_ID&
-scope=https://graph.microsoft.com/Files.ReadWrite.All%20offline_access&
-response_type=code&
-redirect_uri=http://localhost:8080&
-response_mode=query
-```
-
-### 2. Authorize and copy the code
-1. Complete the login and grant permissions.
-2. The browser will redirect to a page that fails to load (e.g., `http://localhost:8080/?code=M.R3_551...`).
-3. Copy the entire value after `code=` in the browser's address bar.
-
-### 3. Exchange the Code for a Refresh Token
-Run this curl command in your terminal (replacing placeholders with your values):
-
+Run the following command in your terminal:
 ```bash
-curl -X POST https://login.microsoftonline.com/common/oauth2/v2.0/token \
-  -d client_id="YOUR_CLIENT_ID" \
-  -d client_secret="YOUR_CLIENT_SECRET" \
-  -d code="YOUR_AUTHORIZATION_CODE" \
-  -d redirect_uri="http://localhost:8080" \
-  -d grant_type="authorization_code"
+python3 scripts/get_onedrive_token.py
 ```
 
-Google/Microsoft will return a JSON response containing the `"refresh_token"`.
+The script will:
+1. Auto-detect your configured `client_id` and `client_secret` under `[onedrive_credentials]` inside `private_config.toml` (or `config.toml`).
+2. Open your web browser to sign in and authorize the application.
+3. Automatically capture the redirected callback code.
+4. Exchange it for a `refresh_token` and save it directly to your configuration files.
 
 ---
 

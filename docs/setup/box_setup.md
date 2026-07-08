@@ -36,32 +36,16 @@ Once the app is created, configure the security settings to allow the client to 
 
 1. Scroll to the **OAuth 2.0 Credentials** section.
 2. Copy the **Client ID** and **Client Secret**.
-3. Obtain the long-lived **Refresh Token** via the OAuth 2.0 flow:
-
-   ### A. Construct the Authorization URL
-   In your browser, navigate to the following URL (replacing `YOUR_CLIENT_ID` and `YOUR_REDIRECT_URI`):
-   ```text
-   https://account.box.com/api/oauth2/authorize?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI
-   ```
-   *E.g. Redirect URI: `http://localhost:8080/oauth/callback`*
-
-   ### B. Authorize & Capture Code
-   - Log into Box if prompted and click **Grant access to Box**.
-   - Your browser will redirect to your Redirect URI (which may show a "connection refused" or blank page; this is expected).
-   - Look at the browser URL bar and copy the value of the `code` parameter:
-     `http://localhost:8080/oauth/callback?code=YOUR_AUTHORIZATION_CODE`
-
-   ### C. Exchange Code for the Refresh Token
-   Run the following `curl` command in your terminal (replacing placeholders with your values) to retrieve the refresh token:
+3. Obtain the long-lived **Refresh Token** via the automated local script:
    ```bash
-   curl -i -X POST https://api.box.com/oauth2/token \
-     -d grant_type=authorization_code \
-     -d code=YOUR_AUTHORIZATION_CODE \
-     -d client_id=YOUR_CLIENT_ID \
-     -d client_secret=YOUR_CLIENT_SECRET \
-     -d redirect_uri=YOUR_REDIRECT_URI
+   python3 scripts/get_box_token.py
    ```
-   The response JSON will contain `refresh_token`. Copy this token.
+
+The script will:
+1. Auto-detect your configured `client_id` and `client_secret` under `[box_credentials]` inside `private_config.toml` (or `config.toml`).
+2. Open your web browser to sign in and authorize the application.
+3. Automatically capture the redirected callback code.
+4. Exchange it for a `refresh_token` and save it directly to your configuration files.
 
 ---
 
