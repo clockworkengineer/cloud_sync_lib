@@ -498,7 +498,7 @@
             <div class="logo-text">CloudSync Control Center</div>
         </div>
         <div class="daemon-status">
-            <span class="status-dot" id="status-pulse"></span>
+            <span class="status-dot disconnected" id="status-pulse"></span>
             <span id="status-text">Connecting...</span>
         </div>
     </header>
@@ -597,6 +597,8 @@
         let currentFilter = 'all';
         let localLogs = [];
         let isStartingDaemon = false;
+        let wasDaemonRunning = true;
+        let lastConnectedState = null;
 
         function addLogEntry(level, message) {
             const now = new Date();
@@ -610,6 +612,8 @@
 
         // Helper to update connection state UI
         function setConnected(connected) {
+            if (lastConnectedState === connected) return;
+            lastConnectedState = connected;
             isConnected = connected;
             const banner = document.getElementById('error-banner');
             const buttons = document.querySelectorAll('.btn');
@@ -620,9 +624,13 @@
                 pulse.className = 'status-dot disconnected';
                 text.textContent = 'UI Server Disconnected';
                 banner.classList.add('visible');
-                banner.querySelector('span').textContent = 'Unable to connect to the UI backend server. Make sure the UI server is running.';
+                const errorMsg = 'Unable to connect to the UI backend server. Make sure the UI server is running.';
+                banner.querySelector('span').textContent = errorMsg;
                 buttons.forEach(b => b.setAttribute('disabled', 'true'));
                 document.getElementById('daemon-run-state').textContent = 'Disconnected';
+                addLogEntry('error', `Connection error: ${errorMsg}`);
+            } else {
+                addLogEntry('info', 'Connection to UI backend server restored.');
             }
         }
 
@@ -656,6 +664,10 @@
             const runStateText = document.getElementById('daemon-run-state');
 
             if (daemonRunning) {
+                if (!wasDaemonRunning) {
+                    addLogEntry('info', 'Connection to cloud sync daemon restored.');
+                    wasDaemonRunning = true;
+                }
                 isStartingDaemon = false;
                 isPaused = data.paused;
                 isSyncing = data.syncing;
@@ -727,8 +739,14 @@
                 btnStart.removeAttribute('disabled');
                 btnStart.innerHTML = '▶ Start Daemon';
 
+                const errorMsg = 'The cloud sync daemon is offline. Click "Start Daemon" to launch it.';
                 banner.classList.add('visible');
-                banner.querySelector('span').textContent = 'The cloud sync daemon is offline. Click "Start Daemon" to launch it.';
+                banner.querySelector('span').textContent = errorMsg;
+
+                if (wasDaemonRunning) {
+                    addLogEntry('error', 'Connection error: Cloud sync daemon is offline.');
+                    wasDaemonRunning = false;
+                }
 
                 document.getElementById('watched-dir').textContent = '-';
                 document.getElementById('config-file').textContent = '-';
