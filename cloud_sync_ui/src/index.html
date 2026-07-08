@@ -733,6 +733,8 @@
                 ];
                 allProviders.forEach(prov => {
                     const isActive = data.active_backends.includes(prov);
+                    if (!isActive) return;
+                    
                     const isFailed = data.failed_backends && data.failed_backends.includes(prov);
                     
                     if (isFailed && isActive) {

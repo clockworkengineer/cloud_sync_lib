@@ -44,38 +44,40 @@ pub async fn handle_control_command(
                     val.is_empty() || val.contains("PLACEHOLDER") || val.contains("your_") || val.contains("your-")
                 };
 
-                macro_rules! add_if_placeholder {
-                    ($name:expr, $token:expr) => {
-                        if is_placeholder($token) && !failed_backends.contains(&$name.to_string()) {
+                macro_rules! add_if_placeholder_enabled {
+                    ($name:expr, $creds:expr, $token:expr) => {
+                        if crate::config::is_provider_enabled($creds) && is_placeholder($token) && !failed_backends.contains(&$name.to_string()) {
                             failed_backends.push($name.to_string());
                         }
                     };
                 }
 
-                if let Some(ref creds) = config.google_credentials { add_if_placeholder!("Google Drive", &creds.refresh_token); }
-                if let Some(ref creds) = config.dropbox_credentials { add_if_placeholder!("Dropbox", &creds.refresh_token); }
-                if let Some(ref creds) = config.onedrive_credentials { add_if_placeholder!("OneDrive", &creds.refresh_token); }
-                if let Some(ref creds) = config.box_credentials { add_if_placeholder!("Box", &creds.refresh_token); }
-                if let Some(ref creds) = config.mega_credentials { add_if_placeholder!("MEGA", &creds.password); }
-                if let Some(ref creds) = config.webdav_credentials { add_if_placeholder!("WebDAV", &creds.password); }
-                if let Some(ref creds) = config.s3_credentials { add_if_placeholder!("S3", &creds.secret_access_key); }
+                if let Some(ref creds) = config.google_credentials { add_if_placeholder_enabled!("Google Drive", &config.google_credentials, &creds.refresh_token); }
+                if let Some(ref creds) = config.dropbox_credentials { add_if_placeholder_enabled!("Dropbox", &config.dropbox_credentials, &creds.refresh_token); }
+                if let Some(ref creds) = config.onedrive_credentials { add_if_placeholder_enabled!("OneDrive", &config.onedrive_credentials, &creds.refresh_token); }
+                if let Some(ref creds) = config.box_credentials { add_if_placeholder_enabled!("Box", &config.box_credentials, &creds.refresh_token); }
+                if let Some(ref creds) = config.mega_credentials { add_if_placeholder_enabled!("MEGA", &config.mega_credentials, &creds.password); }
+                if let Some(ref creds) = config.webdav_credentials { add_if_placeholder_enabled!("WebDAV", &config.webdav_credentials, &creds.password); }
+                if let Some(ref creds) = config.s3_credentials { add_if_placeholder_enabled!("S3", &config.s3_credentials, &creds.secret_access_key); }
                 if let Some(ref creds) = config.sftp_credentials {
-                    let pw_placeholder = creds.password.as_ref().is_some_and(|p| is_placeholder(p));
-                    let key_placeholder = creds.private_key_path.as_ref().is_none_or(|k| is_placeholder(k));
-                    if pw_placeholder && key_placeholder && !failed_backends.contains(&"SFTP".to_string()) {
-                        failed_backends.push("SFTP".to_string());
+                    if crate::config::is_provider_enabled(&config.sftp_credentials) {
+                        let pw_placeholder = creds.password.as_ref().is_some_and(|p| is_placeholder(p));
+                        let key_placeholder = creds.private_key_path.as_ref().is_none_or(|k| is_placeholder(k));
+                        if pw_placeholder && key_placeholder && !failed_backends.contains(&"SFTP".to_string()) {
+                            failed_backends.push("SFTP".to_string());
+                        }
                     }
                 }
-                if let Some(ref creds) = config.nextcloud_credentials { add_if_placeholder!("Nextcloud", &creds.app_password); }
+                if let Some(ref creds) = config.nextcloud_credentials { add_if_placeholder_enabled!("Nextcloud", &config.nextcloud_credentials, &creds.app_password); }
                 if let Some(ref creds) = config.azure_blob_credentials {
-                    if (is_placeholder(&creds.account_key) || creds.account_key == "devstoreaccount1") && !failed_backends.contains(&"Azure Blob".to_string()) {
+                    if crate::config::is_provider_enabled(&config.azure_blob_credentials) && (is_placeholder(&creds.account_key) || creds.account_key == "devstoreaccount1") && !failed_backends.contains(&"Azure Blob".to_string()) {
                         failed_backends.push("Azure Blob".to_string());
                     }
                 }
-                if let Some(ref creds) = config.gcs_credentials { add_if_placeholder!("Google Cloud Storage", &creds.service_account_key_path); }
-                if let Some(ref creds) = config.b2_credentials { add_if_placeholder!("Backblaze B2", &creds.application_key); }
-                if let Some(ref creds) = config.pcloud_credentials { add_if_placeholder!("pCloud", &creds.access_token); }
-                if let Some(ref creds) = config.ipfs_credentials { add_if_placeholder!("IPFS", &creds.jwt_token); }
+                if let Some(ref creds) = config.gcs_credentials { add_if_placeholder_enabled!("Google Cloud Storage", &config.gcs_credentials, &creds.service_account_key_path); }
+                if let Some(ref creds) = config.b2_credentials { add_if_placeholder_enabled!("Backblaze B2", &config.b2_credentials, &creds.application_key); }
+                if let Some(ref creds) = config.pcloud_credentials { add_if_placeholder_enabled!("pCloud", &config.pcloud_credentials, &creds.access_token); }
+                if let Some(ref creds) = config.ipfs_credentials { add_if_placeholder_enabled!("IPFS", &config.ipfs_credentials, &creds.jwt_token); }
             }
 
             format!(
