@@ -362,6 +362,7 @@ mod tests {
             upload_limiter: None,
             download_limiter: None,
             max_concurrency: 4,
+            connection_errors: HashMap::new(),
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));

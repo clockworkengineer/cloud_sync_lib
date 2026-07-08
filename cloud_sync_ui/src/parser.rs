@@ -14,6 +14,7 @@ pub fn parse_status(raw: &str) -> serde_json::Value {
     let mut watch_directory = String::new();
     let mut config_file = String::new();
     let mut active_backends = Vec::new();
+    let mut failed_backends = Vec::new();
     let mut syncing = false;
     let mut web_ui_address = String::new();
 
@@ -43,6 +44,19 @@ pub fn parse_status(raw: &str) -> serde_json::Value {
                     }
                 }
             }
+        } else if line.starts_with("Failed Backends: ") {
+            let list_str = line.trim_start_matches("Failed Backends: ").trim();
+            if list_str.starts_with('[') && list_str.ends_with(']') {
+                let inner = &list_str[1..list_str.len() - 1];
+                for item in inner.split(',') {
+                    let item_clean = item.trim();
+                    let item_clean = item_clean.strip_prefix('"').unwrap_or(item_clean);
+                    let item_clean = item_clean.strip_suffix('"').unwrap_or(item_clean);
+                    if !item_clean.is_empty() {
+                        failed_backends.push(item_clean.to_string());
+                    }
+                }
+            }
         } else if line.starts_with("Syncing: ") {
             syncing = line.trim_start_matches("Syncing: ").trim() == "true";
         } else if line.starts_with("Web UI Address: ") {
@@ -58,6 +72,7 @@ pub fn parse_status(raw: &str) -> serde_json::Value {
         "watch_directory": watch_directory,
         "config_file": config_file,
         "active_backends": active_backends,
+        "failed_backends": failed_backends,
         "syncing": syncing,
         "web_ui_address": web_ui_address,
     })
@@ -70,12 +85,13 @@ mod tests {
     /// Tests that the daemon TCP response parser maps raw lines correctly to a JSON status payload.
     #[test]
     fn test_parse_status() {
-        let raw_status = "Status: OK\nPaused: false\nWatch Directory: \"/watch/dir\"\nConfig File: \"private.toml\"\nActive Backends: [\"Google Drive\",\"Dropbox\"]\nSyncing: false\nWeb UI Address: \"127.0.0.1:8082\"\n";
+        let raw_status = "Status: OK\nPaused: false\nWatch Directory: \"/watch/dir\"\nConfig File: \"private.toml\"\nActive Backends: [\"Google Drive\",\"Dropbox\"]\nFailed Backends: [\"Google Drive\"]\nSyncing: false\nWeb UI Address: \"127.0.0.1:8082\"\n";
         let parsed = parse_status(raw_status);
         assert_eq!(parsed["paused"], false);
         assert_eq!(parsed["watch_directory"], "/watch/dir");
         assert_eq!(parsed["config_file"], "private.toml");
         assert_eq!(parsed["active_backends"], serde_json::json!(["Google Drive", "Dropbox"]));
+        assert_eq!(parsed["failed_backends"], serde_json::json!(["Google Drive"]));
         assert_eq!(parsed["syncing"], false);
         assert_eq!(parsed["web_ui_address"], "127.0.0.1:8082");
     }

@@ -257,6 +257,17 @@
             box-shadow: 0 0 6px var(--accent-teal);
         }
 
+        .backend-pill.failed {
+            background: rgba(244, 63, 94, 0.08);
+            border-color: rgba(244, 63, 94, 0.3);
+            color: #fca5a5;
+        }
+
+        .backend-pill.failed .backend-indicator {
+            background: var(--accent-rose);
+            box-shadow: 0 0 6px var(--accent-rose);
+        }
+
         /* Controls / Buttons Grid */
         .controls-grid {
             display: grid;
@@ -599,6 +610,7 @@
         let isStartingDaemon = false;
         let wasDaemonRunning = true;
         let lastConnectedState = null;
+        let loggedFailedBackends = new Set();
 
         function addLogEntry(level, message) {
             const now = new Date();
@@ -715,11 +727,25 @@
                 const backendsList = document.getElementById('backends-list');
                 backendsList.innerHTML = '';
                 
-                const allProviders = ['Google Drive', 'Dropbox', 'OneDrive', 'WebDAV', 'S3', 'SFTP', 'Nextcloud', 'Box', 'MEGA'];
+                const allProviders = [
+                    'Google Drive', 'Dropbox', 'OneDrive', 'WebDAV', 'S3', 'SFTP', 'Nextcloud', 
+                    'Box', 'MEGA', 'Azure Blob', 'Google Cloud Storage', 'Backblaze B2', 'pCloud', 'IPFS'
+                ];
                 allProviders.forEach(prov => {
                     const isActive = data.active_backends.includes(prov);
+                    const isFailed = data.failed_backends && data.failed_backends.includes(prov);
+                    
+                    if (isFailed && isActive) {
+                        if (!loggedFailedBackends.has(prov)) {
+                            addLogEntry('error', `Connection error: ${prov} backend has invalid or placeholder credentials (refresh token needs updating).`);
+                            loggedFailedBackends.add(prov);
+                        }
+                    } else {
+                        loggedFailedBackends.delete(prov);
+                    }
+
                     const pill = document.createElement('div');
-                    pill.className = `backend-pill ${isActive ? 'active' : ''}`;
+                    pill.className = `backend-pill ${isActive ? 'active' : ''} ${isFailed ? 'failed' : ''}`;
                     pill.innerHTML = `<span class="backend-indicator"></span> ${prov}`;
                     backendsList.appendChild(pill);
                 });

@@ -82,6 +82,8 @@ pub struct DaemonState {
     pub download_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
     /// Maximum concurrent workers for synchronization.
     pub max_concurrency: usize,
+    /// Map of backend name to its last connection error message (if any).
+    pub connection_errors: HashMap<String, String>,
 }
 
 fn try_add_backend<C, P, F>(
@@ -389,7 +391,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         upload_limiter,
         download_limiter,
         max_concurrency: config.max_concurrency.unwrap_or(4),
+        connection_errors: HashMap::new(),
     }));
+
+    // Spawn periodic backend health check task
+    let state_health = state.clone();
+    tokio::spawn(async move {
+        loop {
+            info!("Backend health check started.");
+            let backends = {
+                let s = state_health.lock().await;
+                s.backends.clone()
+            };
+
+            for backend in backends {
+                let name = backend.name().to_string();
+                info!("Checking health of provider: {}", name);
+                match backend.list("").await {
+                    Ok(_) => {
+                        let mut s = state_health.lock().await;
+                        s.connection_errors.remove(&name);
+                    }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        error!("Health check failed for provider '{}': {}", name, err_str);
+                        let mut s = state_health.lock().await;
+                        s.connection_errors.insert(name, err_str);
+                    }
+                }
+            }
+            info!("Backend health check finished.");
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+        }
+    });
 
     // Set up mpsc channel for events
     let (tx, mut rx) = mpsc::channel::<notify::Result<Event>>(100);
