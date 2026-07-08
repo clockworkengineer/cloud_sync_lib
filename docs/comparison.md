@@ -22,11 +22,15 @@ A detailed comparison of this Rust-based Cloud Sync Workspace against establishe
 - **Decoupled Architecture**: Separation between the core CLI daemon (via TCP socket control) and the Axum-based Web UI proxy allows running the daemon headless while controlling it remotely.
 - **Immediate Event-Driven Sync**: Uses the native OS filesystem event loop (via the `notify` crate) to propagate changes the millisecond a write completes, rather than relying on heavy scheduled polling cycles.
 - **Simple, Modular Codebase**: The generic `StorageBackend` trait makes introducing new providers (or mock fallbacks) simple, keeping the codebase easily maintainable.
+- **Two-Way Synchronization**: Fully supports bidirectional synchronization with automated collision resolution, keeping local directories and cloud backends in lockstep.
+- **Zero-Knowledge Encryption**: Optional client-side AES-256-GCM encryption ensures data is encrypted locally before being transmitted to the cloud.
+- **Bandwidth Rate-Limiting**: Flexible upload and download rate limiting via Token Buckets helps prevent network congestion.
+- **Broad Backend Support**: Integrates out-of-the-box with a wide array of cloud, enterprise, object, and distributed protocols (14 distinct providers).
 
 ---
 
 ## 3. Current Limitations
 
-- **One-Way Sync Only**: Currently only propagates local source changes to remote destinations (unidirectional). It does not pull remote cloud changes back down or handle bi-directional conflict resolution.
-- **Provider Coverage**: Focuses on major backends (Google Drive, Dropbox, OneDrive, WebDAV, S3) rather than the dozens of niche backends supported by tools like Rclone.
-- **Advanced Transfers**: Lacks advanced features such as client-side encryption, transfer bandwidth rate-limiting, and chunked uploads for very large files.
+- **Chunked Uploads**: Lacks native support for multi-gigabyte chunked/resumable uploads on some providers (files are uploaded in one pass).
+- **Move/Rename Detection**: File rename or move actions are handled as a delete followed by a new upload/download, rather than a single server-side move command.
+- **Conflict UI**: Conflict resolution (local-conflict copy creation) is fully automated; there is no interactive prompt or diff viewer to allow manual merge operations from the UI.
