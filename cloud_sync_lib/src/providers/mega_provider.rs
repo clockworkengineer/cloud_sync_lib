@@ -44,8 +44,11 @@ impl MegaProvider {
             .cloned()
             .ok_or_else(|| StorageError::NotFound("MEGA root folder not found".to_string()))?;
 
+        let normalized_dest_opt = destination_folder.map(|dest| super::utils::normalize_remote_path(dest));
+        let normalized_path = super::utils::normalize_remote_path(path_str);
         let mut segments = Vec::new();
-        if let Some(dest) = destination_folder {
+
+        if let Some(ref dest) = normalized_dest_opt {
             let clean_dest = dest.trim_matches('/');
             if !clean_dest.is_empty() {
                 for seg in clean_dest.split('/') {
@@ -54,7 +57,7 @@ impl MegaProvider {
             }
         }
 
-        let clean_path = path_str.trim_start_matches('/');
+        let clean_path = normalized_path.trim_start_matches('/');
         if !clean_path.is_empty() {
             for seg in clean_path.split('/') {
                 segments.push(seg);

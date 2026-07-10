@@ -165,12 +165,17 @@ impl GoogleDriveProvider {
     /// # Returns
     /// The ID of the target file/folder in Google Drive, or a `StorageError`.
     async fn get_or_create_file_id(&self, token: &str, path: &str, is_folder: bool) -> Result<String, StorageError> {
-        let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let normalized = super::utils::normalize_remote_path(path);
+        let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
         let mut parent_id = "root".to_string();
 
         if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-            if !dest_folder.is_empty() {
-                parent_id = self.get_or_create_folder_id(token, &parent_id, dest_folder).await?;
+            let normalized_dest = super::utils::normalize_remote_path(dest_folder);
+            if !normalized_dest.is_empty() {
+                // If destination folder has multiple segments, resolve them segment by segment
+                for seg in normalized_dest.split('/').filter(|s| !s.is_empty()) {
+                    parent_id = self.get_or_create_folder_id(token, &parent_id, seg).await?;
+                }
             }
         }
 
@@ -303,30 +308,51 @@ impl StorageBackend for GoogleDriveProvider {
             let folder_id = self.get_or_create_file_id(&token, remote_path, true).await?;
 
             let query = format!("'{}' in parents and trashed = false", folder_id);
-            let res = self.client.get(&self.api_url)
-                .bearer_auth(&token)
-                .query(&[("q", &query), ("fields", &"files(id, name, size, mimeType, modifiedTime, md5Checksum)".to_string())])
-                .send()
-                .await?
-                .json::<serde_json::Value>()
-                .await?;
-
             let mut items = Vec::new();
-            if let Some(files) = res["files"].as_array() {
-                for file in files {
-                    let name = file["name"].as_str().unwrap_or("").to_string();
-                    let size = file["size"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
-                    let mime_type = file["mimeType"].as_str().unwrap_or("");
-                    let is_dir = mime_type == "application/vnd.google-apps.folder";
-                    let checksum = file["md5Checksum"].as_str().map(|s| s.to_string());
+            let mut next_page_token: Option<String> = None;
 
-                    items.push(StorageItem {
-                        path: PathBuf::from(name),
-                        size,
-                        modified: std::time::SystemTime::now(),
-                        is_dir,
-                        checksum,
-                    });
+            loop {
+                let req = self.client.get(&self.api_url)
+                    .bearer_auth(&token);
+                
+                let fields = "nextPageToken, files(id, name, size, mimeType, modifiedTime, md5Checksum)".to_string();
+                let mut query_params = vec![
+                    ("q", query.clone()),
+                    ("fields", fields),
+                ];
+                let page_token_str;
+                if let Some(ref page_token) = next_page_token {
+                    page_token_str = page_token.clone();
+                    query_params.push(("pageToken", page_token_str));
+                }
+
+                let res = req.query(&query_params)
+                    .send()
+                    .await?
+                    .json::<serde_json::Value>()
+                    .await?;
+
+                if let Some(files) = res["files"].as_array() {
+                    for file in files {
+                        let name = file["name"].as_str().unwrap_or("").to_string();
+                        let size = file["size"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
+                        let mime_type = file["mimeType"].as_str().unwrap_or("");
+                        let is_dir = mime_type == "application/vnd.google-apps.folder";
+                        let checksum = file["md5Checksum"].as_str().map(|s| s.to_string());
+
+                        items.push(StorageItem {
+                            path: PathBuf::from(name),
+                            size,
+                            modified: std::time::SystemTime::now(),
+                            is_dir,
+                            checksum,
+                        });
+                    }
+                }
+
+                next_page_token = res["nextPageToken"].as_str().map(|s| s.to_string());
+                if next_page_token.is_none() {
+                    break;
                 }
             }
 

@@ -165,11 +165,12 @@ impl BoxProvider {
     ///
     /// If `create_folders` is true, missing intermediate directories will be automatically created.
     async fn resolve_path(&self, token: &str, path: &str, create_folders: bool) -> Result<(String, bool), StorageError> {
-        // Resolve target path incorporating destination_folder prefix
-        let clean_path = path.trim_start_matches('/');
+        let normalized_dest_opt = self.credentials.common.destination_folder.as_ref().map(|dest| super::utils::normalize_remote_path(dest));
+        let normalized_path = super::utils::normalize_remote_path(path);
+        let clean_path = normalized_path.trim_start_matches('/');
         let mut segments = Vec::new();
 
-        if let Some(ref dest) = self.credentials.common.destination_folder {
+        if let Some(ref dest) = normalized_dest_opt {
             let clean_dest = dest.trim_matches('/');
             if !clean_dest.is_empty() {
                 for seg in clean_dest.split('/') {

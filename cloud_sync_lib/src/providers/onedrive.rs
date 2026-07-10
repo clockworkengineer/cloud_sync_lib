@@ -180,33 +180,41 @@ impl StorageBackend for OneDriveProvider {
             let token = self.get_access_token().await?;
             let clean_path = self.format_path(remote_path);
 
-            let list_url = if clean_path.is_empty() {
+            let mut list_url = if clean_path.is_empty() {
                 format!("{}/me/drive/root/children", self.api_url)
             } else {
                 format!("{}/me/drive/root:/{}:/children", self.api_url, clean_path)
             };
 
-            let res = self.client.get(&list_url)
-                .bearer_auth(&token)
-                .send()
-                .await?
-                .json::<serde_json::Value>()
-                .await?;
-
             let mut items = Vec::new();
-            if let Some(values) = res["value"].as_array() {
-                for item in values {
-                    let name = item["name"].as_str().unwrap_or("").to_string();
-                    let size = item["size"].as_u64().unwrap_or(0);
-                    let is_dir = item.get("folder").is_some();
+            loop {
+                let res = self.client.get(&list_url)
+                    .bearer_auth(&token)
+                    .send()
+                    .await?
+                    .json::<serde_json::Value>()
+                    .await?;
 
-                    items.push(StorageItem {
-                        path: PathBuf::from(name),
-                        size,
-                        modified: std::time::SystemTime::now(),
-                        is_dir,
-                        checksum: None,
-                    });
+                if let Some(values) = res["value"].as_array() {
+                    for item in values {
+                        let name = item["name"].as_str().unwrap_or("").to_string();
+                        let size = item["size"].as_u64().unwrap_or(0);
+                        let is_dir = item.get("folder").is_some();
+
+                        items.push(StorageItem {
+                            path: PathBuf::from(name),
+                            size,
+                            modified: std::time::SystemTime::now(),
+                            is_dir,
+                            checksum: None,
+                        });
+                    }
+                }
+
+                if let Some(next_link) = res["@odata.nextLink"].as_str() {
+                    list_url = next_link.to_string();
+                } else {
+                    break;
                 }
             }
 
