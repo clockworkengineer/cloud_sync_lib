@@ -141,6 +141,15 @@ impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
 }
 
 /// Sync policy details indicating directionality and deletion behavior.
+///
+/// # Examples
+///
+/// ```
+/// use cloud_sync_lib::{SyncPolicy, SyncMode};
+/// let policy = SyncPolicy::new(SyncMode::TwoWay);
+/// assert!(policy.sync_deletions());
+/// assert!(policy.sync_both());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyncPolicy {
     pub mode: SyncMode,

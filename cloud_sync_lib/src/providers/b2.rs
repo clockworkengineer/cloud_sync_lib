@@ -88,6 +88,7 @@ struct B2File {
 #[serde(rename_all = "camelCase")]
 struct ListFileNamesResponse {
     files: Vec<B2File>,
+    next_file_name: Option<String>,
 }
 
 #[derive(Serialize, Debug)]
@@ -359,45 +360,54 @@ impl StorageBackend for B2Provider {
             };
 
             let list_url = format!("{}/b2api/v2/b2_list_file_names", auth.api_url);
-            let res = self.client.post(&list_url)
-                .header("Authorization", &auth.auth_token)
-                .json(&ListFileNamesRequest {
-                    bucket_id,
-                    start_file_name: None,
-                    max_file_count: None,
-                    prefix,
-                })
-                .send()
-                .await?;
-
-            if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "list").await);
-            }
-
-            let body: ListFileNamesResponse = res.json().await?;
             let mut items = Vec::new();
+            let mut start_file_name: Option<String> = None;
 
-            for file in body.files {
-                let mut item_path = PathBuf::from(&file.file_name);
-                if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                    let clean_dest = dest_folder.trim_matches('/');
-                    if !clean_dest.is_empty() {
-                        if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                            item_path = stripped.to_path_buf();
-                        }
-                    }
+            loop {
+                let res = self.client.post(&list_url)
+                    .header("Authorization", &auth.auth_token)
+                    .json(&ListFileNamesRequest {
+                        bucket_id: bucket_id.clone(),
+                        start_file_name: start_file_name.clone(),
+                        max_file_count: None,
+                        prefix: prefix.clone(),
+                    })
+                    .send()
+                    .await?;
+
+                if !res.status().is_success() {
+                    return Err(parse_response_error(res, self.name(), "list").await);
                 }
 
-                // Convert B2 timestamp (milliseconds since epoch) to SystemTime
-                let modified = SystemTime::UNIX_EPOCH + Duration::from_millis(file.upload_timestamp);
+                let body: ListFileNamesResponse = res.json().await?;
+                for file in body.files {
+                    let mut item_path = PathBuf::from(&file.file_name);
+                    if let Some(ref dest_folder) = self.credentials.common.destination_folder {
+                        let clean_dest = dest_folder.trim_matches('/');
+                        if !clean_dest.is_empty() {
+                            if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
+                                item_path = stripped.to_path_buf();
+                            }
+                        }
+                    }
 
-                items.push(StorageItem {
-                    path: item_path,
-                    size: file.content_length,
-                    modified,
-                    is_dir: false, // B2 is a flat namespace, folders are virtual
-                    checksum: None,
-                });
+                    // Convert B2 timestamp (milliseconds since epoch) to SystemTime
+                    let modified = SystemTime::UNIX_EPOCH + Duration::from_millis(file.upload_timestamp);
+
+                    items.push(StorageItem {
+                        path: item_path,
+                        size: file.content_length,
+                        modified,
+                        is_dir: false, // B2 is a flat namespace, folders are virtual
+                        checksum: None,
+                    });
+                }
+
+                if body.next_file_name.is_some() {
+                    start_file_name = body.next_file_name;
+                } else {
+                    break;
+                }
             }
 
             Ok(items)

@@ -363,3 +363,79 @@ pub use ipfs::{IPFSProvider, IPFSProviderBuilder};
 pub use fallback::SimulatedFallback;
 pub use encryption::EncryptedBackend;
 
+use std::sync::Arc;
+use crate::traits::StorageBackend;
+
+/// Enum wrapping credentials for any compiled backend.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, zeroize::Zeroize)]
+#[serde(tag = "type", content = "config")]
+pub enum BackendCredentials {
+    #[cfg(feature = "google_drive")]
+    GoogleDrive(OAuthCredentials),
+    #[cfg(feature = "dropbox")]
+    Dropbox(OAuthCredentials),
+    #[cfg(feature = "onedrive")]
+    OneDrive(OAuthCredentials),
+    #[cfg(feature = "webdav")]
+    WebDAV(WebDAVCredentials),
+    #[cfg(feature = "s3")]
+    S3(S3Credentials),
+    #[cfg(feature = "sftp")]
+    SFTP(SFTPCredentials),
+    #[cfg(feature = "nextcloud")]
+    Nextcloud(NextcloudCredentials),
+    #[cfg(feature = "box")]
+    Box(OAuthCredentials),
+    #[cfg(feature = "mega")]
+    Mega(MegaCredentials),
+    #[cfg(feature = "azure_blob")]
+    AzureBlob(AzureBlobCredentials),
+    #[cfg(feature = "gcs")]
+    GCS(GCSCredentials),
+    #[cfg(feature = "b2")]
+    B2(B2Credentials),
+    #[cfg(feature = "pcloud")]
+    PCloud(PCloudCredentials),
+    #[cfg(feature = "ipfs")]
+    IPFS(IPFSCredentials),
+}
+
+/// Unified factory registry to build storage providers dynamically.
+pub struct BackendRegistry;
+
+impl BackendRegistry {
+    /// Dynamically instantiates a provider using its config credentials.
+    pub fn build(creds: BackendCredentials) -> Arc<dyn StorageBackend> {
+        match creds {
+            #[cfg(feature = "google_drive")]
+            BackendCredentials::GoogleDrive(c) => Arc::new(GoogleDriveProvider::new(c)),
+            #[cfg(feature = "dropbox")]
+            BackendCredentials::Dropbox(c) => Arc::new(DropboxProvider::new(c)),
+            #[cfg(feature = "onedrive")]
+            BackendCredentials::OneDrive(c) => Arc::new(OneDriveProvider::new(c)),
+            #[cfg(feature = "webdav")]
+            BackendCredentials::WebDAV(c) => Arc::new(WebDAVProvider::new(c)),
+            #[cfg(feature = "s3")]
+            BackendCredentials::S3(c) => Arc::new(S3Provider::new(c)),
+            #[cfg(feature = "sftp")]
+            BackendCredentials::SFTP(c) => Arc::new(SFTPProvider::new(c)),
+            #[cfg(feature = "nextcloud")]
+            BackendCredentials::Nextcloud(c) => Arc::new(NextcloudProvider::new(c)),
+            #[cfg(feature = "box")]
+            BackendCredentials::Box(c) => Arc::new(BoxProvider::new(c)),
+            #[cfg(feature = "mega")]
+            BackendCredentials::Mega(c) => Arc::new(MegaProvider::new(c)),
+            #[cfg(feature = "azure_blob")]
+            BackendCredentials::AzureBlob(c) => Arc::new(AzureBlobProvider::new(c)),
+            #[cfg(feature = "gcs")]
+            BackendCredentials::GCS(c) => Arc::new(GCSProvider::new(c)),
+            #[cfg(feature = "b2")]
+            BackendCredentials::B2(c) => Arc::new(B2Provider::new(c)),
+            #[cfg(feature = "pcloud")]
+            BackendCredentials::PCloud(c) => Arc::new(PCloudProvider::new(c)),
+            #[cfg(feature = "ipfs")]
+            BackendCredentials::IPFS(c) => Arc::new(IPFSProvider::new(c)),
+        }
+    }
+}
+

@@ -205,36 +205,59 @@ impl StorageBackend for DropboxProvider {
             let token = self.get_access_token().await?;
             let dbx_path = self.format_path(remote_path);
 
-            let body = serde_json::json!({
-                "path": dbx_path,
-                "recursive": false
-            });
-
-            let list_url = format!("{}/list_folder", self.api_url);
-            let res = self.client.post(&list_url)
-                .bearer_auth(&token)
-                .json(&body)
-                .send()
-                .await?
-                .json::<serde_json::Value>()
-                .await?;
-
             let mut items = Vec::new();
-            if let Some(entries) = res["entries"].as_array() {
-                for entry in entries {
-                    let name = entry["name"].as_str().unwrap_or("").to_string();
-                    let size = entry["size"].as_u64().unwrap_or(0);
-                    let tag = entry[".tag"].as_str().unwrap_or("");
-                    let is_dir = tag == "folder";
-                    let checksum = entry["content_hash"].as_str().map(|s| s.to_string());
+            let mut cursor: Option<String> = None;
 
-                    items.push(StorageItem {
-                        path: PathBuf::from(name),
-                        size,
-                        modified: std::time::SystemTime::now(),
-                        is_dir,
-                        checksum,
+            loop {
+                let res = if let Some(ref cur) = cursor {
+                    let body = serde_json::json!({
+                        "cursor": cur
                     });
+                    let continue_url = format!("{}/list_folder/continue", self.api_url);
+                    self.client.post(&continue_url)
+                        .bearer_auth(&token)
+                        .json(&body)
+                        .send()
+                        .await?
+                        .json::<serde_json::Value>()
+                        .await?
+                } else {
+                    let body = serde_json::json!({
+                        "path": dbx_path,
+                        "recursive": false
+                    });
+                    let list_url = format!("{}/list_folder", self.api_url);
+                    self.client.post(&list_url)
+                        .bearer_auth(&token)
+                        .json(&body)
+                        .send()
+                        .await?
+                        .json::<serde_json::Value>()
+                        .await?
+                };
+
+                if let Some(entries) = res["entries"].as_array() {
+                    for entry in entries {
+                        let name = entry["name"].as_str().unwrap_or("").to_string();
+                        let size = entry["size"].as_u64().unwrap_or(0);
+                        let tag = entry[".tag"].as_str().unwrap_or("");
+                        let is_dir = tag == "folder";
+                        let checksum = entry["content_hash"].as_str().map(|s| s.to_string());
+
+                        items.push(StorageItem {
+                            path: PathBuf::from(name),
+                            size,
+                            modified: std::time::SystemTime::now(),
+                            is_dir,
+                            checksum,
+                        });
+                    }
+                }
+
+                if res["has_more"].as_bool().unwrap_or(false) {
+                    cursor = res["cursor"].as_str().map(|s| s.to_string());
+                } else {
+                    break;
                 }
             }
 
