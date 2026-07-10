@@ -31,9 +31,9 @@ impl SFTPProvider {
         let addr = format!("{}:{}", self.creds.host, port);
         let tcp = TcpStream::connect(&addr)?;
         
-        let mut sess = Session::new().map_err(|e| StorageError::Provider(e.to_string()))?;
+        let mut sess = Session::new().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
         sess.set_tcp_stream(tcp);
-        sess.handshake().map_err(|e| StorageError::Provider(e.to_string()))?;
+        sess.handshake().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
         let has_key = self.creds.private_key_path.as_ref().is_some_and(|p| !p.is_empty());
         if has_key {
@@ -90,7 +90,7 @@ impl StorageBackend for SFTPProvider {
         tokio::task::spawn_blocking(move || {
             let sftp_provider = SFTPProvider::new(provider);
             let sess = sftp_provider.connect()?;
-            let sftp = sess.sftp().map_err(|e| StorageError::Provider(e.to_string()))?;
+            let sftp = sess.sftp().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             let resolved = sftp_provider.resolve_remote_path(&remote_path);
             let resolved_path = Path::new(&resolved);
 
@@ -98,10 +98,10 @@ impl StorageBackend for SFTPProvider {
 
             // Ensure parent directories exist
             if let Some(parent) = resolved_path.parent() {
-                mkdir_p(&sftp, parent).map_err(|e| StorageError::Provider(e.to_string()))?;
+                mkdir_p(&sftp, parent).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             }
 
-            let mut remote_file = sftp.create(resolved_path).map_err(|e| StorageError::Provider(e.to_string()))?;
+            let mut remote_file = sftp.create(resolved_path).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             let mut local_file = std::fs::File::open(&local_path)?;
             
             let mut buffer = vec![0; 16384];
@@ -116,7 +116,7 @@ impl StorageBackend for SFTPProvider {
             Ok(())
         })
         .await
-        .map_err(|e| StorageError::Provider(e.to_string()))?
+        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -127,12 +127,12 @@ impl StorageBackend for SFTPProvider {
         tokio::task::spawn_blocking(move || {
             let sftp_provider = SFTPProvider::new(provider);
             let sess = sftp_provider.connect()?;
-            let sftp = sess.sftp().map_err(|e| StorageError::Provider(e.to_string()))?;
+            let sftp = sess.sftp().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             let resolved = sftp_provider.resolve_remote_path(&remote_path);
 
             info!("[SFTP] Real download starting for '{}'", resolved);
 
-            let mut remote_file = sftp.open(Path::new(&resolved)).map_err(|e| StorageError::Provider(e.to_string()))?;
+            let mut remote_file = sftp.open(Path::new(&resolved)).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             
             if let Some(parent) = local_path.parent() {
                 std::fs::create_dir_all(parent)?;
@@ -151,7 +151,7 @@ impl StorageBackend for SFTPProvider {
             Ok(())
         })
         .await
-        .map_err(|e| StorageError::Provider(e.to_string()))?
+        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -161,7 +161,7 @@ impl StorageBackend for SFTPProvider {
         tokio::task::spawn_blocking(move || {
             let sftp_provider = SFTPProvider::new(provider);
             let sess = sftp_provider.connect()?;
-            let sftp = sess.sftp().map_err(|e| StorageError::Provider(e.to_string()))?;
+            let sftp = sess.sftp().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             let resolved = sftp_provider.resolve_remote_path(&remote_path);
             let resolved_path = Path::new(&resolved);
 
@@ -172,19 +172,19 @@ impl StorageBackend for SFTPProvider {
                 Err(ref e) if e.code() == ssh2::ErrorCode::SFTP(2) => {
                     return Err(StorageError::NotFound(remote_path));
                 }
-                Err(e) => return Err(StorageError::Provider(e.to_string())),
+                Err(e) => return Err(StorageError::Provider { message: e.to_string(), status: None }),
             };
 
             if stat.is_dir() {
-                sftp.rmdir(resolved_path).map_err(|e| StorageError::Provider(e.to_string()))?;
+                sftp.rmdir(resolved_path).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             } else {
-                sftp.unlink(resolved_path).map_err(|e| StorageError::Provider(e.to_string()))?;
+                sftp.unlink(resolved_path).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             }
 
             Ok(())
         })
         .await
-        .map_err(|e| StorageError::Provider(e.to_string()))?
+        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -194,7 +194,7 @@ impl StorageBackend for SFTPProvider {
         tokio::task::spawn_blocking(move || {
             let sftp_provider = SFTPProvider::new(provider);
             let sess = sftp_provider.connect()?;
-            let sftp = sess.sftp().map_err(|e| StorageError::Provider(e.to_string()))?;
+            let sftp = sess.sftp().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             let resolved = sftp_provider.resolve_remote_path(&remote_path);
             let resolved_path = Path::new(&resolved);
 
@@ -205,7 +205,7 @@ impl StorageBackend for SFTPProvider {
                 Err(ref e) if e.code() == ssh2::ErrorCode::SFTP(2) => {
                     return Err(StorageError::NotFound(remote_path));
                 }
-                Err(e) => return Err(StorageError::Provider(e.to_string())),
+                Err(e) => return Err(StorageError::Provider { message: e.to_string(), status: None }),
             };
 
             let mut items = Vec::new();
@@ -222,7 +222,7 @@ impl StorageBackend for SFTPProvider {
             Ok(items)
         })
         .await
-        .map_err(|e| StorageError::Provider(e.to_string()))?
+        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
     }
 
 }

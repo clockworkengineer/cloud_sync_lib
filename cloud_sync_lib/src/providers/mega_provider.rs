@@ -36,7 +36,7 @@ impl MegaProvider {
         create_folders: bool,
     ) -> Result<mega::Node, StorageError> {
         let nodes = client.fetch_own_nodes().await
-            .map_err(|e| StorageError::Provider(e.to_string()))?;
+            .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
         // Find the root node
         let mut current_node = nodes.iter()
@@ -82,11 +82,11 @@ impl MegaProvider {
                     if create_folders && (!is_last || segments.len() > 1) {
                         // Create folder
                         client.create_dir(&current_node, segment).await
-                            .map_err(|e| StorageError::Provider(e.to_string()))?;
+                            .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
                         
                         // Re-fetch nodes to get the new folder's hash/node
                         let updated_nodes = client.fetch_own_nodes().await
-                            .map_err(|e| StorageError::Provider(e.to_string()))?;
+                            .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
                         
                         current_node = updated_nodes.iter()
                             .filter_map(|n| {
@@ -97,7 +97,7 @@ impl MegaProvider {
                                 }
                             })
                             .next()
-                            .ok_or_else(|| StorageError::Provider("Failed to retrieve created folder".to_string()))?;
+                            .ok_or_else(|| StorageError::Provider { message: "Failed to retrieve created folder".to_string(), status: None })?;
                     } else {
                         return Err(StorageError::NotFound(format!("Path segment '{}' not found", segment)));
                     }
@@ -126,12 +126,12 @@ impl StorageBackend for MegaProvider {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| StorageError::Provider(e.to_string()))?;
+                .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
                     .build(super::utils::build_http_client())
-                    .map_err(|e| StorageError::Provider(e.to_string()))?;
+                    .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 client.login(&email, &password, None).await
                     .map_err(|e| StorageError::Authentication(e.to_string()))?;
@@ -140,7 +140,7 @@ impl StorageBackend for MegaProvider {
                 let path = Path::new(&remote_path);
                 let file_name = path.file_name()
                     .and_then(|n| n.to_str())
-                    .ok_or_else(|| StorageError::Provider("Invalid remote file name".to_string()))?
+                    .ok_or_else(|| StorageError::Provider { message: "Invalid remote file name".to_string(), status: None })?
                     .to_string();
 
                 let parent_path = path.parent()
@@ -152,7 +152,7 @@ impl StorageBackend for MegaProvider {
 
                 // If file already exists, delete it first to prevent duplicates
                 let nodes = client.fetch_own_nodes().await
-                    .map_err(|e| StorageError::Provider(e.to_string()))?;
+                    .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
                 
                 let existing = parent_node.children().iter()
                     .filter_map(|h| nodes.iter().find(|n| n.hash() == h))
@@ -160,7 +160,7 @@ impl StorageBackend for MegaProvider {
 
                 if let Some(node) = existing {
                     client.delete_node(node).await
-                        .map_err(|e| StorageError::Provider(e.to_string()))?;
+                        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
                 }
 
                 // Upload file (wrapping tokio::fs::File into compat futures_io::AsyncRead)
@@ -170,13 +170,13 @@ impl StorageBackend for MegaProvider {
                 let compat_file = file.compat();
 
                 client.upload_node(&parent_node, &file_name, size, compat_file).await
-                    .map_err(|e| StorageError::Provider(e.to_string()))?;
+                    .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 Ok(())
             })
         })
         .await
-        .map_err(|e| StorageError::Provider(e.to_string()))?
+        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -190,32 +190,32 @@ impl StorageBackend for MegaProvider {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| StorageError::Provider(e.to_string()))?;
+                .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
                     .build(super::utils::build_http_client())
-                    .map_err(|e| StorageError::Provider(e.to_string()))?;
+                    .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 client.login(&email, &password, None).await
                     .map_err(|e| StorageError::Authentication(e.to_string()))?;
 
                 let node = Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false).await?;
                 if node.kind() != mega::NodeKind::File {
-                    return Err(StorageError::Provider("Cannot download a directory".to_string()));
+                    return Err(StorageError::Provider { message: "Cannot download a directory".to_string(), status: None });
                 }
 
                 // Wrap tokio::fs::File into compat futures_io::AsyncWrite
                 let file = File::create(&local_path).await?;
                 let compat_file = file.compat_write();
                 client.download_node(&node, compat_file).await
-                    .map_err(|e| StorageError::Provider(e.to_string()))?;
+                    .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 Ok(())
             })
         })
         .await
-        .map_err(|e| StorageError::Provider(e.to_string()))?
+        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -228,24 +228,24 @@ impl StorageBackend for MegaProvider {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| StorageError::Provider(e.to_string()))?;
+                .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
                     .build(super::utils::build_http_client())
-                    .map_err(|e| StorageError::Provider(e.to_string()))?;
+                    .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 client.login(&email, &password, None).await
                     .map_err(|e| StorageError::Authentication(e.to_string()))?;
 
                 let node = Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false).await?;
                 client.delete_node(&node).await
-                    .map_err(|e| StorageError::Provider(e.to_string()))?;
+                    .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
                 Ok(())
             })
         })
         .await
-        .map_err(|e| StorageError::Provider(e.to_string()))?
+        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -258,12 +258,12 @@ impl StorageBackend for MegaProvider {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| StorageError::Provider(e.to_string()))?;
+                .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
                     .build(super::utils::build_http_client())
-                    .map_err(|e| StorageError::Provider(e.to_string()))?;
+                    .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 client.login(&email, &password, None).await
                     .map_err(|e| StorageError::Authentication(e.to_string()))?;
@@ -271,7 +271,7 @@ impl StorageBackend for MegaProvider {
                 let folder_node = Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false).await?;
                 
                 let nodes = client.fetch_own_nodes().await
-                    .map_err(|e| StorageError::Provider(e.to_string()))?;
+                    .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 let items = folder_node.children().iter()
                     .filter_map(|hash| nodes.iter().find(|n| n.hash() == hash))
@@ -299,7 +299,7 @@ impl StorageBackend for MegaProvider {
             })
         })
         .await
-        .map_err(|e| StorageError::Provider(e.to_string()))?
+        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
     }
 
 }

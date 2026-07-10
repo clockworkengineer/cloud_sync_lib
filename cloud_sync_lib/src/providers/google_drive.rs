@@ -147,7 +147,7 @@ impl GoogleDriveProvider {
             .await?;
 
         let id = create_res["id"].as_str()
-            .ok_or_else(|| StorageError::Provider(format!("Failed to create folder '{}' in Google Drive: {:?}", name, create_res)))?
+            .ok_or_else(|| StorageError::Provider { message: format!("Failed to create folder '{}' in Google Drive: {:?}", name, create_res), status: None })?
             .to_string();
 
         Ok(id)
@@ -217,7 +217,7 @@ impl GoogleDriveProvider {
                     .await?;
 
                 parent_id = create_res["id"].as_str()
-                    .ok_or_else(|| StorageError::Provider(format!("Failed to create file '{}' in Google Drive: {:?}", part, create_res)))?
+                    .ok_or_else(|| StorageError::Provider { message: format!("Failed to create file '{}' in Google Drive: {:?}", part, create_res), status: None })?
                     .to_string();
             }
         }

@@ -24,12 +24,18 @@ pub enum StorageError {
     NotFound(String),
 
     /// Errors resulting from provider rate limits / API throttling.
-    #[error("Rate limit exceeded. Try again later: {0}")]
-    RateLimit(String),
+    #[error("Rate limit exceeded. Try again later: {message}")]
+    RateLimit {
+        message: String,
+        retry_after: Option<std::time::Duration>,
+    },
 
     /// Errors returned from the cloud provider's API.
-    #[error("Storage provider error: {0}")]
-    Provider(String),
+    #[error("Storage provider error: {message} (status: {status:?})")]
+    Provider {
+        message: String,
+        status: Option<u16>,
+    },
 
     /// Errors originating from the underlying HTTP client library.
     #[error("HTTP client error: {0}")]

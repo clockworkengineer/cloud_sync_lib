@@ -58,16 +58,37 @@ pub async fn refresh_oauth2_token(
 /// A `StorageError` wrapping the details from the response.
 pub async fn parse_response_error(res: reqwest::Response, provider_name: &str, action: &str) -> StorageError {
     let status = res.status();
+    
+    // Inspect Retry-After header
+    let retry_after = res.headers().get(reqwest::header::RETRY_AFTER)
+        .and_then(|val| val.to_str().ok())
+        .and_then(|val_str| {
+            if let Ok(secs) = val_str.parse::<u64>() {
+                Some(std::time::Duration::from_secs(secs))
+            } else {
+                None
+            }
+        });
+
     let body = res.text().await.unwrap_or_default();
     let detail = if body.trim().is_empty() {
         status.to_string()
     } else {
         body
     };
+
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        StorageError::RateLimit(format!("Rate limit exceeded on {}: {}", provider_name, detail))
+        StorageError::RateLimit {
+            message: format!("Rate limit exceeded on {}: {}", provider_name, detail),
+            retry_after,
+        }
+    } else if status == reqwest::StatusCode::NOT_FOUND {
+        StorageError::NotFound(format!("Resource not found on {}: {}", provider_name, detail))
     } else {
-        StorageError::Provider(format!("Failed to {} on {}: {}", action, provider_name, detail))
+        StorageError::Provider {
+            message: format!("Failed to {} on {}: {}", action, provider_name, detail),
+            status: Some(status.as_u16()),
+        }
     }
 }
 
@@ -157,7 +178,7 @@ use tokio_util::io::ReaderStream;
 /// Checks if a `StorageError` is transient and should trigger a retry.
 pub fn is_transient_error(err: &StorageError) -> bool {
     match err {
-        StorageError::RateLimit(_) => true,
+        StorageError::RateLimit { .. } => true,
         StorageError::Reqwest(e) => {
             if e.is_timeout() || e.is_connect() {
                 return true;
@@ -169,8 +190,11 @@ pub fn is_transient_error(err: &StorageError) -> bool {
                 false
             }
         }
-        StorageError::Provider(msg) => {
-            msg.contains("429") || msg.contains("503") || msg.contains("504") || msg.contains("502")
+        StorageError::Provider { status: Some(status_code), .. } => {
+            *status_code == 429 || *status_code == 502 || *status_code == 503 || *status_code == 504
+        }
+        StorageError::Provider { message, .. } => {
+            message.contains("429") || message.contains("503") || message.contains("504") || message.contains("502")
         }
         _ => false,
     }
@@ -200,17 +224,30 @@ where
             Err(e) => {
                 if is_transient_error(&e) && attempt < max_attempts - 1 {
                     attempt += 1;
+                    
+                    let sleep_duration = match &e {
+                        StorageError::RateLimit { retry_after: Some(d), .. } => *d,
+                        _ => delay,
+                    };
+                    
                     tracing::warn!(
                         "[{}] Transient error during {}: {}. Retrying in {:?} (attempt {}/{})",
                         provider_name,
                         action,
                         e,
-                        delay,
+                        sleep_duration,
                         attempt,
                         max_attempts
                     );
-                    tokio::time::sleep(delay).await;
-                    delay *= 2;
+                    
+                    tokio::time::sleep(sleep_duration).await;
+                    if let StorageError::RateLimit { retry_after: Some(_), .. } = &e {
+                        // Keep using the explicit retry-after window for rate-limiting sleep duration,
+                        // but still double the default delay just in case we hit a non-rate-limit next
+                        delay *= 2;
+                    } else {
+                        delay *= 2;
+                    }
                     continue;
                 }
                 return Err(e);
@@ -270,7 +307,7 @@ mod tests {
             async move {
                 let current = cnt.fetch_add(1, Ordering::SeqCst);
                 if current < 2 {
-                    Err(StorageError::RateLimit("Rate limit".to_string()))
+                    Err(StorageError::RateLimit { message: "Rate limit".to_string(), retry_after: None })
                 } else {
                     Ok("success")
                 }
@@ -290,11 +327,11 @@ mod tests {
             let cnt = counter_clone.clone();
             async move {
                 cnt.fetch_add(1, Ordering::SeqCst);
-                Err::<(), StorageError>(StorageError::RateLimit("Rate limit".to_string()))
+                Err::<(), StorageError>(StorageError::RateLimit { message: "Rate limit".to_string(), retry_after: None })
             }
         }).await;
 
-        assert!(matches!(result, Err(StorageError::RateLimit(_))));
+        assert!(matches!(result, Err(StorageError::RateLimit { .. })));
         assert_eq!(counter.load(Ordering::SeqCst), 5); // 5 attempts max
     }
 }

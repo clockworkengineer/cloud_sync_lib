@@ -192,9 +192,9 @@ impl BoxProvider {
                 continue;
             }
             if !is_dir {
-                return Err(StorageError::Provider(format!(
+                return Err(StorageError::Provider { message: format!(
                     "Path resolution error: intermediate segment '{}' is not a folder", segment
-                )));
+                ), status: None });
             }
 
             // List current folder
@@ -254,7 +254,7 @@ impl BoxProvider {
         let path = Path::new(remote_path);
         let parent_path = path.parent().and_then(|p| p.to_str()).unwrap_or("");
         let file_name = path.file_name().and_then(|s| s.to_str()).ok_or_else(|| {
-            StorageError::Provider("Invalid file name".to_string())
+            StorageError::Provider { message: "Invalid file name".to_string(), status: None }
         })?;
 
         let (parent_id, _) = self.resolve_path(token, parent_path, true).await?;
@@ -274,7 +274,7 @@ impl StorageBackend for BoxProvider {
             let (folder_id, is_dir) = self.resolve_path(&token, path, false).await?;
 
             if !is_dir {
-                return Err(StorageError::Provider("Target path is not a folder".to_string()));
+                return Err(StorageError::Provider { message: "Target path is not a folder".to_string(), status: None });
             }
 
             let url = format!("{}/folders/{}/items", self.api_url, folder_id);
@@ -378,7 +378,7 @@ impl StorageBackend for BoxProvider {
             let (file_id, is_dir) = self.resolve_path(&token, remote_path, false).await?;
 
             if is_dir {
-                return Err(StorageError::Provider("Cannot download a directory".to_string()));
+                return Err(StorageError::Provider { message: "Cannot download a directory".to_string(), status: None });
             }
 
             let url = format!("{}/files/{}/content", self.api_url, file_id);

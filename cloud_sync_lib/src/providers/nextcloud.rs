@@ -71,7 +71,7 @@ impl NextcloudProvider {
 
             let status = resp.status();
             if !status.is_success() && status.as_u16() != 405 {
-                return Err(StorageError::Provider(format!("Failed to create directory {}: {}", url, status)));
+                return Err(StorageError::Provider { message: format!("Failed to create directory {}: {}", url, status), status: None });
             }
         }
 
@@ -145,7 +145,7 @@ fn parse_propfind_response(xml: &str) -> Result<Vec<(String, u64, bool)>, Storag
                 }
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(StorageError::Provider(format!("XML parse error: {}", e))),
+            Err(e) => return Err(StorageError::Provider { message: format!("XML parse error: {}", e), status: None }),
             _ => {}
         }
         buf.clear();

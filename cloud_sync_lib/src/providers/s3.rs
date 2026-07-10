@@ -112,12 +112,12 @@ impl StorageBackend for S3Provider {
 
         let file_content = fs::read(local_path).await?;
         let res = self.bucket.put_object(&clean_path, &file_content).await
-            .map_err(|e| StorageError::Provider(format!("S3 upload error: {}", e)))?;
+            .map_err(|e| StorageError::Provider { message: format!("S3 upload error: {}", e), status: None })?;
 
         // HTTP status 200 or 201 indicates success
         let status_code = res.status_code();
         if status_code != 200 && status_code != 201 {
-            return Err(StorageError::Provider(format!("S3 upload returned status code: {}", status_code)));
+            return Err(StorageError::Provider { message: format!("S3 upload returned status code: {}", status_code), status: None });
         }
 
         Ok(())
@@ -127,11 +127,11 @@ impl StorageBackend for S3Provider {
         let clean_path = self.format_path(remote_path);
 
         let res = self.bucket.get_object(&clean_path).await
-            .map_err(|e| StorageError::Provider(format!("S3 download error: {}", e)))?;
+            .map_err(|e| StorageError::Provider { message: format!("S3 download error: {}", e), status: None })?;
 
         let status_code = res.status_code();
         if status_code != 200 {
-            return Err(StorageError::Provider(format!("S3 download returned status code: {}", status_code)));
+            return Err(StorageError::Provider { message: format!("S3 download returned status code: {}", status_code), status: None });
         }
 
         if let Some(parent) = local_path.parent() {
@@ -147,12 +147,12 @@ impl StorageBackend for S3Provider {
         let clean_path = self.format_path(remote_path);
 
         let res = self.bucket.delete_object(&clean_path).await
-            .map_err(|e| StorageError::Provider(format!("S3 delete error: {}", e)))?;
+            .map_err(|e| StorageError::Provider { message: format!("S3 delete error: {}", e), status: None })?;
 
         let status_code = res.status_code();
         // 204 No Content or 200 OK are typical success status codes
         if status_code != 200 && status_code != 204 {
-            return Err(StorageError::Provider(format!("S3 delete returned status code: {}", status_code)));
+            return Err(StorageError::Provider { message: format!("S3 delete returned status code: {}", status_code), status: None });
         }
 
         Ok(())
@@ -166,7 +166,7 @@ impl StorageBackend for S3Provider {
 
         // List files in the bucket matching the prefix
         let results = self.bucket.list(prefix.clone(), Some("/".to_string())).await
-            .map_err(|e| StorageError::Provider(format!("S3 list error: {}", e)))?;
+            .map_err(|e| StorageError::Provider { message: format!("S3 list error: {}", e), status: None })?;
 
         let mut items = Vec::new();
         for result in results {

@@ -4,6 +4,7 @@
 //! and definitions for sharing OAuth client credentials.
 
 use serde::{Deserialize, Serialize};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -18,13 +19,14 @@ pub enum SyncMode {
 }
 
 /// Common configuration settings shared by all storage providers.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Zeroize, ZeroizeOnDrop)]
 pub struct CommonProviderSettings {
     /// Optional prefix folder in the remote storage where files will be synced.
     pub destination_folder: Option<String>,
     /// Optional toggle to enable/disable the provider backend.
     pub enabled: Option<bool>,
     /// Optional sync mode: two-way, one-way, one-way-no-deletions
+    #[zeroize(skip)]
     pub sync_mode: Option<SyncMode>,
     /// Optional password for client-side encryption.
     pub encryption_password: Option<String>,
@@ -80,7 +82,7 @@ pub trait ProviderConfig {
 ///
 /// Contains client secrets and long-lived refresh tokens used to retrieve
 /// short-lived access tokens dynamically during API execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct OAuthCredentials {
     /// OAuth2 Client ID.
     pub client_id: String,
@@ -99,7 +101,7 @@ impl ProviderConfig for OAuthCredentials {
 }
 
 /// Credentials and URL configuration for WebDAV servers.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct WebDAVCredentials {
     /// WebDAV Server Base URL.
     pub url: String,
@@ -118,7 +120,7 @@ impl ProviderConfig for WebDAVCredentials {
 }
 
 /// Credentials configuration for Amazon S3 and S3-Compatible backends.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct S3Credentials {
     /// S3 Bucket name.
     pub bucket: String,
@@ -141,7 +143,7 @@ impl ProviderConfig for S3Credentials {
 }
 
 /// Credentials configuration for SFTP.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct SFTPCredentials {
     /// SFTP Host address.
     pub host: String,
@@ -164,7 +166,7 @@ impl ProviderConfig for SFTPCredentials {
 }
 
 /// Credentials configuration for Nextcloud WebDAV and OCS services.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct NextcloudCredentials {
     /// Nextcloud Server URL (e.g. https://nextcloud.example.com)
     pub url: String,
@@ -183,7 +185,7 @@ impl ProviderConfig for NextcloudCredentials {
 }
 
 /// Credentials configuration for MEGA cloud storage.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct MegaCredentials {
     /// MEGA Account Email.
     pub email: String,
@@ -200,7 +202,7 @@ impl ProviderConfig for MegaCredentials {
 }
 
 /// Credentials configuration for Azure Blob Storage.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct AzureBlobCredentials {
     /// Azure Storage Account name.
     pub account_name: String,
@@ -221,7 +223,7 @@ impl ProviderConfig for AzureBlobCredentials {
 }
 
 /// Credentials configuration for Google Cloud Storage (GCS).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct GCSCredentials {
     /// Target Google Cloud Storage bucket name.
     pub bucket: String,
@@ -240,7 +242,7 @@ impl ProviderConfig for GCSCredentials {
 }
 
 /// Credentials configuration for Backblaze B2.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct B2Credentials {
     /// Target Backblaze B2 bucket name.
     pub bucket: String,
@@ -261,7 +263,7 @@ impl ProviderConfig for B2Credentials {
 }
 
 /// Credentials configuration for pCloud.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct PCloudCredentials {
     /// pCloud OAuth2 Access Token.
     pub access_token: String,
@@ -278,7 +280,7 @@ impl ProviderConfig for PCloudCredentials {
 }
 
 /// Credentials configuration for IPFS Pinning Service (e.g. Pinata).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct IPFSCredentials {
     /// JWT Bearer Token for authorization.
     pub jwt_token: String,

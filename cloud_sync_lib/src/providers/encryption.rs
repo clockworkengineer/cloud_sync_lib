@@ -52,7 +52,7 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         // 3. Encrypt
         let cipher = Aes256Gcm::new(&self.key);
         let ciphertext = cipher.encrypt(nonce, plaintext.as_slice())
-            .map_err(|e| StorageError::Provider(format!("Encryption failed: {}", e)))?;
+            .map_err(|e| StorageError::Provider { message: format!("Encryption failed: {}", e), status: None })?;
 
         // 4. Prepend nonce to ciphertext
         let mut payload = Vec::with_capacity(12 + ciphertext.len());
@@ -89,7 +89,7 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         let _ = fs::remove_file(&temp_path).await;
 
         if payload.len() < 12 {
-            return Err(StorageError::Provider("Invalid encrypted file: too short".to_string()));
+            return Err(StorageError::Provider { message: "Invalid encrypted file: too short".to_string(), status: None });
         }
 
         // 4. Split nonce and ciphertext
@@ -99,7 +99,7 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         // 5. Decrypt
         let cipher = Aes256Gcm::new(&self.key);
         let plaintext = cipher.decrypt(nonce, ciphertext)
-            .map_err(|e| StorageError::Provider(format!("Decryption failed: {}", e)))?;
+            .map_err(|e| StorageError::Provider { message: format!("Decryption failed: {}", e), status: None })?;
 
         // 6. Write decrypted content to target path
         if let Some(parent) = local_path.parent() {

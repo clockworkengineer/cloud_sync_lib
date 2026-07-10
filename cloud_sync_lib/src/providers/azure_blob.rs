@@ -360,7 +360,7 @@ impl StorageBackend for AzureBlobProvider {
                         }
                     }
                     Ok(Event::Eof) => break,
-                    Err(e) => return Err(StorageError::Provider(format!("XML parse error: {}", e))),
+                    Err(e) => return Err(StorageError::Provider { message: format!("XML parse error: {}", e), status: None }),
                     _ => {}
                 }
                 buf.clear();
