@@ -4,3 +4,10 @@
 # config.toml
 private_config.toml
 watched_folder/.sync_state.json
+
+# Tauri generated sidecars
+/cloud_sync_tauri/binaries/cloud_sync_daemon-*
+# Tauri generated icons
+/cloud_sync_tauri/icons/icon.ico
+/cloud_sync_tauri/icons/128x128.png
+
