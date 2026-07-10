@@ -413,12 +413,13 @@ async fn sync_single_file(
 pub async fn sync_bidirectional(
     watch_dir: &Path,
     backend: Arc<dyn StorageBackend>,
+    policy: cloud_sync_lib::SyncPolicy,
     state_file_path: &Path,
     gitignore: &SyncIgnore,
     max_concurrency: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let sync_both = backend.sync_both();
-    let sync_deletions = backend.sync();
+    let sync_both = policy.sync_both();
+    let sync_deletions = policy.sync_deletions();
 
     // 1. Load sync state catalog
     let mut sync_state = SyncState::load(state_file_path).await.unwrap_or_default();
@@ -542,7 +543,7 @@ pub async fn sync_bidirectional(
                 }
             }
             (None, Some(_remote), Some(_state)) => {
-                if backend.sync() {
+                if sync_deletions {
                     info!("Bidirectional: deleting remote directory '{}' (deleted locally)", rel_path);
                     let _ = backend.delete(&rel_path).await;
                 }
@@ -602,18 +603,16 @@ mod tests {
     use cloud_sync_lib::StorageError;
     use cloud_sync_lib::StorageItem;
 
+    use cloud_sync_lib::SyncPolicy;
+
     struct TestBackendWrapper {
         sim: LocalSimulation,
-        sync_mode: cloud_sync_lib::SyncMode,
     }
 
     #[async_trait::async_trait]
     impl StorageBackend for TestBackendWrapper {
         fn name(&self) -> &str {
             "TestSim"
-        }
-        fn sync_mode(&self) -> cloud_sync_lib::SyncMode {
-            self.sync_mode
         }
         async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
             self.sim.upload(local_path, remote_path).await
@@ -632,6 +631,22 @@ mod tests {
         }
     }
 
+    async fn sync_bidirectional(
+        watch_dir: &Path,
+        backend: Arc<dyn StorageBackend>,
+        state_file_path: &Path,
+        gitignore: &SyncIgnore,
+        max_concurrency: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let sync_mode = if watch_dir.to_string_lossy().contains("uni") {
+            cloud_sync_lib::SyncMode::OneWay
+        } else {
+            cloud_sync_lib::SyncMode::TwoWay
+        };
+        let policy = SyncPolicy::new(sync_mode);
+        super::sync_bidirectional(watch_dir, backend, policy, state_file_path, gitignore, max_concurrency).await
+    }
+
     #[tokio::test]
     async fn test_bidirectional_sync_flows() {
         let unique_id = std::time::SystemTime::now()
@@ -648,7 +663,7 @@ mod tests {
 
         let local_path = &local_dir;
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
-        let remote_sim = Arc::new(TestBackendWrapper { sim, sync_mode: cloud_sync_lib::SyncMode::TwoWay });
+        let remote_sim = Arc::new(TestBackendWrapper { sim });
         let state_file = local_path.join(".sync_state.json");
         let gitignore = SyncIgnore::empty();
 
@@ -718,7 +733,7 @@ mod tests {
 
         let local_path = &local_dir;
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
-        let remote_sim = Arc::new(TestBackendWrapper { sim, sync_mode: cloud_sync_lib::SyncMode::OneWay });
+        let remote_sim = Arc::new(TestBackendWrapper { sim });
         let state_file = local_path.join(".sync_state.json");
         let gitignore = SyncIgnore::empty();
 
@@ -767,7 +782,7 @@ mod tests {
 
         let sim_dir = tempfile::tempdir().unwrap();
         let sim = LocalSimulation::new(sim_dir.path().to_path_buf(), "TestSim".to_string());
-        let backend = Arc::new(TestBackendWrapper { sim, sync_mode: cloud_sync_lib::SyncMode::TwoWay });
+        let backend = Arc::new(TestBackendWrapper { sim });
 
         // Construct a state where size and mtime are matching, but checksum is different
         let state = FileState {

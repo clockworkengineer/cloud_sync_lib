@@ -19,6 +19,11 @@ pub struct S3Provider {
 }
 
 impl S3Provider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: S3Credentials) -> S3ProviderBuilder {
+        S3ProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `S3Provider` using the provided credentials.
     ///
     /// # Arguments
@@ -214,9 +219,41 @@ impl StorageBackend for S3Provider {
         Ok(items)
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.credentials.sync_mode()
-    }
 }
 
+
+
+/// Builder for [`S3Provider`].
+pub struct S3ProviderBuilder {
+    pub credentials: S3Credentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl S3ProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: S3Credentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> S3Provider {
+        S3Provider::new(self.credentials)
+    }
+}

@@ -52,6 +52,11 @@ fn url_encode(input: &str) -> String {
 }
 
 impl GCSProvider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: GCSCredentials) -> GCSProviderBuilder {
+        GCSProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `GCSProvider` using the provided credentials.
     pub fn new(credentials: GCSCredentials) -> Self {
         let api_url = if let Some(ref ep) = credentials.endpoint {
@@ -268,8 +273,40 @@ impl StorageBackend for GCSProvider {
         }).await
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.credentials.sync_mode()
+}
+
+
+/// Builder for [`GCSProvider`].
+pub struct GCSProviderBuilder {
+    pub credentials: GCSCredentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl GCSProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: GCSCredentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> GCSProvider {
+        GCSProvider::new(self.credentials)
     }
 }

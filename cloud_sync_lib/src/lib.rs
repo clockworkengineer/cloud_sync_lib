@@ -17,34 +17,34 @@ pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCred
 pub use state::{SyncState, FileState};
 pub use ignore::SyncIgnore;
 #[cfg(feature = "google_drive")]
-pub use providers::GoogleDriveProvider;
+pub use providers::{GoogleDriveProvider, GoogleDriveProviderBuilder};
 #[cfg(feature = "dropbox")]
-pub use providers::DropboxProvider;
+pub use providers::{DropboxProvider, DropboxProviderBuilder};
 #[cfg(feature = "onedrive")]
-pub use providers::OneDriveProvider;
+pub use providers::{OneDriveProvider, OneDriveProviderBuilder};
 #[cfg(feature = "webdav")]
-pub use providers::WebDAVProvider;
+pub use providers::{WebDAVProvider, WebDAVProviderBuilder};
 #[cfg(feature = "s3")]
-pub use providers::S3Provider;
+pub use providers::{S3Provider, S3ProviderBuilder};
 #[cfg(feature = "sftp")]
-pub use providers::SFTPProvider;
+pub use providers::{SFTPProvider, SFTPProviderBuilder};
 #[cfg(feature = "nextcloud")]
-pub use providers::NextcloudProvider;
+pub use providers::{NextcloudProvider, NextcloudProviderBuilder};
 #[cfg(feature = "box")]
-pub use providers::BoxProvider;
+pub use providers::{BoxProvider, BoxProviderBuilder};
 #[cfg(feature = "mega")]
-pub use providers::MegaProvider;
+pub use providers::{MegaProvider, MegaProviderBuilder};
 #[cfg(feature = "azure_blob")]
-pub use providers::AzureBlobProvider;
+pub use providers::{AzureBlobProvider, AzureBlobProviderBuilder};
 #[cfg(feature = "gcs")]
-pub use providers::GCSProvider;
+pub use providers::{GCSProvider, GCSProviderBuilder};
 #[cfg(feature = "b2")]
-pub use providers::B2Provider;
+pub use providers::{B2Provider, B2ProviderBuilder};
 #[cfg(feature = "pcloud")]
-pub use providers::PCloudProvider;
+pub use providers::{PCloudProvider, PCloudProviderBuilder};
 #[cfg(feature = "ipfs")]
-pub use providers::IPFSProvider;
-pub use traits::{StorageBackend, StorageError, StorageItem};
+pub use providers::{IPFSProvider, IPFSProviderBuilder};
+pub use traits::{StorageBackend, StorageError, StorageItem, SyncPolicy};
 
 #[cfg(test)]
 mod tests {

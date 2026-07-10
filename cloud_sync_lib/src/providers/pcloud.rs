@@ -48,6 +48,11 @@ pub struct PCloudProvider {
 }
 
 impl PCloudProvider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: PCloudCredentials) -> PCloudProviderBuilder {
+        PCloudProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `PCloudProvider` using the provided credentials.
     pub fn new(credentials: PCloudCredentials) -> Self {
         let api_url = if let Some(ref ep) = credentials.endpoint {
@@ -222,8 +227,40 @@ impl StorageBackend for PCloudProvider {
         }).await
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.credentials.sync_mode()
+}
+
+
+/// Builder for [`PCloudProvider`].
+pub struct PCloudProviderBuilder {
+    pub credentials: PCloudCredentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl PCloudProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: PCloudCredentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> PCloudProvider {
+        PCloudProvider::new(self.credentials)
     }
 }

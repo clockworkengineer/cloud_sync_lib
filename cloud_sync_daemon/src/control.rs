@@ -29,7 +29,7 @@ pub async fn handle_control_command(
     match parts[0] {
         "status" => {
             let s = state.lock().await;
-            let backend_names: Vec<String> = s.backends.iter().map(|b| b.name().to_string()).collect();
+            let backend_names: Vec<String> = s.backends.iter().map(|ab| ab.backend.name().to_string()).collect();
             
             let mut failed_backends: Vec<String> = s.connection_errors.keys().map(|k| {
                 if k.starts_with("Encrypted(") && k.ends_with(')') {
@@ -151,9 +151,10 @@ pub async fn handle_control_command(
             }
             let target_provider = parts[1..].join(" ");
             let s = state.lock().await;
-            let matching_backend = s.backends.iter().find(|b| b.name().eq_ignore_ascii_case(&target_provider));
+            let matching_backend = s.backends.iter().find(|ab| ab.backend.name().eq_ignore_ascii_case(&target_provider));
             match matching_backend {
-                Some(backend) => {
+                Some(active_backend) => {
+                    let backend = active_backend.backend.clone();
                     info!("Clearing all files on remote provider: {}", backend.name());
                     match backend.list("").await {
                         Ok(items) => {

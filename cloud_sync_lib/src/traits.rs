@@ -60,18 +60,6 @@ pub trait StorageBackend: Send + Sync {
     /// Returns the user-friendly name of the storage backend.
     fn name(&self) -> &str;
 
-    /// Configures the upload and download rate limiters on the backend.
-    fn with_limiters(
-        self,
-        _upload_limiter: Option<crate::rate_limit::TokenBucket>,
-        _download_limiter: Option<crate::rate_limit::TokenBucket>,
-    ) -> Self
-    where
-        Self: Sized,
-    {
-        self
-    }
-
     /// Uploads a file from `local_path` to the cloud's `remote_path`.
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError>;
 
@@ -88,23 +76,72 @@ pub trait StorageBackend: Send + Sync {
     async fn create_folder(&self, _remote_path: &str) -> Result<(), StorageError> {
         Ok(())
     }
+}
 
-    /// Returns the sync mode for the backend.
-    fn sync_mode(&self) -> SyncMode {
-        SyncMode::OneWay
+#[async_trait::async_trait]
+impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        (**self).upload(local_path, remote_path).await
+    }
+    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        (**self).download(remote_path, local_path).await
+    }
+    async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+        (**self).delete(remote_path).await
+    }
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        (**self).list(remote_path).await
+    }
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        (**self).create_folder(remote_path).await
+    }
+}
+
+#[async_trait::async_trait]
+impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        (**self).upload(local_path, remote_path).await
+    }
+    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        (**self).download(remote_path, local_path).await
+    }
+    async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+        (**self).delete(remote_path).await
+    }
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        (**self).list(remote_path).await
+    }
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        (**self).create_folder(remote_path).await
+    }
+}
+
+/// Sync policy details indicating directionality and deletion behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SyncPolicy {
+    pub mode: SyncMode,
+}
+
+impl SyncPolicy {
+    pub fn new(mode: SyncMode) -> Self {
+        Self { mode }
     }
 
-    /// Returns whether the backend should sync deletions.
-    fn sync(&self) -> bool {
-        match self.sync_mode() {
+    pub fn sync_deletions(&self) -> bool {
+        match self.mode {
             SyncMode::TwoWay | SyncMode::OneWay => true,
             SyncMode::OneWayNoDeletions => false,
         }
     }
 
-    /// Returns whether the backend should sync both ways (bidirectionally).
-    fn sync_both(&self) -> bool {
-        match self.sync_mode() {
+    pub fn sync_both(&self) -> bool {
+        match self.mode {
             SyncMode::TwoWay => true,
             SyncMode::OneWay | SyncMode::OneWayNoDeletions => false,
         }

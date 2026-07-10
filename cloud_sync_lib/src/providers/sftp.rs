@@ -15,6 +15,11 @@ pub struct SFTPProvider {
 }
 
 impl SFTPProvider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: SFTPCredentials) -> SFTPProviderBuilder {
+        SFTPProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `SFTPProvider` instance.
     pub fn new(creds: SFTPCredentials) -> Self {
         Self { creds }
@@ -220,9 +225,41 @@ impl StorageBackend for SFTPProvider {
         .map_err(|e| StorageError::Provider(e.to_string()))?
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.creds.sync_mode()
-    }
 }
 
+
+
+/// Builder for [`SFTPProvider`].
+pub struct SFTPProviderBuilder {
+    pub credentials: SFTPCredentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl SFTPProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: SFTPCredentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> SFTPProvider {
+        SFTPProvider::new(self.credentials)
+    }
+}

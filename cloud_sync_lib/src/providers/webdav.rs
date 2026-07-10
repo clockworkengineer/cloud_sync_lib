@@ -27,6 +27,11 @@ pub struct WebDAVProvider {
 }
 
 impl WebDAVProvider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: WebDAVCredentials) -> WebDAVProviderBuilder {
+        WebDAVProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `WebDAVProvider` using the provided WebDAV credentials.
     ///
     /// # Arguments
@@ -200,16 +205,6 @@ impl StorageBackend for WebDAVProvider {
         "WebDAV"
     }
 
-    fn with_limiters(
-        self,
-        upload_limiter: Option<crate::rate_limit::TokenBucket>,
-        download_limiter: Option<crate::rate_limit::TokenBucket>,
-    ) -> Self
-    where
-        Self: Sized,
-    {
-        self.with_limiters(upload_limiter, download_limiter)
-    }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
@@ -321,9 +316,41 @@ impl StorageBackend for WebDAVProvider {
         }).await
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.credentials.sync_mode()
-    }
 }
 
+
+
+/// Builder for [`WebDAVProvider`].
+pub struct WebDAVProviderBuilder {
+    pub credentials: WebDAVCredentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl WebDAVProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: WebDAVCredentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> WebDAVProvider {
+        WebDAVProvider::new(self.credentials)
+    }
+}

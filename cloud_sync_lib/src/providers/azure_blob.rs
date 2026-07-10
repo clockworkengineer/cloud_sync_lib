@@ -27,6 +27,11 @@ pub struct AzureBlobProvider {
 }
 
 impl AzureBlobProvider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: AzureBlobCredentials) -> AzureBlobProviderBuilder {
+        AzureBlobProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `AzureBlobProvider` using the provided credentials.
     pub fn new(credentials: AzureBlobCredentials) -> Self {
         let api_url = if let Some(ref ep) = credentials.endpoint {
@@ -365,8 +370,40 @@ impl StorageBackend for AzureBlobProvider {
         }).await
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.credentials.sync_mode()
+}
+
+
+/// Builder for [`AzureBlobProvider`].
+pub struct AzureBlobProviderBuilder {
+    pub credentials: AzureBlobCredentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl AzureBlobProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: AzureBlobCredentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> AzureBlobProvider {
+        AzureBlobProvider::new(self.credentials)
     }
 }

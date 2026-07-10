@@ -130,10 +130,6 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         self.inner.create_folder(remote_path).await
     }
-
-    fn sync_mode(&self) -> super::SyncMode {
-        self.inner.sync_mode()
-    }
 }
 
 #[cfg(test)]

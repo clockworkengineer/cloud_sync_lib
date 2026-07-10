@@ -27,6 +27,11 @@ pub struct OneDriveProvider {
 }
 
 impl OneDriveProvider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: OAuthCredentials) -> OneDriveProviderBuilder {
+        OneDriveProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `OneDriveProvider` using the provided OAuth credentials.
     ///
     /// # Arguments
@@ -105,16 +110,6 @@ impl StorageBackend for OneDriveProvider {
         "OneDrive"
     }
 
-    fn with_limiters(
-        self,
-        upload_limiter: Option<crate::rate_limit::TokenBucket>,
-        download_limiter: Option<crate::rate_limit::TokenBucket>,
-    ) -> Self
-    where
-        Self: Sized,
-    {
-        self.with_limiters(upload_limiter, download_limiter)
-    }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
@@ -219,9 +214,41 @@ impl StorageBackend for OneDriveProvider {
         }).await
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.credentials.sync_mode()
-    }
 }
 
+
+
+/// Builder for [`OneDriveProvider`].
+pub struct OneDriveProviderBuilder {
+    pub credentials: OAuthCredentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl OneDriveProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: OAuthCredentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> OneDriveProvider {
+        OneDriveProvider::new(self.credentials)
+    }
+}

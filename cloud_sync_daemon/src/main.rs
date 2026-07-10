@@ -58,12 +58,18 @@ pub const DEBOUNCE_DELAY_MS: u64 = 150;
 pub const RETRY_DELAY_MS: u64 = 500;
 pub const MAX_SYNC_ATTEMPTS: u32 = 3;
 
+#[derive(Clone)]
+pub struct ActiveBackend {
+    pub backend: Arc<dyn StorageBackend>,
+    pub policy: cloud_sync_lib::SyncPolicy,
+}
+
 /// Internal state of the daemon.
 pub struct DaemonState {
     /// True if the sync operations are temporarily paused.
     pub paused: bool,
     /// Loaded list of active cloud storage backends.
-    pub backends: Vec<Arc<dyn StorageBackend>>,
+    pub backends: Vec<ActiveBackend>,
     /// Path of the watched directory.
     pub watch_dir: PathBuf,
     /// Path of the configuration TOML file.
@@ -86,18 +92,17 @@ pub struct DaemonState {
     pub connection_errors: HashMap<String, String>,
 }
 
-fn try_add_backend<C, P, F>(
-    backends: &mut Vec<Arc<dyn StorageBackend>>,
+fn try_add_backend<C, F>(
+    backends: &mut Vec<ActiveBackend>,
     creds_option: &Option<C>,
     sim_root: PathBuf,
     provider_name: &str,
     upload_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
     download_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
-    builder: F,
+    build_provider: F,
 ) where
     C: ProviderConfig + Clone + 'static,
-    P: StorageBackend + 'static,
-    F: FnOnce(C) -> P,
+    F: FnOnce(C, Option<cloud_sync_lib::rate_limit::TokenBucket>, Option<cloud_sync_lib::rate_limit::TokenBucket>) -> Arc<dyn StorageBackend>,
 {
     if is_provider_enabled(creds_option) {
         let sync_mode = creds_option.as_ref().map(|c| c.sync_mode()).unwrap_or(cloud_sync_lib::SyncMode::OneWay);
@@ -113,18 +118,21 @@ fn try_add_backend<C, P, F>(
             .or_else(|| download_limiter.clone());
 
         let inner = creds_option.clone()
-            .map(builder)
-            .map(|p| p.with_limiters(provider_upload_limiter.clone(), provider_download_limiter.clone()));
+            .map(|creds| build_provider(creds, provider_upload_limiter.clone(), provider_download_limiter.clone()));
 
         let local_sim = LocalSimulation::new(sim_root, provider_name.to_string())
             .with_limiters(provider_upload_limiter, provider_download_limiter);
         let fallback = SimulatedFallback::new(inner, local_sim, provider_name, sync_mode);
 
-        if let Some(password) = creds_option.as_ref().and_then(|c| c.encryption_password()) {
-            backends.push(Arc::new(cloud_sync_lib::EncryptedBackend::new(fallback, password)));
+        let backend: Arc<dyn StorageBackend> = if let Some(password) = creds_option.as_ref().and_then(|c| c.encryption_password()) {
+            Arc::new(cloud_sync_lib::EncryptedBackend::new(fallback, password))
         } else {
-            backends.push(Arc::new(fallback));
-        }
+            Arc::new(fallback)
+        };
+        backends.push(ActiveBackend {
+            backend,
+            policy: cloud_sync_lib::SyncPolicy::new(sync_mode),
+        });
     } else {
         info!("{} provider is disabled in configuration.", provider_name);
     }
@@ -135,8 +143,8 @@ pub fn build_backends(
     config: &config::AppConfig,
     upload_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
     download_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
-) -> Vec<Arc<dyn StorageBackend>> {
-    let mut backends: Vec<Arc<dyn StorageBackend>> = Vec::new();
+) -> Vec<ActiveBackend> {
+    let mut backends: Vec<ActiveBackend> = Vec::new();
 
     #[cfg(feature = "google_drive")]
     try_add_backend(
@@ -146,7 +154,7 @@ pub fn build_backends(
         "Google Drive",
         upload_limiter.clone(),
         download_limiter.clone(),
-        GoogleDriveProvider::new,
+        |creds, ul, dl| Arc::new(GoogleDriveProvider::new(creds).with_limiters(ul, dl)),
     );
 
     #[cfg(feature = "dropbox")]
@@ -157,7 +165,7 @@ pub fn build_backends(
         "Dropbox",
         upload_limiter.clone(),
         download_limiter.clone(),
-        DropboxProvider::new,
+        |creds, ul, dl| Arc::new(DropboxProvider::new(creds).with_limiters(ul, dl)),
     );
 
     #[cfg(feature = "onedrive")]
@@ -168,7 +176,7 @@ pub fn build_backends(
         "OneDrive",
         upload_limiter.clone(),
         download_limiter.clone(),
-        OneDriveProvider::new,
+        |creds, ul, dl| Arc::new(OneDriveProvider::new(creds).with_limiters(ul, dl)),
     );
 
     #[cfg(feature = "webdav")]
@@ -179,7 +187,7 @@ pub fn build_backends(
         "WebDAV",
         upload_limiter.clone(),
         download_limiter.clone(),
-        WebDAVProvider::new,
+        |creds, ul, dl| Arc::new(WebDAVProvider::new(creds).with_limiters(ul, dl)),
     );
 
     #[cfg(feature = "s3")]
@@ -190,7 +198,7 @@ pub fn build_backends(
         "S3",
         upload_limiter.clone(),
         download_limiter.clone(),
-        S3Provider::new,
+        |creds, _ul, _dl| Arc::new(S3Provider::new(creds)),
     );
 
     #[cfg(feature = "sftp")]
@@ -201,7 +209,7 @@ pub fn build_backends(
         "SFTP",
         upload_limiter.clone(),
         download_limiter.clone(),
-        SFTPProvider::new,
+        |creds, _ul, _dl| Arc::new(SFTPProvider::new(creds)),
     );
 
     #[cfg(feature = "nextcloud")]
@@ -212,7 +220,7 @@ pub fn build_backends(
         "Nextcloud",
         upload_limiter.clone(),
         download_limiter.clone(),
-        NextcloudProvider::new,
+        |creds, _ul, _dl| Arc::new(NextcloudProvider::new(creds)),
     );
 
     #[cfg(feature = "box")]
@@ -223,7 +231,7 @@ pub fn build_backends(
         "Box",
         upload_limiter.clone(),
         download_limiter.clone(),
-        BoxProvider::new,
+        |creds, _ul, _dl| Arc::new(BoxProvider::new(creds)),
     );
 
     #[cfg(feature = "mega")]
@@ -234,7 +242,7 @@ pub fn build_backends(
         "MEGA",
         upload_limiter.clone(),
         download_limiter.clone(),
-        MegaProvider::new,
+        |creds, _ul, _dl| Arc::new(MegaProvider::new(creds)),
     );
 
     #[cfg(feature = "azure_blob")]
@@ -245,7 +253,7 @@ pub fn build_backends(
         "Azure Blob",
         upload_limiter.clone(),
         download_limiter.clone(),
-        AzureBlobProvider::new,
+        |creds, _ul, _dl| Arc::new(AzureBlobProvider::new(creds)),
     );
 
     #[cfg(feature = "gcs")]
@@ -256,7 +264,7 @@ pub fn build_backends(
         "GCS",
         upload_limiter.clone(),
         download_limiter.clone(),
-        GCSProvider::new,
+        |creds, _ul, _dl| Arc::new(GCSProvider::new(creds)),
     );
 
     #[cfg(feature = "b2")]
@@ -267,7 +275,7 @@ pub fn build_backends(
         "B2",
         upload_limiter.clone(),
         download_limiter.clone(),
-        B2Provider::new,
+        |creds, _ul, _dl| Arc::new(B2Provider::new(creds)),
     );
 
     #[cfg(feature = "pcloud")]
@@ -278,7 +286,7 @@ pub fn build_backends(
         "pCloud",
         upload_limiter.clone(),
         download_limiter.clone(),
-        PCloudProvider::new,
+        |creds, _ul, _dl| Arc::new(PCloudProvider::new(creds)),
     );
 
     #[cfg(feature = "ipfs")]
@@ -289,7 +297,7 @@ pub fn build_backends(
         "IPFS",
         upload_limiter.clone(),
         download_limiter.clone(),
-        IPFSProvider::new,
+        |creds, _ul, _dl| Arc::new(IPFSProvider::new(creds)),
     );
 
     backends
@@ -351,9 +359,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backends = build_backends(&config, upload_limiter.clone(), download_limiter.clone());
 
     if let Some(target_provider) = clear_remote {
-        let matching_backend = backends.iter().find(|b| b.name().eq_ignore_ascii_case(&target_provider));
+        let matching_backend = backends.iter().find(|ab| ab.backend.name().eq_ignore_ascii_case(&target_provider));
         match matching_backend {
-            Some(backend) => {
+            Some(active_backend) => {
+                let backend = active_backend.backend.clone();
                 info!("Clearing all files on remote provider: {}", backend.name());
                 let items = backend.list("").await?;
                 for item in items {
@@ -374,8 +383,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     info!("Active cloud storage backends:");
-    for backend in &backends {
-        info!(" - {}", backend.name());
+    for active_backend in &backends {
+        info!(" - {}", active_backend.backend.name());
     }
 
     // Wrap state in Mutex/Arc
@@ -404,10 +413,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 s.backends.clone()
             };
 
-            for backend in backends {
-                let name = backend.name().to_string();
+            for active_backend in backends {
+                let name = active_backend.backend.name().to_string();
                 info!("Checking health of provider: {}", name);
-                match backend.list("").await {
+                match active_backend.backend.list("").await {
                     Ok(_) => {
                         let mut s = state_health.lock().await;
                         s.connection_errors.remove(&name);
@@ -463,15 +472,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             info!("Periodic bidirectional sync started...");
             let state_file_path = watch_dir.join(".sync_state.json");
-            for backend in &backends {
+            for active_backend in &backends {
                 if let Err(e) = sync_engine::sync_bidirectional(
                     &watch_dir,
-                    backend.clone(),
+                    active_backend.backend.clone(),
+                    active_backend.policy,
                     &state_file_path,
                     &gitignore,
                     max_concurrency,
                 ).await {
-                    error!("Bidirectional sync failed for backend '{}': {}", backend.name(), e);
+                    error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
                 }
             }
             info!("Periodic bidirectional sync completed.");

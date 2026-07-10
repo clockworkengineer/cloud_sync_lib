@@ -331,33 +331,33 @@ pub mod encryption;
 
 
 #[cfg(feature = "google_drive")]
-pub use google_drive::GoogleDriveProvider;
+pub use google_drive::{GoogleDriveProvider, GoogleDriveProviderBuilder};
 #[cfg(feature = "dropbox")]
-pub use dropbox::DropboxProvider;
+pub use dropbox::{DropboxProvider, DropboxProviderBuilder};
 #[cfg(feature = "onedrive")]
-pub use onedrive::OneDriveProvider;
+pub use onedrive::{OneDriveProvider, OneDriveProviderBuilder};
 #[cfg(feature = "webdav")]
-pub use webdav::WebDAVProvider;
+pub use webdav::{WebDAVProvider, WebDAVProviderBuilder};
 #[cfg(feature = "s3")]
-pub use s3::S3Provider;
+pub use s3::{S3Provider, S3ProviderBuilder};
 #[cfg(feature = "sftp")]
-pub use sftp::SFTPProvider;
+pub use sftp::{SFTPProvider, SFTPProviderBuilder};
 #[cfg(feature = "nextcloud")]
-pub use nextcloud::NextcloudProvider;
+pub use nextcloud::{NextcloudProvider, NextcloudProviderBuilder};
 #[cfg(feature = "box")]
-pub use box_provider::BoxProvider;
+pub use box_provider::{BoxProvider, BoxProviderBuilder};
 #[cfg(feature = "mega")]
-pub use mega_provider::MegaProvider;
+pub use mega_provider::{MegaProvider, MegaProviderBuilder};
 #[cfg(feature = "azure_blob")]
-pub use azure_blob::AzureBlobProvider;
+pub use azure_blob::{AzureBlobProvider, AzureBlobProviderBuilder};
 #[cfg(feature = "gcs")]
-pub use gcs::GCSProvider;
+pub use gcs::{GCSProvider, GCSProviderBuilder};
 #[cfg(feature = "b2")]
-pub use b2::B2Provider;
+pub use b2::{B2Provider, B2ProviderBuilder};
 #[cfg(feature = "pcloud")]
-pub use pcloud::PCloudProvider;
+pub use pcloud::{PCloudProvider, PCloudProviderBuilder};
 #[cfg(feature = "ipfs")]
-pub use ipfs::IPFSProvider;
+pub use ipfs::{IPFSProvider, IPFSProviderBuilder};
 pub use fallback::SimulatedFallback;
 pub use encryption::EncryptedBackend;
 

@@ -18,7 +18,7 @@ pub struct SimulatedFallback<B: StorageBackend> {
     /// The user-friendly name of the storage backend.
     name: String,
     /// The sync mode for this connection.
-    sync_mode: super::SyncMode,
+    _sync_mode: super::SyncMode,
 }
 
 impl<B: StorageBackend> SimulatedFallback<B> {
@@ -37,7 +37,7 @@ impl<B: StorageBackend> SimulatedFallback<B> {
             inner,
             local_sim,
             name: name.to_string(),
-            sync_mode,
+            _sync_mode: sync_mode,
         }
     }
 }
@@ -86,9 +86,5 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         } else {
             self.local_sim.create_folder(remote_path).await
         }
-    }
-
-    fn sync_mode(&self) -> super::SyncMode {
-        self.sync_mode
     }
 }

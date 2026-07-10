@@ -24,6 +24,11 @@ pub struct NextcloudProvider {
 }
 
 impl NextcloudProvider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: NextcloudCredentials) -> NextcloudProviderBuilder {
+        NextcloudProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `NextcloudProvider` using the provided credentials.
     pub fn new(credentials: NextcloudCredentials) -> Self {
         let mut base_url = credentials.url.trim_end_matches('/').to_string();
@@ -268,9 +273,41 @@ impl StorageBackend for NextcloudProvider {
         }).await
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.credentials.sync_mode()
-    }
 }
 
+
+
+/// Builder for [`NextcloudProvider`].
+pub struct NextcloudProviderBuilder {
+    pub credentials: NextcloudCredentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl NextcloudProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: NextcloudCredentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> NextcloudProvider {
+        NextcloudProvider::new(self.credentials)
+    }
+}

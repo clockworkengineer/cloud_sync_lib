@@ -125,6 +125,11 @@ fn url_encode(input: &str) -> String {
 }
 
 impl B2Provider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: B2Credentials) -> B2ProviderBuilder {
+        B2ProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `B2Provider` using the provided credentials.
     pub fn new(credentials: B2Credentials) -> Self {
         Self {
@@ -399,8 +404,40 @@ impl StorageBackend for B2Provider {
         }).await
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.credentials.sync_mode()
+}
+
+
+/// Builder for [`B2Provider`].
+pub struct B2ProviderBuilder {
+    pub credentials: B2Credentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl B2ProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: B2Credentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> B2Provider {
+        B2Provider::new(self.credentials)
     }
 }

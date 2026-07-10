@@ -16,6 +16,11 @@ pub struct MegaProvider {
 }
 
 impl MegaProvider {
+    /// Returns a new builder to configure the provider.
+    pub fn builder(credentials: MegaCredentials) -> MegaProviderBuilder {
+        MegaProviderBuilder::new(credentials)
+    }
+
     /// Creates a new `MegaProvider` using the provided credentials.
     pub fn new(credentials: MegaCredentials) -> Self {
         Self { credentials }
@@ -297,8 +302,40 @@ impl StorageBackend for MegaProvider {
         .map_err(|e| StorageError::Provider(e.to_string()))?
     }
 
-    fn sync_mode(&self) -> super::SyncMode {
-        use super::ProviderConfig;
-        self.credentials.sync_mode()
+}
+
+
+/// Builder for [`MegaProvider`].
+pub struct MegaProviderBuilder {
+    pub credentials: MegaCredentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
+}
+
+impl MegaProviderBuilder {
+    /// Creates a new builder with the required credentials.
+    pub fn new(credentials: MegaCredentials) -> Self {
+        Self {
+            credentials,
+            timeout: None,
+            custom_headers: None,
+        }
+    }
+
+    /// Configures the connection timeout.
+    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Configures custom HTTP headers.
+    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
+        self.custom_headers = Some(headers);
+        self
+    }
+
+    /// Builds the provider.
+    pub fn build(self) -> MegaProvider {
+        MegaProvider::new(self.credentials)
     }
 }

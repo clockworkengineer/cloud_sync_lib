@@ -10,7 +10,7 @@ use notify::{Event, EventKind};
 use tracing::{error, info, warn};
 use cloud_sync_lib::{StorageBackend, SyncIgnore};
 
-use crate::DaemonState;
+use crate::{DaemonState, ActiveBackend};
 use crate::{DEBOUNCE_DELAY_MS, RETRY_DELAY_MS, MAX_SYNC_ATTEMPTS};
 use crate::utils::get_remote_path;
 
@@ -88,11 +88,11 @@ pub async fn scan_local_directory(
 }
 
 /// Scans the watch directory recursively and uploads all files to active backends.
-pub async fn trigger_full_sync(watch_dir: &Path, backends: &[Arc<dyn StorageBackend>], gitignore: &SyncIgnore) -> std::io::Result<()> {
+pub async fn trigger_full_sync(watch_dir: &Path, backends: &[ActiveBackend], gitignore: &SyncIgnore) -> std::io::Result<()> {
     let items = scan_local_directory(watch_dir, gitignore).await?;
     for (remote_path_str, item) in items {
-        for backend in backends {
-            let backend = backend.clone();
+        for active_backend in backends {
+            let backend = active_backend.backend.clone();
             let local_path = item.path.clone();
             let remote_path = remote_path_str.clone();
             let is_dir = item.is_dir;
@@ -190,8 +190,8 @@ pub async fn handle_event(
                 };
                 info!("Path change detected: '{}' (dir: {}). Syncing to all cloud backends...", remote_path_str, is_directory);
 
-                for backend in &backends {
-                    let backend = backend.clone();
+                for active_backend in &backends {
+                    let backend = active_backend.backend.clone();
                     let local_path = path.clone();
                     let remote_path = remote_path_str.clone();
 
@@ -260,12 +260,12 @@ pub async fn handle_event(
                 };
                 info!("File deletion detected: '{}'. Deleting from all cloud backends...", remote_path_str);
 
-                for backend in &backends {
-                    if !backend.sync() {
+                for active_backend in &backends {
+                    let backend = active_backend.backend.clone();
+                    if !active_backend.policy.sync_deletions() {
                         info!("[{}] Skipping remote deletion for '{}' because sync (deletions) is disabled.", backend.name(), remote_path_str);
                         continue;
                     }
-                    let backend = backend.clone();
                     let remote_path = remote_path_str.clone();
 
                     tokio::spawn(async move {
@@ -308,7 +308,6 @@ mod tests {
 
         struct TestBackend {
             name: String,
-            sync: bool,
             delete_called: Arc<AtomicBool>,
         }
 
@@ -330,9 +329,6 @@ mod tests {
             async fn list(&self, _remote_path: &str) -> Result<Vec<cloud_sync_lib::StorageItem>, cloud_sync_lib::StorageError> {
                 Ok(vec![])
             }
-            fn sync(&self) -> bool {
-                self.sync
-            }
         }
 
         let delete_called_sync_true = Arc::new(AtomicBool::new(false));
@@ -340,16 +336,23 @@ mod tests {
 
         let backend_true = Arc::new(TestBackend {
             name: "BackendTrue".to_string(),
-            sync: true,
             delete_called: delete_called_sync_true.clone(),
         });
         let backend_false = Arc::new(TestBackend {
             name: "BackendFalse".to_string(),
-            sync: false,
             delete_called: delete_called_sync_false.clone(),
         });
 
-        let backends: Vec<Arc<dyn StorageBackend>> = vec![backend_true, backend_false];
+        let backends = vec![
+            ActiveBackend {
+                backend: backend_true,
+                policy: cloud_sync_lib::SyncPolicy::new(cloud_sync_lib::SyncMode::OneWay),
+            },
+            ActiveBackend {
+                backend: backend_false,
+                policy: cloud_sync_lib::SyncPolicy::new(cloud_sync_lib::SyncMode::OneWayNoDeletions),
+            },
+        ];
         let state = Arc::new(Mutex::new(DaemonState {
             paused: false,
             backends,
