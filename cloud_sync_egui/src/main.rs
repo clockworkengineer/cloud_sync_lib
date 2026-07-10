@@ -113,12 +113,6 @@ impl eframe::App for CloudSyncApp {
 
             let client = self.client.lock().unwrap();
 
-            // Display error banner if daemon is offline
-            if let Some(ref err) = client.error_message {
-                ui.colored_label(egui::Color32::LIGHT_RED, format!("⚠ Offline: {}", err));
-                ui.add_space(8.0);
-            }
-
             if client.status.is_null() {
                 ui.horizontal(|ui| {
                     ui.spinner();
