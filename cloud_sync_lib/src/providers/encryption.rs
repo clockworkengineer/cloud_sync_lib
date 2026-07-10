@@ -5,7 +5,6 @@ use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use async_trait::async_trait;
 use rand::RngCore;
-use sha2::{Sha256, Digest};
 use std::path::Path;
 use tokio::fs;
 
@@ -19,11 +18,18 @@ pub struct EncryptedBackend<B: StorageBackend> {
 impl<B: StorageBackend> EncryptedBackend<B> {
     /// Creates a new `EncryptedBackend` around the inner backend using a password.
     pub fn new(inner: B, password: &str) -> Self {
-        // Derive a 256-bit key from password using SHA-256
-        let mut hasher = Sha256::new();
-        hasher.update(password.as_bytes());
-        let hash = hasher.finalize();
-        let key = *Key::<Aes256Gcm>::from_slice(&hash);
+        // Derive a 256-bit key from password using PBKDF2-HMAC-SHA256 (10,000 iterations)
+        let salt = b"cloud_sync_lib_salt_aes256gcm";
+        let mut key_bytes = [0u8; 32];
+        let _ = pbkdf2::pbkdf2::<hmac::Hmac<sha2::Sha256>>(
+            password.as_bytes(),
+            salt,
+            10_000,
+            &mut key_bytes,
+        );
+        let key = *Key::<Aes256Gcm>::from_slice(&key_bytes);
+        use zeroize::Zeroize;
+        key_bytes.zeroize();
 
         let name = format!("Encrypted({})", inner.name());
         Self {
@@ -66,12 +72,24 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         // Clean up nonce bytes in memory
         nonce_bytes.zeroize();
 
-        // 5. Write to a temporary file
+        // 5. Write to a temporary file with restricted permissions (0600 on Unix)
         let temp_dir = std::env::temp_dir();
         // Generate a random temporary filename to prevent collisions
         let temp_filename = format!("enc_sync_tmp_{}.enc", rand::random::<u64>());
         let temp_path = temp_dir.join(temp_filename);
-        fs::write(&temp_path, payload).await?;
+
+        let mut options = tokio::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            options.mode(0o600);
+        }
+        {
+            use tokio::io::AsyncWriteExt;
+            let mut file = options.open(&temp_path).await?;
+            file.write_all(&payload).await?;
+            file.flush().await?;
+        }
 
         // 6. Upload temporary file
         let upload_res = self.inner.upload(&temp_path, remote_path).await;
@@ -88,6 +106,17 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         let temp_dir = std::env::temp_dir();
         let temp_filename = format!("dec_sync_tmp_{}.enc", rand::random::<u64>());
         let temp_path = temp_dir.join(temp_filename);
+
+        // Pre-create the temp file with restricted permissions (0600 on Unix)
+        let mut options = tokio::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            options.mode(0o600);
+        }
+        {
+            let _file = options.open(&temp_path).await?;
+        }
 
         // 2. Download from remote to temp path
         self.inner.download(remote_path, &temp_path).await?;

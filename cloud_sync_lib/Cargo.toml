@@ -28,6 +28,7 @@ aes-gcm = "0.10"
 rand = "0.8"
 ignore = "0.4"
 zeroize = { version = "1.7", features = ["derive"] }
+pbkdf2 = { version = "0.12", features = ["simple"] }
 
 
 [features]

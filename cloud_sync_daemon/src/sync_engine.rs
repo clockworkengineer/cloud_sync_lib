@@ -28,6 +28,10 @@ async fn scan_remote_dir(
             Ok(items) => {
                 for item in items {
                     let path_str = item.path.to_string_lossy().to_string();
+                    if path_str.contains("..") || path_str.contains("./") || path_str.starts_with('/') {
+                        info!("Skipping potentially unsafe remote path containing traversal: {}", path_str);
+                        continue;
+                    }
                     if gitignore.is_ignored(&item.path, item.is_dir) {
                         continue;
                     }
