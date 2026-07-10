@@ -41,8 +41,9 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        use zeroize::Zeroize;
         // 1. Read plaintext local file
-        let plaintext = fs::read(local_path).await?;
+        let mut plaintext = fs::read(local_path).await?;
 
         // 2. Generate random 12-byte nonce
         let mut nonce_bytes = [0u8; 12];
@@ -54,10 +55,16 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         let ciphertext = cipher.encrypt(nonce, plaintext.as_slice())
             .map_err(|e| StorageError::Provider { message: format!("Encryption failed: {}", e), status: None })?;
 
+        // Clean up plaintext memory
+        plaintext.zeroize();
+
         // 4. Prepend nonce to ciphertext
         let mut payload = Vec::with_capacity(12 + ciphertext.len());
         payload.extend_from_slice(&nonce_bytes);
         payload.extend_from_slice(&ciphertext);
+
+        // Clean up nonce bytes in memory
+        nonce_bytes.zeroize();
 
         // 5. Write to a temporary file
         let temp_dir = std::env::temp_dir();
@@ -76,6 +83,7 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        use zeroize::Zeroize;
         // 1. Create a temporary path for downloaded encrypted file
         let temp_dir = std::env::temp_dir();
         let temp_filename = format!("dec_sync_tmp_{}.enc", rand::random::<u64>());
@@ -85,10 +93,11 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         self.inner.download(remote_path, &temp_path).await?;
 
         // 3. Read encrypted payload
-        let payload = fs::read(&temp_path).await?;
+        let mut payload = fs::read(&temp_path).await?;
         let _ = fs::remove_file(&temp_path).await;
 
         if payload.len() < 12 {
+            payload.zeroize();
             return Err(StorageError::Provider { message: "Invalid encrypted file: too short".to_string(), status: None });
         }
 
@@ -98,14 +107,20 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
 
         // 5. Decrypt
         let cipher = Aes256Gcm::new(&self.key);
-        let plaintext = cipher.decrypt(nonce, ciphertext)
+        let mut plaintext = cipher.decrypt(nonce, ciphertext)
             .map_err(|e| StorageError::Provider { message: format!("Decryption failed: {}", e), status: None })?;
+
+        // Clean up payload memory
+        payload.zeroize();
 
         // 6. Write decrypted content to target path
         if let Some(parent) = local_path.parent() {
             fs::create_dir_all(parent).await?;
         }
-        fs::write(local_path, plaintext).await?;
+        fs::write(local_path, &plaintext).await?;
+
+        // Clean up decrypted plaintext memory
+        plaintext.zeroize();
 
         Ok(())
     }
@@ -129,6 +144,13 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
 
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         self.inner.create_folder(remote_path).await
+    }
+}
+
+impl<B: StorageBackend> Drop for EncryptedBackend<B> {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.key.as_mut_slice().zeroize();
     }
 }
 

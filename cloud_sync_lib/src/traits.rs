@@ -40,6 +40,18 @@ pub enum StorageError {
     /// Errors originating from the underlying HTTP client library.
     #[error("HTTP client error: {0}")]
     Reqwest(#[from] reqwest::Error),
+
+    /// Authentication expired or invalid credentials.
+    #[error("Authentication expired: {0}")]
+    AuthenticationExpired(String),
+
+    /// A conflict occurred (e.g. duplicate folders or resource state mismatch).
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
+    /// A connection failure occurred with the remote host.
+    #[error("Connection failed: {0}")]
+    ConnectionFailed(String),
 }
 
 /// Common metadata returned by listings or query commands.

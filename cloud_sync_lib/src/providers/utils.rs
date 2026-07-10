@@ -84,6 +84,10 @@ pub async fn parse_response_error(res: reqwest::Response, provider_name: &str, a
         }
     } else if status == reqwest::StatusCode::NOT_FOUND {
         StorageError::NotFound(format!("Resource not found on {}: {}", provider_name, detail))
+    } else if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        StorageError::AuthenticationExpired(format!("Authentication expired or forbidden on {}: {}", provider_name, detail))
+    } else if status == reqwest::StatusCode::CONFLICT {
+        StorageError::Conflict(format!("Conflict on {}: {}", provider_name, detail))
     } else {
         StorageError::Provider {
             message: format!("Failed to {} on {}: {}", action, provider_name, detail),
@@ -199,6 +203,7 @@ pub fn is_transient_error(err: &StorageError) -> bool {
                 false
             }
         }
+        StorageError::ConnectionFailed(_) => true,
         StorageError::Provider { status: Some(status_code), .. } => {
             *status_code == 429 || *status_code == 502 || *status_code == 503 || *status_code == 504
         }
@@ -342,6 +347,54 @@ mod tests {
 
         assert!(matches!(result, Err(StorageError::RateLimit { .. })));
         assert_eq!(counter.load(Ordering::SeqCst), 5); // 5 attempts max
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_retry_respects_retry_after() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use std::time::Instant;
+
+        let server = MockServer::start().await;
+
+        // Mock response returning 429 Too Many Requests with Retry-After: 1
+        Mock::given(method("GET"))
+            .and(path("/retry-test"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .insert_header("Retry-After", "1")
+            )
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+
+        // Next attempt succeeds with 200 OK
+        Mock::given(method("GET"))
+            .and(path("/retry-test"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("success"))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let request_url = format!("{}/retry-test", server.uri());
+
+        let start = Instant::now();
+        let result = execute_with_retry("test_retry_after", "get", || {
+            let cl = client.clone();
+            let url = request_url.clone();
+            async move {
+                let res = cl.get(&url).send().await.map_err(StorageError::Reqwest)?;
+                if !res.status().is_success() {
+                    return Err(parse_response_error(res, "test_retry_after", "get").await);
+                }
+                Ok("success")
+            }
+        }).await;
+
+        let elapsed = start.elapsed();
+        assert_eq!(result.unwrap(), "success");
+        // It should have slept for at least 1 second due to the Retry-After: 1 header
+        assert!(elapsed.as_millis() >= 950, "Should respect Retry-After delay, took {:?}", elapsed);
     }
 }
 
