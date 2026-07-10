@@ -16,6 +16,7 @@ pub trait StorageBackend: Send + Sync {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError>;
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError>;
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError>;
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError>;
 }
 ```
 
@@ -23,24 +24,38 @@ pub trait StorageBackend: Send + Sync {
 
 ## Crate Layout
 
-- **[`traits.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/traits.rs)**: Core trait definitions, list item metadata (`StorageItem`), and error types (`StorageError`).
+- **[`traits.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/traits.rs)**: Core trait definitions, list item metadata (`StorageItem`), sync policies (`SyncPolicy`), and error types (`StorageError`).
 - **[`providers/`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/)**: Submodule housing specific client implementations and helpers:
   - [`google_drive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/google_drive.rs): Google Drive REST API integration.
-  - [`dropbox.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/dropbox.rs): Dropbox REST API integration. Includes prefix `destination_folder` path handling.
-  - [`onedrive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/onedrive.rs): Microsoft OneDrive Graph API integration.
+  - [`dropbox.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/dropbox.rs): Dropbox REST API integration. Includes pagination listing loop.
+  - [`onedrive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/onedrive.rs): Microsoft OneDrive Graph API integration. Includes pagination listing loop.
   - [`webdav.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/webdav.rs): WebDAV client integration.
   - [`s3.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/s3.rs): Amazon S3 and S3-Compatible API integration.
   - [`sftp.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/sftp.rs): SFTP client integration.
   - [`nextcloud.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/nextcloud.rs): Nextcloud WebDAV & OCS client integration.
   - [`azure_blob.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/azure_blob.rs): Azure Blob Storage REST API integration.
   - [`gcs.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/gcs.rs): Google Cloud Storage JSON API integration.
-  - [`b2.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/b2.rs): Backblaze B2 REST API integration.
+  - [`b2.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/b2.rs): Backblaze B2 REST API integration. Includes pagination listing loop.
   - [`pcloud.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/pcloud.rs): pCloud REST API integration.
   - [`ipfs.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/ipfs.rs): IPFS Pinning Service REST API integration.
   - [`box_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/box_provider.rs): Box storage API integration.
   - [`mega_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/mega_provider.rs): MEGA cloud storage encrypted client integration.
   - [`local_sim.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/local_sim.rs): Shared local fallback simulator (`LocalSimulation`) implementing local folder operations for offline testing.
-  - [`utils.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/utils.rs): Helper function `refresh_oauth2_token` for unified, form-encoded OAuth2 access token refresh POST requests.
+  - [`encryption.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/encryption.rs): Client-side zero-knowledge encryption decorator. Implements PBKDF2-HMAC-SHA256 key derivation and secure Unix `0600` file permissions.
+  - [`utils.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/utils.rs): Helpers for OAuth2, HTTP error response mapping, transient retry timing tests.
+
+---
+
+## Backend Registry (Dynamic Instantiation)
+
+The library provides `BackendRegistry` and `BackendCredentials` inside the [`providers/`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/mod.rs) module to enable dynamic backend configuration parsing and instantiation:
+
+```rust
+use cloud_sync_lib::{BackendRegistry, BackendCredentials};
+
+// Instantiate any backend dynamically by passing its matching enum variant
+let provider = BackendRegistry::build(BackendCredentials::S3(s3_credentials));
+```
 
 ---
 
@@ -75,3 +90,4 @@ All providers support dynamic endpoint redirection for automated testing using `
 - Dropbox: `.with_endpoints(auth_url, api_url, content_url)`
 
 Check [`lib.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/lib.rs) for examples of automated mock HTTP flow tests.
+Real integration tests automatically skip gracefully when configuration is missing or tokens are expired.

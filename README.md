@@ -38,8 +38,9 @@ For a detailed look at component interactions, design decisions, and system diag
 ## Key Features
 
 * **Two-Way Synchronization**: Supports both unidirectional (local-to-remote) and bidirectional syncing, including automated local renaming (`*.local-conflict`) for conflict resolution.
-* **Client-Side Zero-Knowledge Encryption**: Optional client-side AES-256-GCM encryption of file payloads before uploading, with automatic decryption on download.
+* **Client-Side Zero-Knowledge Encryption**: Optional client-side AES-256-GCM encryption of file payloads before uploading, with automatic decryption on download. Derived keys are hardened using PBKDF2-HMAC-SHA256.
 * **Bandwidth Rate-Limiting**: Flexible upload and download bandwidth limiting using a Token Bucket implementation.
+* **Cross-Platform Auto-Launch**: Automatically configures the desktop application (which spawns both the UI and background sync daemon) to start on system boot across Windows, macOS, and Linux.
 
 ---
 
@@ -90,3 +91,4 @@ Run unit, mock HTTP (using `wiremock`), and real integration tests:
 ```bash
 cargo test --all
 ```
+*Note: Real connection tests automatically detect whether valid credentials are configured and skip gracefully if they are missing or expired.*

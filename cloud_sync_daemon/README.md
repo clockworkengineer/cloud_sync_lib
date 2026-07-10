@@ -10,6 +10,7 @@ A background CLI daemon that watches a local folder and automatically synchroniz
 2. **Debounces Event Bursts**: Prevents duplicate uploads for rapid modification events.
 3. **Synchronizes Parallelly**: Spawns concurrent asynchronous tasks to upload/delete files on each active cloud backend.
 4. **Handles Offline Fallback**: Safely defaults to local directory simulation if a backend's credentials are not configured.
+5. **Path Traversal Sanitization**: Rejects and skips any remote path containing relative traversal sequences (such as `..`, `./`, or starting with `/`) to protect local folder integrity during sync cycles.
 
 ---
 
