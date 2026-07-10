@@ -5,6 +5,19 @@ use tauri_plugin_shell::ShellExt;
 
 #[tokio::main]
 async fn main() {
+    // Set up auto-launch on system boot
+    if let Ok(current_exe) = std::env::current_exe() {
+        let auto_start = auto_launch::AutoLaunchBuilder::new()
+            .set_app_name("Cloud Sync")
+            .set_app_path(&current_exe.to_string_lossy())
+            .build();
+        if let Ok(auto_start) = auto_start {
+            if let Ok(false) = auto_start.is_enabled() {
+                let _ = auto_start.enable();
+            }
+        }
+    }
+
     // Spawn the background Axum HTTP UI server in a separate task
     tokio::spawn(async {
         if let Err(e) = cloud_sync_ui::start_ui_server().await {
