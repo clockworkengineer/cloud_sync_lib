@@ -212,13 +212,20 @@ impl StorageBackend for SFTPProvider {
 
             let mut items = Vec::new();
             for (path, stat) in readdir_res {
-                items.push(StorageItem {
-                    path,
-                    size: stat.size.unwrap_or(0),
-                    modified: std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(stat.mtime.unwrap_or(0)),
-                    is_dir: stat.is_dir(),
-                    checksum: None,
-                });
+                if let Some(filename) = path.file_name() {
+                    let filename_str = filename.to_string_lossy();
+                    if filename_str == "." || filename_str == ".." {
+                        continue;
+                    }
+                    let relative_path = Path::new(&remote_path).join(filename);
+                    items.push(StorageItem {
+                        path: relative_path,
+                        size: stat.size.unwrap_or(0),
+                        modified: std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(stat.mtime.unwrap_or(0)),
+                        is_dir: stat.is_dir(),
+                        checksum: None,
+                    });
+                }
             }
 
             Ok(items)
