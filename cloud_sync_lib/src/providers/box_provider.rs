@@ -44,6 +44,8 @@ struct BoxItem {
     #[serde(rename = "type")]
     item_type: String,
     size: Option<u64>,
+    content_modified_at: Option<String>,
+    sha1: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -278,7 +280,7 @@ impl StorageBackend for BoxProvider {
                 return Err(StorageError::Provider { message: "Target path is not a folder".to_string(), status: None });
             }
 
-            let url = format!("{}/folders/{}/items", self.api_url, folder_id);
+            let url = format!("{}/folders/{}/items?fields=id,type,name,size,content_modified_at,sha1", self.api_url, folder_id);
             let res = self.client.get(&url)
                 .bearer_auth(&token)
                 .send()
@@ -290,12 +292,16 @@ impl StorageBackend for BoxProvider {
 
             let items = res.json::<BoxFolderItems>().await?;
             let storage_items = items.entries.into_iter().map(|item| {
+                let modified = item.content_modified_at
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
+                    .map(|dt| std::time::SystemTime::from(dt))
+                    .unwrap_or_else(std::time::SystemTime::now);
                 StorageItem {
                     path: PathBuf::from(item.name),
                     is_dir: item.item_type == "folder",
                     size: item.size.unwrap_or(0),
-                    modified: std::time::SystemTime::now(),
-                    checksum: None,
+                    modified,
+                    checksum: item.sha1,
                 }
             }).collect();
 
@@ -422,6 +428,9 @@ impl StorageBackend for BoxProvider {
         }).await
     }
 
+    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+        Ok(crate::checksum::compute_sha1(local_path).await.ok())
+    }
 }
 
 

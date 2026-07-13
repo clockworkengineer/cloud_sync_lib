@@ -60,3 +60,20 @@ pub async fn compute_dropbox_hash(path: &Path) -> io::Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// Computes the SHA-1 checksum of a file at the specified path.
+pub async fn compute_sha1(path: &Path) -> io::Result<String> {
+    use sha1::{Sha1, Digest};
+    let mut file = File::open(path).await?;
+    let mut hasher = Sha1::new();
+    let mut buffer = [0; 8192];
+    loop {
+        let n = file.read(&mut buffer).await?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+
