@@ -188,6 +188,9 @@ pub async fn handle_event(
                         continue;
                     }
                 };
+                if remote_path_str == ".sync_state.json" || remote_path_str == ".syncignore" {
+                    continue;
+                }
                 info!("Path change detected: '{}' (dir: {}). Syncing to all cloud backends...", remote_path_str, is_directory);
 
                 for active_backend in &backends {
@@ -258,6 +261,9 @@ pub async fn handle_event(
                         continue;
                     }
                 };
+                if remote_path_str == ".sync_state.json" || remote_path_str == ".syncignore" {
+                    continue;
+                }
                 info!("File deletion detected: '{}'. Deleting from all cloud backends...", remote_path_str);
 
                 for active_backend in &backends {
@@ -393,5 +399,95 @@ mod tests {
         assert!(gitignore.is_ignored(watch_dir.join("temp/file.txt"), false));
         // Verify that deleting a directory matched by trailing slash is ignored by checking both false and true
         assert!(gitignore.is_ignored(watch_dir.join("temp"), false) || gitignore.is_ignored(watch_dir.join("temp"), true));
+    }
+
+    #[tokio::test]
+    async fn test_scan_local_directory_ignores_sync_files() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let watch_dir = temp_dir.path();
+        
+        tokio::fs::write(watch_dir.join("test.txt"), "hello").await.unwrap();
+        tokio::fs::write(watch_dir.join(".sync_state.json"), "{}").await.unwrap();
+        tokio::fs::write(watch_dir.join(".syncignore"), "*.log").await.unwrap();
+
+        let gitignore = build_gitignore(watch_dir, &None);
+        let items = scan_local_directory(watch_dir, &gitignore).await.unwrap();
+
+        assert!(items.contains_key("test.txt"));
+        assert!(!items.contains_key(".sync_state.json"));
+        assert!(!items.contains_key(".syncignore"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_event_ignores_sync_files() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct TestBackend {
+            called: Arc<AtomicBool>,
+        }
+
+        #[async_trait::async_trait]
+        impl StorageBackend for TestBackend {
+            fn name(&self) -> &str {
+                "TestBackend"
+            }
+            async fn upload(&self, _local_path: &Path, _remote_path: &str) -> Result<(), cloud_sync_lib::StorageError> {
+                self.called.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+            async fn download(&self, _remote_path: &str, _local_path: &Path) -> Result<(), cloud_sync_lib::StorageError> {
+                Ok(())
+            }
+            async fn delete(&self, _remote_path: &str) -> Result<(), cloud_sync_lib::StorageError> {
+                self.called.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+            async fn list(&self, _remote_path: &str) -> Result<Vec<cloud_sync_lib::StorageItem>, cloud_sync_lib::StorageError> {
+                Ok(vec![])
+            }
+        }
+
+        let called = Arc::new(AtomicBool::new(false));
+        let backend = Arc::new(TestBackend { called: called.clone() });
+
+        let backends = vec![ActiveBackend {
+            backend,
+            policy: cloud_sync_lib::SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+        }];
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let watch_dir = temp_dir.path().to_path_buf();
+        
+        let state = Arc::new(Mutex::new(DaemonState {
+            paused: false,
+            backends,
+            watch_dir: watch_dir.clone(),
+            config_file: "config.toml".to_string(),
+            syncing: false,
+            ui_addr: None,
+            gitignore: SyncIgnore::empty(),
+            exclude: None,
+            upload_limiter: None,
+            download_limiter: None,
+            max_concurrency: 4,
+            connection_errors: HashMap::new(),
+        }));
+
+        let active_locks = Arc::new(Mutex::new(HashMap::new()));
+        
+        // 1. Check Create event for .sync_state.json
+        let sync_state_file = watch_dir.join(".sync_state.json");
+        tokio::fs::write(&sync_state_file, "{}").await.unwrap();
+        let event = Event::new(EventKind::Create(notify::event::CreateKind::File))
+            .add_path(sync_state_file.clone());
+        handle_event(event, state.clone(), active_locks.clone()).await;
+
+        // 2. Check Remove event for .sync_state.json
+        let event_remove = Event::new(EventKind::Remove(notify::event::RemoveKind::File))
+            .add_path(sync_state_file);
+        handle_event(event_remove, state.clone(), active_locks.clone()).await;
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!called.load(Ordering::SeqCst), "Should not trigger upload/delete operations for internal sync files");
     }
 }

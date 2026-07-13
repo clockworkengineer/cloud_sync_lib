@@ -32,6 +32,9 @@ async fn scan_remote_dir(
                         info!("Skipping potentially unsafe remote path containing traversal: {}", path_str);
                         continue;
                     }
+                    if path_str == ".sync_state.json" || path_str == ".syncignore" {
+                        continue;
+                    }
                     if gitignore.is_ignored(&item.path, item.is_dir) {
                         continue;
                     }
