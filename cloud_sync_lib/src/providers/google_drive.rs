@@ -360,6 +360,9 @@ impl StorageBackend for GoogleDriveProvider {
         }).await
     }
 
+    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+        Ok(crate::checksum::compute_md5(local_path).await.ok())
+    }
 }
 
 

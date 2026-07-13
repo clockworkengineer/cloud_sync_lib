@@ -32,7 +32,7 @@ async fn scan_remote_dir(
                         info!("Skipping potentially unsafe remote path containing traversal: {}", path_str);
                         continue;
                     }
-                    if path_str == ".sync_state.json" || path_str == ".syncignore" {
+                    if path_str == ".sync_state.json" || path_str == ".syncignore" || (path_str.starts_with(".sync_state_") && path_str.ends_with(".json")) {
                         continue;
                     }
                     if gitignore.is_ignored(&item.path, item.is_dir) {
@@ -98,7 +98,7 @@ async fn verified_upload(
     local_path: &Path,
     remote_path: &str,
 ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
-    let local_checksum = cloud_sync_lib::checksum::compute_sha256(local_path).await.ok();
+    let local_checksum = backend.compute_local_checksum(local_path).await.ok().flatten();
     let mut retries = 0;
     loop {
         backend.upload(local_path, remote_path).await?;
@@ -132,7 +132,7 @@ async fn verified_download(
     let mut retries = 0;
     loop {
         backend.download(remote_path, local_path).await?;
-        let local_checksum = cloud_sync_lib::checksum::compute_sha256(local_path).await.ok();
+        let local_checksum = backend.compute_local_checksum(local_path).await.ok().flatten();
         if let (Some(ref local_hash), Some(ref remote_hash)) = (&local_checksum, &remote_checksum) {
             if local_hash != *remote_hash {
                 if retries < 3 {
@@ -438,7 +438,7 @@ pub async fn sync_bidirectional(
         let checksum = if item.is_dir {
             None
         } else {
-            cloud_sync_lib::checksum::compute_sha256(&item.path).await.ok()
+            backend.compute_local_checksum(&item.path).await.ok().flatten()
         };
         local_files.insert(rel_path, FileInfo {
             size: item.size,

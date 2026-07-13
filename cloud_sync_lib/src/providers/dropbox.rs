@@ -265,6 +265,9 @@ impl StorageBackend for DropboxProvider {
         }).await
     }
 
+    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+        Ok(crate::checksum::compute_dropbox_hash(local_path).await.ok())
+    }
 }
 
 

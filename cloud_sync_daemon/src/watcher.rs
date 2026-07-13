@@ -70,7 +70,7 @@ pub async fn scan_local_directory(
                 }
                 if let Ok(rel_path) = path.strip_prefix(watch_dir) {
                     let rel_str = rel_path.to_string_lossy().to_string();
-                    if rel_str == ".sync_state.json" || rel_str == ".syncignore" {
+                    if rel_str == ".sync_state.json" || rel_str == ".syncignore" || (rel_str.starts_with(".sync_state_") && rel_str.ends_with(".json")) {
                         continue;
                     }
                     files.insert(rel_str, ScannedItem {
@@ -188,7 +188,7 @@ pub async fn handle_event(
                         continue;
                     }
                 };
-                if remote_path_str == ".sync_state.json" || remote_path_str == ".syncignore" {
+                if remote_path_str == ".sync_state.json" || remote_path_str == ".syncignore" || (remote_path_str.starts_with(".sync_state_") && remote_path_str.ends_with(".json")) {
                     continue;
                 }
                 info!("Path change detected: '{}' (dir: {}). Syncing to all cloud backends...", remote_path_str, is_directory);
@@ -261,7 +261,7 @@ pub async fn handle_event(
                         continue;
                     }
                 };
-                if remote_path_str == ".sync_state.json" || remote_path_str == ".syncignore" {
+                if remote_path_str == ".sync_state.json" || remote_path_str == ".syncignore" || (remote_path_str.starts_with(".sync_state_") && remote_path_str.ends_with(".json")) {
                     continue;
                 }
                 info!("File deletion detected: '{}'. Deleting from all cloud backends...", remote_path_str);

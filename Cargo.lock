@@ -1157,6 +1157,7 @@ dependencies = [
  "hmac",
  "httpdate",
  "ignore",
+ "md5",
  "mega",
  "pbkdf2 0.12.2",
  "quick-xml 0.31.0",

@@ -94,6 +94,12 @@ pub trait StorageBackend: Send + Sync {
     async fn create_folder(&self, _remote_path: &str) -> Result<(), StorageError> {
         Ok(())
     }
+
+    /// Computes the local checksum of a file matching the provider's expected format.
+    /// Returns `Ok(None)` if the provider does not support checksum verification.
+    async fn compute_local_checksum(&self, _local_path: &Path) -> Result<Option<String>, StorageError> {
+        Ok(None)
+    }
 }
 
 #[async_trait::async_trait]
@@ -116,6 +122,9 @@ impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         (**self).create_folder(remote_path).await
     }
+    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+        (**self).compute_local_checksum(local_path).await
+    }
 }
 
 #[async_trait::async_trait]
@@ -137,6 +146,9 @@ impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
     }
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         (**self).create_folder(remote_path).await
+    }
+    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+        (**self).compute_local_checksum(local_path).await
     }
 }
 
