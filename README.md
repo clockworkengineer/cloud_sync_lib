@@ -11,6 +11,7 @@ The workspace is split into several modular components:
 2. **[`cloud_sync_daemon`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_daemon/README.md)**: The CLI daemon wrapper that watches a folder for filesystem events and coordinates synchronization across all enabled backends.
 3. **[`cloud_sync_ui`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_ui/README.md)**: A lightweight Axum-based HTTP server exposing API endpoints to monitor/control the daemon, serving an embedded web dashboard.
 4. **[`cloud_sync_tauri`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_tauri/README.md)**: A Tauri-based desktop GUI application that bundles the web UI and manages the daemon as a sidecar.
+5. **[`cloud_sync_backup`](file:///c:/Projects/cloud_sync_lib/cloud_sync_backup/README.md)**: A background daemon that periodically performs unidirectional synchronization (one-way backups) from a source storage provider to a destination storage provider.
 
 For a detailed look at component interactions, design decisions, and system diagrams, refer to the **[Workspace Architecture Guide](file:///home/robt/projects/cloud_sync_lib/docs/architecture.md)**.
 
@@ -84,6 +85,12 @@ For a detailed look at component interactions, design decisions, and system diag
 Start the synchronization daemon by passing the configuration path:
 ```bash
 cargo run --bin cloud_sync_daemon -- private_config.toml
+```
+
+### Run the Backup Daemon
+Start the backup daemon by passing the backup configuration path:
+```bash
+cargo run --bin cloud_sync_backup -- backup_config.toml
 ```
 
 ### Run Workspace Tests
