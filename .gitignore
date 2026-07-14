@@ -11,3 +11,4 @@ watched_folder/.sync_state.json
 /cloud_sync_tauri/icons/icon.ico
 /cloud_sync_tauri/icons/128x128.png
 
+backup_config.toml

@@ -1118,6 +1118,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "cloud_sync_backup"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "cloud_sync_lib",
+ "futures-util",
+ "ignore",
+ "serde",
+ "tempfile",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "cloud_sync_daemon"
 version = "0.1.0"
 dependencies = [

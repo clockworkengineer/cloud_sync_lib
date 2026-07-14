@@ -1,0 +1,35 @@
+[package]
+name = "cloud_sync_backup"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cloud_sync_lib = { path = "../cloud_sync_lib", default-features = false }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+ignore = "0.4"
+futures-util = "0.3"
+
+[features]
+default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"]
+google_drive = ["cloud_sync_lib/google_drive"]
+dropbox = ["cloud_sync_lib/dropbox"]
+onedrive = ["cloud_sync_lib/onedrive"]
+webdav = ["cloud_sync_lib/webdav"]
+s3 = ["cloud_sync_lib/s3"]
+sftp = ["cloud_sync_lib/sftp"]
+nextcloud = ["cloud_sync_lib/nextcloud"]
+box = ["cloud_sync_lib/box"]
+mega = ["cloud_sync_lib/mega"]
+azure_blob = ["cloud_sync_lib/azure_blob"]
+gcs = ["cloud_sync_lib/gcs"]
+b2 = ["cloud_sync_lib/b2"]
+pcloud = ["cloud_sync_lib/pcloud"]
+ipfs = ["cloud_sync_lib/ipfs"]
+
+[dev-dependencies]
+tempfile = "3.8"
