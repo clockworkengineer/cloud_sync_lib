@@ -10,6 +10,7 @@ struct DaemonClient {
     status: serde_json::Value,
     last_update: Option<Instant>,
     error_message: Option<String>,
+    cached_config_file: Option<String>,
 }
 
 impl DaemonClient {
@@ -18,6 +19,7 @@ impl DaemonClient {
             status: serde_json::Value::Null,
             last_update: None,
             error_message: None,
+            cached_config_file: None,
         }
     }
 }
@@ -54,11 +56,15 @@ impl CloudSyncApp {
                     let mut lock = client_clone.lock().unwrap();
                     match status_res {
                         Ok(val) => {
+                            if let Some(cfg) = val["config_file"].as_str() {
+                                lock.cached_config_file = Some(cfg.to_string());
+                            }
                             lock.status = val;
                             lock.last_update = Some(Instant::now());
                             lock.error_message = None;
                         }
                         Err(e) => {
+                            lock.status = serde_json::Value::Null;
                             lock.error_message = Some(e);
                         }
                     }
@@ -101,6 +107,38 @@ impl CloudSyncApp {
             }
         });
     }
+
+    fn start_daemon_process(&self, config_file: &str) {
+        let config_file = config_file.to_string();
+        self.runtime.spawn(async move {
+            #[cfg(debug_assertions)]
+            let res = std::process::Command::new("cargo")
+                .args(["run", "--bin", "cloud_sync_daemon", "--", &config_file])
+                .spawn();
+
+            #[cfg(not(debug_assertions))]
+            let res = {
+                let mut daemon_path = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|parent| parent.join("cloud_sync_daemon")));
+                if daemon_path.as_ref().map(|p| !p.exists()).unwrap_or(true) {
+                    daemon_path = Some(std::path::PathBuf::from("cloud_sync_daemon"));
+                }
+                std::process::Command::new(daemon_path.unwrap())
+                    .arg(&config_file)
+                    .spawn()
+            };
+
+            match res {
+                Ok(_) => {
+                    println!("Successfully spawned daemon process with config: {}", config_file);
+                }
+                Err(e) => {
+                    eprintln!("Failed to spawn daemon process: {}", e);
+                }
+            }
+        });
+    }
 }
 
 impl eframe::App for CloudSyncApp {
@@ -128,11 +166,52 @@ impl eframe::App for CloudSyncApp {
             let client = self.client.lock().unwrap();
 
             if client.status.is_null() {
+                let config_to_use = if let Some(ref cached) = client.cached_config_file {
+                    cached.clone()
+                } else if std::path::Path::new("private_config.toml").exists() {
+                    "private_config.toml".to_string()
+                } else {
+                    "config.toml".to_string()
+                };
+
                 ui.centered_and_justified(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(egui::RichText::new("Connecting to background sync daemon...")
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(30.0);
+                        ui.label(egui::RichText::new("🛑  Daemon Offline")
+                            .font(egui::FontId::proportional(20.0))
+                            .strong()
+                            .color(egui::Color32::from_rgb(231, 76, 60)));
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new("The background synchronization daemon is not running.")
                             .color(egui::Color32::from_rgb(160, 170, 190)));
+                        ui.add_space(20.0);
+
+                        egui::Frame::none()
+                            .fill(egui::Color32::from_rgb(28, 30, 38))
+                            .inner_margin(12.0)
+                            .rounding(8.0)
+                            .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 48, 58)))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label("Profile / Config File:");
+                                    ui.monospace(&config_to_use);
+                                });
+                            });
+
+                        ui.add_space(20.0);
+
+                        let start_btn = egui::Button::new(egui::RichText::new("▶  Start Daemon").strong())
+                            .fill(egui::Color32::from_rgb(46, 204, 113))
+                            .min_size(egui::vec2(150.0, 36.0));
+                        if ui.add(start_btn).clicked() {
+                            self.start_daemon_process(&config_to_use);
+                        }
+
+                        ui.add_space(20.0);
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label("Waiting for connection...");
+                        });
                     });
                 });
                 return;
