@@ -719,7 +719,11 @@
                 
                 banner.classList.remove('visible');
                 
-                document.getElementById('watched-dir').textContent = data.watch_directory;
+                let cleanWatchDir = data.watch_directory;
+                if (cleanWatchDir.startsWith("\\\\?\\")) {
+                    cleanWatchDir = cleanWatchDir.substring(4);
+                }
+                document.getElementById('watched-dir').textContent = cleanWatchDir;
                 document.getElementById('config-file').textContent = data.config_file;
                 document.getElementById('web-ui-address').textContent = data.web_ui_address || '-';
 

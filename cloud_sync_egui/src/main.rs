@@ -142,6 +142,11 @@ impl eframe::App for CloudSyncApp {
             let paused = status["paused"].as_bool().unwrap_or(false);
             let syncing = status["syncing"].as_bool().unwrap_or(false);
             let watch_dir = status["watch_directory"].as_str().unwrap_or("");
+            let clean_watch_dir = if let Some(stripped) = watch_dir.strip_prefix(r"\\?\") {
+                stripped
+            } else {
+                watch_dir
+            };
             let config_file = status["config_file"].as_str().unwrap_or("");
 
             // Error Banner (if any error in client)
@@ -185,7 +190,7 @@ impl eframe::App for CloudSyncApp {
                                 ui.end_row();
 
                                 ui.label(egui::RichText::new("Watch Folder:").color(egui::Color32::from_rgb(170, 180, 200)));
-                                ui.monospace(watch_dir);
+                                ui.monospace(clean_watch_dir);
                                 ui.end_row();
 
                                 ui.label(egui::RichText::new("Config File:").color(egui::Color32::from_rgb(170, 180, 200)));

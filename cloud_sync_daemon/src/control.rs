@@ -79,9 +79,16 @@ pub async fn handle_control_command(
                 if let Some(ref creds) = config.ipfs_credentials { add_if_placeholder_enabled!("IPFS", &config.ipfs_credentials, &creds.jwt_token); }
             }
 
+            let watch_dir_str = s.watch_dir.to_string_lossy().to_string();
+            let clean_watch_dir = if let Some(stripped) = watch_dir_str.strip_prefix(r"\\?\") {
+                stripped.to_string()
+            } else {
+                watch_dir_str
+            };
+
             format!(
-                "Status: OK\nPaused: {}\nWatch Directory: {:?}\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSyncing: {}\nWeb UI Address: {}\n",
-                s.paused, s.watch_dir, s.config_file, backend_names, failed_backends, s.syncing, s.ui_addr.as_deref().unwrap_or("-")
+                "Status: OK\nPaused: {}\nWatch Directory: \"{}\"\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSyncing: {}\nWeb UI Address: {}\n",
+                s.paused, clean_watch_dir, s.config_file, backend_names, failed_backends, s.syncing, s.ui_addr.as_deref().unwrap_or("-")
             )
         }
         "pause" => {
