@@ -6,7 +6,6 @@ use tracing::{error, info};
 
 use crate::DaemonState;
 use crate::config::load_or_create_config;
-use crate::watcher::trigger_full_sync;
 
 /// Handles a string command sent from the daemon controller via TCP.
 ///
@@ -132,14 +131,26 @@ pub async fn handle_control_command(
                 let watch_dir = s.watch_dir.clone();
                 let backends = s.backends.clone();
                 let gitignore = s.gitignore.clone();
+                let max_concurrency = s.max_concurrency;
                 let state_clone = state.clone();
                 tokio::spawn(async move {
-                    info!("Manual sync triggered via control command. Scanning watch directory...");
-                    if let Err(e) = trigger_full_sync(&watch_dir, &backends, &gitignore).await {
-                        error!("Manual sync failed: {}", e);
-                    } else {
-                        info!("Manual sync completed successfully!");
+                    info!("Manual sync triggered via control command. Starting bidirectional sync...");
+                    for active_backend in &backends {
+                        let safe_name = active_backend.backend.name().to_lowercase().replace(" ", "_");
+                        let state_filename = format!(".sync_state_{}.json", safe_name);
+                        let state_file_path = watch_dir.join(state_filename);
+                        if let Err(e) = crate::sync_engine::sync_bidirectional(
+                            &watch_dir,
+                            active_backend.backend.clone(),
+                            active_backend.policy,
+                            &state_file_path,
+                            &gitignore,
+                            max_concurrency,
+                        ).await {
+                            error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
+                        }
                     }
+                    info!("Manual sync completed!");
                     state_clone.lock().await.syncing = false;
                 });
                 "Status: Sync triggered in background\n".to_string()

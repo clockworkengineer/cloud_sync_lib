@@ -165,7 +165,7 @@ impl eframe::App for CloudSyncApp {
             ui.horizontal(|ui| {
                 if paused {
                     if ui.button("▶ Resume Syncing").clicked() {
-                        self.run_command_sync("start");
+                        self.run_command_sync("resume");
                     }
                 } else {
                     if ui.button("⏸ Pause Syncing").clicked() {
