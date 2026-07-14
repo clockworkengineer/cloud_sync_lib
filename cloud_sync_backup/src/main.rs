@@ -108,12 +108,14 @@ async fn scan_backend_files(backend: &dyn StorageBackend) -> Result<HashMap<Stri
 async fn perform_backup(
     source: &dyn StorageBackend,
     destination: &dyn StorageBackend,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<usize, Box<dyn std::error::Error>> {
     let source_files = scan_backend_files(source).await?;
     let dest_files = scan_backend_files(destination).await?;
 
     let temp_dir = std::env::temp_dir().join("cloud_sync_backup_temp");
     tokio::fs::create_dir_all(&temp_dir).await?;
+
+    let mut sync_count = 0;
 
     for (rel_path, source_item) in source_files {
         let should_copy = match dest_files.get(&rel_path) {
@@ -131,6 +133,7 @@ async fn perform_backup(
             if source_item.is_dir {
                 println!("[Backup] Creating remote directory: {}", rel_path);
                 destination.create_folder(&rel_path).await?;
+                sync_count += 1;
             } else {
                 println!("[Backup] Syncing file: {}", rel_path);
                 let local_temp = temp_dir.join(&rel_path);
@@ -142,12 +145,13 @@ async fn perform_backup(
                 destination.upload(&local_temp, &rel_path).await?;
 
                 let _ = tokio::fs::remove_file(&local_temp).await;
+                sync_count += 1;
             }
         }
     }
 
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-    Ok(())
+    Ok(sync_count)
 }
 
 #[tokio::main]
@@ -185,9 +189,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     loop {
-        println!("[Backup] Starting backup check...");
         match perform_backup(&*source, &*destination).await {
-            Ok(_) => println!("[Backup] Backup scan finished successfully."),
+            Ok(count) => {
+                if count > 0 {
+                    println!("[Backup] Backup scan completed. Synced {} item(s).", count);
+                }
+            }
             Err(e) => eprintln!("[Backup] Backup scan failed: {}", e),
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
