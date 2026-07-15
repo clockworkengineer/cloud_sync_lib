@@ -302,6 +302,14 @@ impl StorageBackend for GoogleDriveProvider {
         }).await
     }
 
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "create_folder", || async {
+            let token = self.get_access_token().await?;
+            let _ = self.get_or_create_file_id(&token, remote_path, true).await?;
+            Ok(())
+        }).await
+    }
+
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         super::utils::execute_with_retry(self.name(), "list", || async {
             let token = self.get_access_token().await?;

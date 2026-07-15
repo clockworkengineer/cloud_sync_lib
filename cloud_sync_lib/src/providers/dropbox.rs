@@ -214,6 +214,36 @@ impl StorageBackend for DropboxProvider {
         }).await
     }
 
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "create_folder", || async {
+            let token = self.get_access_token().await?;
+            let dbx_path = self.format_path(remote_path);
+
+            let body = serde_json::json!({
+                "path": dbx_path,
+                "autorename": false
+            });
+
+            let create_url = format!("{}/create_folder_v2", self.api_url);
+            let res = self.client.post(&create_url)
+                .bearer_auth(&token)
+                .json(&body)
+                .send()
+                .await?;
+
+            let status = res.status();
+            if !status.is_success() {
+                let err_text = res.text().await.unwrap_or_default();
+                if err_text.contains("path/conflict") {
+                    return Ok(());
+                }
+                return Err(StorageError::Provider { message: format!("Failed to create folder: {}", err_text), status: Some(status.as_u16()) });
+            }
+
+            Ok(())
+        }).await
+    }
+
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         super::utils::execute_with_retry(self.name(), "list", || async {
             let token = self.get_access_token().await?;
