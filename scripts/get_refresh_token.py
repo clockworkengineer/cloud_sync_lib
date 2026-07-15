@@ -77,7 +77,7 @@ def read_config():
     Returns:
         tuple: A tuple containing (client_id, client_secret, source_filename) or (None, None, None).
     """
-    for filename in ["private_config.toml", "config.toml"]:
+    for filename in ["private_config.toml", "config.toml", "backup_config.toml"]:
         path = Path(filename)
         if path.exists():
             content = path.read_text()
@@ -102,7 +102,7 @@ def update_config_files(refresh_token):
     Args:
         refresh_token (str): The newly retrieved Google refresh token.
     """
-    for filename in ["config.toml", "private_config.toml"]:
+    for filename in ["config.toml", "private_config.toml", "backup_config.toml"]:
         path = Path(filename)
         if path.exists():
             try:
