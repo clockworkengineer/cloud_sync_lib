@@ -19,7 +19,7 @@ mega = { version = "0.4", optional = true }
 tokio-util = { version = "0.7", features = ["compat"] }
 futures-util = { version = "0.3" }
 base64 = { version = "0.21", optional = true }
-hmac = { version = "0.12", optional = true }
+hmac = { version = "0.12" }
 sha2 = "0.10"
 httpdate = { version = "1.0", optional = true }
 yup-oauth2 = { version = "8.3", optional = true }
@@ -47,7 +47,7 @@ sftp = ["dep:ssh2"]
 nextcloud = []
 box = []
 mega = ["dep:mega"]
-azure_blob = ["dep:base64", "dep:hmac", "dep:httpdate"]
+azure_blob = ["dep:base64", "dep:httpdate"]
 gcs = ["dep:yup-oauth2"]
 b2 = []
 pcloud = []
