@@ -345,8 +345,14 @@ impl StorageBackend for GoogleDriveProvider {
                             .map(std::time::SystemTime::from)
                             .unwrap_or_else(std::time::SystemTime::now);
 
+                        let rel_path = if remote_path.is_empty() {
+                            PathBuf::from(name)
+                        } else {
+                            PathBuf::from(remote_path).join(name)
+                        };
+
                         items.push(StorageItem {
-                            path: PathBuf::from(name),
+                            path: rel_path,
                             size,
                             modified,
                             is_dir,
