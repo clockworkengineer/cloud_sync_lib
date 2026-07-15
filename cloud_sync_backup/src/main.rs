@@ -154,10 +154,10 @@ async fn perform_backup(
                 destination.create_folder(&rel_path).await?;
             } else {
                 println!("[Backup] Syncing file: {}", rel_path);
-                let local_temp = temp_dir.join(&rel_path);
-                if let Some(parent) = local_temp.parent() {
-                    tokio::fs::create_dir_all(parent).await?;
-                }
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                rel_path.hash(&mut hasher);
+                let local_temp = temp_dir.join(format!("{:x}.tmp", hasher.finish()));
 
                 source.download(&rel_path, &local_temp).await?;
                 let ft = filetime::FileTime::from_system_time(source_item.modified);
