@@ -455,11 +455,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pull_interval = config.pull_interval_secs.unwrap_or(30);
     let state_pull = state.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(pull_interval));
-        interval.tick().await; // skip immediate first tick
-
         loop {
-            interval.tick().await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(pull_interval)).await;
 
             let (paused, backends, watch_dir, gitignore, max_concurrency) = {
                 let s = state_pull.lock().await;
