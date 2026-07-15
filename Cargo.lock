@@ -1123,6 +1123,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "cloud_sync_lib",
+ "filetime",
  "futures-util",
  "ignore",
  "serde",
@@ -1169,6 +1170,7 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "chrono",
+ "filetime",
  "futures-util",
  "hmac",
  "httpdate",

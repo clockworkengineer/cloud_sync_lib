@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 cloud_sync_lib = { path = "../cloud_sync_lib", default-features = false }
 tokio = { version = "1", features = ["full"] }
+filetime = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 tracing = "0.1"

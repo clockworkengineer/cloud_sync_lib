@@ -340,10 +340,15 @@ impl StorageBackend for GoogleDriveProvider {
                         let is_dir = mime_type == "application/vnd.google-apps.folder";
                         let checksum = file["md5Checksum"].as_str().map(|s| s.to_string());
 
+                        let modified = file["modifiedTime"].as_str()
+                            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                            .map(std::time::SystemTime::from)
+                            .unwrap_or_else(std::time::SystemTime::now);
+
                         items.push(StorageItem {
                             path: PathBuf::from(name),
                             size,
-                            modified: std::time::SystemTime::now(),
+                            modified,
                             is_dir,
                             checksum,
                         });

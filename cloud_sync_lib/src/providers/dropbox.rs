@@ -124,13 +124,27 @@ impl StorageBackend for DropboxProvider {
             info!("[{}] Real upload starting for '{}'", self.name(), dbx_path);
             let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
-            let api_arg = serde_json::json!({
+            let client_modified = std::fs::metadata(local_path)
+                .and_then(|m| m.modified())
+                .ok()
+                .map(|t| {
+                    let datetime: chrono::DateTime<chrono::Utc> = t.into();
+                    datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+                });
+
+            let mut api_arg = serde_json::json!({
                 "path": dbx_path,
                 "mode": "overwrite",
                 "autorename": false,
                 "mute": false,
                 "strict_conflict": false
             });
+
+            if let Some(ref cm) = client_modified {
+                if let Some(obj) = api_arg.as_object_mut() {
+                    obj.insert("client_modified".to_string(), serde_json::Value::String(cm.clone()));
+                }
+            }
 
             let upload_url = format!("{}/upload", self.content_url);
             let res = self.client.post(&upload_url)
@@ -244,10 +258,15 @@ impl StorageBackend for DropboxProvider {
                         let is_dir = tag == "folder";
                         let checksum = entry["content_hash"].as_str().map(|s| s.to_string());
 
+                        let modified = entry["client_modified"].as_str()
+                            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                            .map(std::time::SystemTime::from)
+                            .unwrap_or_else(std::time::SystemTime::now);
+
                         items.push(StorageItem {
                             path: PathBuf::from(name),
                             size,
-                            modified: std::time::SystemTime::now(),
+                            modified,
                             is_dir,
                             checksum,
                         });

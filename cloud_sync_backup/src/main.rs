@@ -108,6 +108,7 @@ async fn scan_backend_files(backend: &dyn StorageBackend) -> Result<HashMap<Stri
 async fn perform_backup(
     source: &dyn StorageBackend,
     destination: &dyn StorageBackend,
+    synced_history: &mut HashMap<String, (u64, std::time::SystemTime, Option<String>)>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let source_files = scan_backend_files(source).await?;
     let dest_files = scan_backend_files(destination).await?;
@@ -115,15 +116,33 @@ async fn perform_backup(
     let temp_dir = std::env::temp_dir().join("cloud_sync_backup_temp");
     tokio::fs::create_dir_all(&temp_dir).await?;
 
+    let same_provider = source.name() == destination.name();
     let mut sync_count = 0;
 
     for (rel_path, source_item) in source_files {
         let should_copy = match dest_files.get(&rel_path) {
             Some(dest_item) => {
-                if let (Some(s_sum), Some(d_sum)) = (&source_item.checksum, &dest_item.checksum) {
-                    s_sum != d_sum
+                if let Some((last_size, last_modified, last_checksum)) = synced_history.get(&rel_path) {
+                    if source_item.size == *last_size
+                        && source_item.modified == *last_modified
+                        && source_item.checksum == *last_checksum
+                    {
+                        false
+                    } else {
+                        true
+                    }
                 } else {
-                    source_item.size != dest_item.size || source_item.modified > dest_item.modified
+                    let s_secs = source_item.modified.duration_since(std::time::SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                    let d_secs = dest_item.modified.duration_since(std::time::SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                    if same_provider {
+                        if let (Some(s_sum), Some(d_sum)) = (&source_item.checksum, &dest_item.checksum) {
+                            s_sum != d_sum
+                        } else {
+                            source_item.size != dest_item.size || s_secs > d_secs
+                        }
+                    } else {
+                        source_item.size != dest_item.size
+                    }
                 }
             }
             None => true,
@@ -133,7 +152,6 @@ async fn perform_backup(
             if source_item.is_dir {
                 println!("[Backup] Creating remote directory: {}", rel_path);
                 destination.create_folder(&rel_path).await?;
-                sync_count += 1;
             } else {
                 println!("[Backup] Syncing file: {}", rel_path);
                 let local_temp = temp_dir.join(&rel_path);
@@ -142,11 +160,24 @@ async fn perform_backup(
                 }
 
                 source.download(&rel_path, &local_temp).await?;
+                let ft = filetime::FileTime::from_system_time(source_item.modified);
+                let _ = filetime::set_file_mtime(&local_temp, ft);
+
                 destination.upload(&local_temp, &rel_path).await?;
 
                 let _ = tokio::fs::remove_file(&local_temp).await;
                 sync_count += 1;
+
+                synced_history.insert(
+                    rel_path.clone(),
+                    (source_item.size, source_item.modified, source_item.checksum.clone()),
+                );
             }
+        } else {
+            synced_history.insert(
+                rel_path.clone(),
+                (source_item.size, source_item.modified, source_item.checksum.clone()),
+            );
         }
     }
 
@@ -188,8 +219,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         interval
     );
 
+    let mut synced_history = HashMap::new();
     loop {
-        match perform_backup(&*source, &*destination).await {
+        match perform_backup(&*source, &*destination, &mut synced_history).await {
             Ok(count) => {
                 if count > 0 {
                     println!("[Backup] Backup scan completed. Synced {} item(s).", count);

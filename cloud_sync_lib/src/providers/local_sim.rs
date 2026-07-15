@@ -80,6 +80,12 @@ impl LocalSimulation {
             fs::create_dir_all(parent).await?;
         }
         copy_rate_limited(local_path, &destination, self.upload_limiter.clone()).await?;
+        if let Ok(metadata) = std::fs::metadata(local_path) {
+            if let Ok(modified) = metadata.modified() {
+                let ft = filetime::FileTime::from_system_time(modified);
+                let _ = filetime::set_file_mtime(&destination, ft);
+            }
+        }
         Ok(())
     }
 
