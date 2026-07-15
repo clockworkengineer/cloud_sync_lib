@@ -346,6 +346,11 @@ impl StorageBackend for GoogleDriveProvider {
                         let size = file["size"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
                         let mime_type = file["mimeType"].as_str().unwrap_or("");
                         let is_dir = mime_type == "application/vnd.google-apps.folder";
+                        
+                        if mime_type.starts_with("application/vnd.google-apps.") && !is_dir {
+                            continue;
+                        }
+
                         let checksum = file["md5Checksum"].as_str().map(|s| s.to_string());
 
                         let modified = file["modifiedTime"].as_str()
