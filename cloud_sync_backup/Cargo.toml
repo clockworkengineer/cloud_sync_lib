@@ -2,7 +2,6 @@
 name = "cloud_sync_backup"
 version = "0.1.0"
 edition = "2021"
-
 [dependencies]
 cloud_sync_lib = { path = "../cloud_sync_lib", default-features = false }
 tokio = { version = "1", features = ["full"] }
