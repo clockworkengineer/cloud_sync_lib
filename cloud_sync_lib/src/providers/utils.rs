@@ -97,46 +97,60 @@ pub async fn parse_response_error(res: reqwest::Response, provider_name: &str, a
 }
 
 /// Guarantee standard Unix slashes `/` on remote backend path operations.
-pub fn normalize_remote_path(path: &str) -> String {
-    path.replace('\\', "/")
+pub fn normalize_remote_path(path: &str) -> std::borrow::Cow<'_, str> {
+    if path.contains('\\') {
+        std::borrow::Cow::Owned(path.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(path)
+    }
 }
 
 /// Formats a relative remote path, incorporating an optional destination folder prefix.
-pub fn format_relative_path(remote_path: &str, destination_folder: Option<&str>) -> String {
+pub fn format_relative_path<'a>(remote_path: &'a str, destination_folder: Option<&str>) -> std::borrow::Cow<'a, str> {
     let normalized = normalize_remote_path(remote_path);
+    let has_backslash = matches!(normalized, std::borrow::Cow::Owned(_));
     let clean_path = normalized.trim_start_matches('/');
+
     if let Some(dest_folder) = destination_folder {
         let clean_dest = normalize_remote_path(dest_folder);
-        let clean_dest = clean_dest.trim_matches('/');
-        if !clean_dest.is_empty() {
+        let clean_dest_trimmed = clean_dest.trim_matches('/');
+        if !clean_dest_trimmed.is_empty() {
             if clean_path.is_empty() {
-                return clean_dest.to_string();
+                return std::borrow::Cow::Owned(clean_dest_trimmed.to_string());
             } else {
-                return format!("{}/{}", clean_dest, clean_path);
+                return std::borrow::Cow::Owned(format!("{}/{}", clean_dest_trimmed, clean_path));
             }
         }
     }
-    clean_path.to_string()
+
+    if has_backslash || clean_path.len() != remote_path.len() {
+        std::borrow::Cow::Owned(clean_path.to_string())
+    } else {
+        std::borrow::Cow::Borrowed(remote_path)
+    }
 }
 
 /// Formats an absolute remote path starting with a slash, incorporating an optional destination folder prefix.
-pub fn format_absolute_path(remote_path: &str, destination_folder: Option<&str>) -> String {
+pub fn format_absolute_path<'a>(remote_path: &'a str, destination_folder: Option<&str>) -> std::borrow::Cow<'a, str> {
     let normalized = normalize_remote_path(remote_path);
     let clean_path = normalized.trim_start_matches('/');
     let mut full_path = String::new();
+
     if let Some(dest_folder) = destination_folder {
         let clean_dest = normalize_remote_path(dest_folder);
-        let clean_dest = clean_dest.trim_matches('/');
-        if !clean_dest.is_empty() {
+        let clean_dest_trimmed = clean_dest.trim_matches('/');
+        if !clean_dest_trimmed.is_empty() {
             full_path.push('/');
-            full_path.push_str(&clean_dest);
+            full_path.push_str(clean_dest_trimmed);
         }
     }
+
     if !clean_path.is_empty() {
         full_path.push('/');
         full_path.push_str(clean_path);
     }
-    full_path
+
+    std::borrow::Cow::Owned(full_path)
 }
 
 /// Centralized helper to build a standard reqwest::Client with proper pooling and timeout settings.

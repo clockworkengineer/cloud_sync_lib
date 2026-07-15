@@ -99,7 +99,7 @@ impl OneDriveProvider {
 
     /// Formats the remote path, incorporating the optional destination folder prefix.
     ///
-    fn format_path(&self, remote_path: &str) -> String {
+    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
         crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
     }
 }
@@ -189,7 +189,7 @@ impl StorageBackend for OneDriveProvider {
 
             let (parent_path, folder_name) = match clean_path.rfind('/') {
                 Some(idx) => (&clean_path[..idx], &clean_path[idx+1..]),
-                None => ("", clean_path.as_str()),
+                None => ("", clean_path.as_ref()),
             };
 
             let create_url = if parent_path.is_empty() {

@@ -78,7 +78,7 @@ impl IPFSProvider {
         }
     }
 
-    fn format_path(&self, remote_path: &str) -> String {
+    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
         crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
     }
 
@@ -118,10 +118,10 @@ impl StorageBackend for IPFSProvider {
             info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
 
             let file_content = fs::read(local_path).await?;
-            let file_name = Path::new(&clean_path)
+            let file_name = Path::new(clean_path.as_ref())
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or(&clean_path)
+                .unwrap_or(clean_path.as_ref())
                 .to_string();
 
             let upload_url = format!("{}/pinning/pinFileToIPFS", self.api_url);

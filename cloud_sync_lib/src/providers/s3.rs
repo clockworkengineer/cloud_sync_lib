@@ -95,7 +95,7 @@ impl S3Provider {
     ///
     /// # Returns
     /// The fully-resolved S3 object key string.
-    fn format_path(&self, remote_path: &str) -> String {
+    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
         crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
     }
 }
@@ -159,7 +159,7 @@ impl StorageBackend for S3Provider {
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let mut prefix = self.format_path(remote_path);
+        let mut prefix = self.format_path(remote_path).into_owned();
         if !prefix.is_empty() && !prefix.ends_with('/') {
             prefix.push('/');
         }

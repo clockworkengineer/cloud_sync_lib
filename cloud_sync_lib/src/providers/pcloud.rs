@@ -68,7 +68,7 @@ impl PCloudProvider {
         }
     }
 
-    fn format_path(&self, remote_path: &str) -> String {
+    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
         crate::providers::utils::format_absolute_path(remote_path, self.credentials.common.destination_folder.as_deref())
     }
 }
@@ -86,12 +86,12 @@ impl StorageBackend for PCloudProvider {
 
             let file_content = fs::read(local_path).await?;
             
-            let parent_dir = Path::new(&clean_path)
+            let parent_dir = Path::new(clean_path.as_ref())
                 .parent()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| "/".to_string());
 
-            let file_name = Path::new(&clean_path)
+            let file_name = Path::new(clean_path.as_ref())
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")

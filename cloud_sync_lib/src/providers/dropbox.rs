@@ -104,7 +104,7 @@ impl DropboxProvider {
 
     /// Formats the remote path, incorporating the optional destination folder prefix.
     ///
-    fn format_path(&self, path: &str) -> String {
+    fn format_path<'a>(&self, path: &'a str) -> std::borrow::Cow<'a, str> {
         crate::providers::utils::format_absolute_path(path, self.credentials.common.destination_folder.as_deref())
     }
 }

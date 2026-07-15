@@ -47,7 +47,7 @@ impl NextcloudProvider {
         self
     }
 
-    fn format_path(&self, remote_path: &str) -> String {
+    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
         crate::providers::utils::format_absolute_path(remote_path, self.credentials.common.destination_folder.as_deref())
     }
 

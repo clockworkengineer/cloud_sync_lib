@@ -214,7 +214,7 @@ impl B2Provider {
         Ok(bucket.bucket_id.clone())
     }
 
-    fn format_path(&self, remote_path: &str) -> String {
+    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
         crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
     }
 }
@@ -227,7 +227,7 @@ impl StorageBackend for B2Provider {
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
-            let clean_path = self.format_path(remote_path);
+            let clean_path = self.format_path(remote_path).into_owned();
             info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
 
             let auth = self.authorize().await?;
@@ -271,7 +271,7 @@ impl StorageBackend for B2Provider {
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "download", || async {
-            let clean_path = self.format_path(remote_path);
+            let clean_path = self.format_path(remote_path).into_owned();
             let auth = self.authorize().await?;
 
             // B2 download URL format: {downloadUrl}/file/{bucketName}/{fileName}
@@ -298,7 +298,7 @@ impl StorageBackend for B2Provider {
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "delete", || async {
-            let clean_path = self.format_path(remote_path);
+            let clean_path = self.format_path(remote_path).into_owned();
             let auth = self.authorize().await?;
             let bucket_id = self.get_bucket_id(&auth).await?;
 
@@ -345,7 +345,7 @@ impl StorageBackend for B2Provider {
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         super::utils::execute_with_retry(self.name(), "list", || async {
-            let clean_path = self.format_path(remote_path);
+            let clean_path = self.format_path(remote_path).into_owned();
             let auth = self.authorize().await?;
             let bucket_id = self.get_bucket_id(&auth).await?;
 
