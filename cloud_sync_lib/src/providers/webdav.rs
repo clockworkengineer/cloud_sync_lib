@@ -268,6 +268,35 @@ impl StorageBackend for WebDAVProvider {
         }).await
     }
 
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "create_folder", || async {
+            let clean_path = self.format_path(remote_path);
+            if clean_path.is_empty() {
+                return Ok(());
+            }
+
+            let create_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
+            let res = self.client.request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &create_url)
+                .basic_auth(&self.credentials.username, Some(&self.credentials.password))
+                .send()
+                .await?;
+
+            let status = res.status();
+            if !status.is_success() {
+                let err_text = res.text().await.unwrap_or_default();
+                if status.as_u16() == 405 || status.as_u16() == 409 || err_text.contains("conflict") || err_text.contains("exists") {
+                    return Ok(());
+                }
+                return Err(StorageError::Provider {
+                    message: format!("Failed to create folder: {}", err_text),
+                    status: Some(status.as_u16()),
+                });
+            }
+
+            Ok(())
+        }).await
+    }
+
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         super::utils::execute_with_retry(self.name(), "list", || async {
             let clean_path = self.format_path(remote_path);
@@ -302,8 +331,14 @@ impl StorageBackend for WebDAVProvider {
                 let name = clean_href.split('/').next_back().unwrap_or("").to_string();
 
                 if !name.is_empty() {
+                    let rel_path = if remote_path.is_empty() {
+                        name
+                    } else {
+                        format!("{}/{}", remote_path, name)
+                    };
+
                     storage_items.push(StorageItem {
-                        path: PathBuf::from(name),
+                        path: PathBuf::from(rel_path),
                         size,
                         modified: std::time::SystemTime::now(),
                         is_dir,

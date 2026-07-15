@@ -175,6 +175,53 @@ impl StorageBackend for OneDriveProvider {
         }).await
     }
 
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "create_folder", || async {
+            let token = self.get_access_token().await?;
+            let clean_path = self.format_path(remote_path);
+            if clean_path.is_empty() {
+                return Ok(());
+            }
+
+            let (parent_path, folder_name) = match clean_path.rfind('/') {
+                Some(idx) => (&clean_path[..idx], &clean_path[idx+1..]),
+                None => ("", clean_path.as_str()),
+            };
+
+            let create_url = if parent_path.is_empty() {
+                format!("{}/me/drive/root/children", self.api_url)
+            } else {
+                format!("{}/me/drive/root:/{}:/children", self.api_url, parent_path)
+            };
+
+            let body = serde_json::json!({
+                "name": folder_name,
+                "folder": {},
+                "@microsoft.graph.conflictBehavior": "fail"
+            });
+
+            let res = self.client.post(&create_url)
+                .bearer_auth(&token)
+                .json(&body)
+                .send()
+                .await?;
+
+            let status = res.status();
+            if !status.is_success() {
+                let err_text = res.text().await.unwrap_or_default();
+                if err_text.contains("nameAlreadyExists") || err_text.contains("itemAlreadyExists") {
+                    return Ok(());
+                }
+                return Err(StorageError::Provider {
+                    message: format!("Failed to create folder: {}", err_text),
+                    status: Some(status.as_u16()),
+                });
+            }
+
+            Ok(())
+        }).await
+    }
+
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         super::utils::execute_with_retry(self.name(), "list", || async {
             let token = self.get_access_token().await?;
@@ -201,8 +248,14 @@ impl StorageBackend for OneDriveProvider {
                         let size = item["size"].as_u64().unwrap_or(0);
                         let is_dir = item.get("folder").is_some();
 
+                        let rel_path = if remote_path.is_empty() {
+                            name
+                        } else {
+                            format!("{}/{}", remote_path, name)
+                        };
+
                         items.push(StorageItem {
-                            path: PathBuf::from(name),
+                            path: PathBuf::from(rel_path),
                             size,
                             modified: std::time::SystemTime::now(),
                             is_dir,

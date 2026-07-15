@@ -296,8 +296,16 @@ impl StorageBackend for BoxProvider {
                     .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
                     .map(|dt| std::time::SystemTime::from(dt))
                     .unwrap_or_else(std::time::SystemTime::now);
+
+                let name = item.name;
+                let rel_path = if path.is_empty() {
+                    name
+                } else {
+                    format!("{}/{}", path, name)
+                };
+
                 StorageItem {
-                    path: PathBuf::from(item.name),
+                    path: PathBuf::from(rel_path),
                     is_dir: item.item_type == "folder",
                     size: item.size.unwrap_or(0),
                     modified,
@@ -306,6 +314,14 @@ impl StorageBackend for BoxProvider {
             }).collect();
 
             Ok(storage_items)
+        }).await
+    }
+
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "create_folder", || async {
+            let token = self.get_access_token().await?;
+            let _ = self.resolve_path(&token, remote_path, true).await?;
+            Ok(())
         }).await
     }
 
