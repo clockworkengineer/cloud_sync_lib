@@ -142,7 +142,7 @@ pub fn format_absolute_path(remote_path: &str, destination_folder: Option<&str>)
 /// Centralized helper to build a standard reqwest::Client with proper pooling and timeout settings.
 pub fn build_http_client() -> reqwest::Client {
     reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(600))
         .pool_max_idle_per_host(10)
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
