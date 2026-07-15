@@ -264,13 +264,13 @@ impl StorageBackend for DropboxProvider {
                             .unwrap_or_else(std::time::SystemTime::now);
 
                         let rel_path = if remote_path.is_empty() {
-                            PathBuf::from(name)
+                            name
                         } else {
-                            PathBuf::from(remote_path).join(name)
+                            format!("{}/{}", remote_path, name)
                         };
 
                         items.push(StorageItem {
-                            path: rel_path,
+                            path: PathBuf::from(rel_path),
                             size,
                             modified,
                             is_dir,
