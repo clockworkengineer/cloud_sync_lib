@@ -50,7 +50,14 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         if let Some(ref inner) = self.inner {
-            inner.upload(local_path, remote_path).await
+            match inner.upload(local_path, remote_path).await {
+                Ok(()) => Ok(()),
+                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                    self.local_sim.upload(local_path, remote_path).await
+                }
+                Err(e) => Err(e),
+            }
         } else {
             self.local_sim.upload(local_path, remote_path).await
         }
@@ -58,7 +65,14 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         if let Some(ref inner) = self.inner {
-            inner.download(remote_path, local_path).await
+            match inner.download(remote_path, local_path).await {
+                Ok(()) => Ok(()),
+                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                    self.local_sim.download(remote_path, local_path).await
+                }
+                Err(e) => Err(e),
+            }
         } else {
             self.local_sim.download(remote_path, local_path).await
         }
@@ -66,7 +80,14 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         if let Some(ref inner) = self.inner {
-            inner.delete(remote_path).await
+            match inner.delete(remote_path).await {
+                Ok(()) => Ok(()),
+                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                    self.local_sim.delete(remote_path).await
+                }
+                Err(e) => Err(e),
+            }
         } else {
             self.local_sim.delete(remote_path).await
         }
@@ -74,7 +95,14 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         if let Some(ref inner) = self.inner {
-            inner.list(remote_path).await
+            match inner.list(remote_path).await {
+                Ok(items) => Ok(items),
+                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                    self.local_sim.list(remote_path).await
+                }
+                Err(e) => Err(e),
+            }
         } else {
             self.local_sim.list(remote_path).await
         }
@@ -82,7 +110,14 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
 
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         if let Some(ref inner) = self.inner {
-            inner.create_folder(remote_path).await
+            match inner.create_folder(remote_path).await {
+                Ok(()) => Ok(()),
+                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                    self.local_sim.create_folder(remote_path).await
+                }
+                Err(e) => Err(e),
+            }
         } else {
             self.local_sim.create_folder(remote_path).await
         }
