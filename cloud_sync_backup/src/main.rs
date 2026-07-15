@@ -154,6 +154,10 @@ async fn perform_backup(
                 destination.create_folder(&rel_path).await?;
             } else {
                 println!("[Backup] Syncing file: {}", rel_path);
+
+                // Use a hashed local temp filename rather than joining raw remote paths onto the temp directory.
+                // This prevents Windows path safety violations (os error 123) for filenames containing illegal
+                // characters (e.g. pipe '|' or colon ':') which are allowed on remote cloud backends.
                 use std::hash::{Hash, Hasher};
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 rel_path.hash(&mut hasher);

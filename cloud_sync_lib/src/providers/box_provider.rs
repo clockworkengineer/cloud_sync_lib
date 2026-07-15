@@ -317,6 +317,10 @@ impl StorageBackend for BoxProvider {
         }).await
     }
 
+    /// Creates a directory folder on Box.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The folder path relative to the sync root.
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "create_folder", || async {
             let token = self.get_access_token().await?;

@@ -268,6 +268,10 @@ impl StorageBackend for WebDAVProvider {
         }).await
     }
 
+    /// Creates a directory folder on WebDAV server using MKCOL method.
+    ///
+    /// # Arguments
+    /// * `remote_path` - The folder path relative to the sync root.
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "create_folder", || async {
             let clean_path = self.format_path(remote_path);
