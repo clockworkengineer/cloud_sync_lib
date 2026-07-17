@@ -293,8 +293,8 @@ impl StorageBackend for BoxProvider {
             let items = res.json::<BoxFolderItems>().await?;
             let storage_items = items.entries.into_iter().map(|item| {
                 let modified = item.content_modified_at
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
-                    .map(|dt| std::time::SystemTime::from(dt))
+                    .and_then(|t| time::OffsetDateTime::parse(&t, &time::format_description::well_known::Rfc3339).ok())
+                    .map(std::time::SystemTime::from)
                     .unwrap_or_else(std::time::SystemTime::now);
 
                 let name = item.name;

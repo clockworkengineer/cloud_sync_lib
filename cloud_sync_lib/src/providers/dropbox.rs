@@ -128,8 +128,9 @@ impl StorageBackend for DropboxProvider {
                 .and_then(|m| m.modified())
                 .ok()
                 .map(|t| {
-                    let datetime: chrono::DateTime<chrono::Utc> = t.into();
-                    datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+                    let datetime = time::OffsetDateTime::from(t);
+                    datetime.format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default()
                 });
 
             let mut api_arg = serde_json::json!({
@@ -293,7 +294,7 @@ impl StorageBackend for DropboxProvider {
                         let checksum = entry["content_hash"].as_str().map(|s| s.to_string());
 
                         let modified = entry["client_modified"].as_str()
-                            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                            .and_then(|t| time::OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339).ok())
                             .map(std::time::SystemTime::from)
                             .unwrap_or_else(std::time::SystemTime::now);
 

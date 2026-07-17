@@ -231,7 +231,7 @@ impl StorageBackend for IPFSProvider {
 
                 let modified = row.date_pinned
                     .as_ref()
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .and_then(|t| time::OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339).ok())
                     .map(SystemTime::from)
                     .unwrap_or(SystemTime::now());
 

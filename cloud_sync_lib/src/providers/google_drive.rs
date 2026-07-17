@@ -358,7 +358,7 @@ impl StorageBackend for GoogleDriveProvider {
                         let checksum = file["md5Checksum"].as_str().map(|s| s.to_string());
 
                         let modified = file["modifiedTime"].as_str()
-                            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                            .and_then(|t| time::OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339).ok())
                             .map(std::time::SystemTime::from)
                             .unwrap_or_else(std::time::SystemTime::now);
 
