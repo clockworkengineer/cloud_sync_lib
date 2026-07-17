@@ -16,7 +16,7 @@ ignore = "0.4"
 futures-util = "0.3"
 
 [features]
-default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"]
+default = []
 google_drive = ["cloud_sync_lib/google_drive"]
 dropbox = ["cloud_sync_lib/dropbox"]
 onedrive = ["cloud_sync_lib/onedrive"]

@@ -92,6 +92,7 @@ pub struct DaemonState {
     pub connection_errors: HashMap<String, String>,
 }
 
+#[allow(dead_code)]
 fn try_add_backend<C, F>(
     backends: &mut Vec<ActiveBackend>,
     creds_option: &Option<C>,
@@ -139,6 +140,7 @@ fn try_add_backend<C, F>(
 }
 
 /// Builds the active storage backends and configures their rate limiters.
+#[allow(unused_variables, unused_mut)]
 pub fn build_backends(
     config: &config::AppConfig,
     upload_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,

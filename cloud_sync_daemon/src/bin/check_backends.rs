@@ -7,8 +7,10 @@ pub mod config;
 pub mod common;
 
 use cloud_sync_lib::StorageBackend;
+#[allow(unused_imports)]
 use cloud_sync_lib::providers::*;
 
+#[allow(dead_code)]
 async fn check_provider(name: &str, provider: &dyn StorageBackend) {
     print!("{}: ", name);
     match provider.list("").await {
@@ -22,6 +24,7 @@ async fn check_provider(name: &str, provider: &dyn StorageBackend) {
 }
 
 #[tokio::main]
+#[allow(unused_variables)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_file = common::resolve_config_file();
     let config = config::load_or_create_config(config_file).await?;
