@@ -1196,21 +1196,18 @@ dependencies = [
  "cloud_sync_std",
  "filetime",
  "futures-util",
- "hmac",
  "httpdate",
  "ignore",
  "md5",
  "mega",
- "pbkdf2 0.12.2",
  "postcard",
- "quick-xml 0.31.0",
  "rand",
  "reqwest 0.11.27",
+ "ring 0.17.14",
  "rust-s3",
  "serde",
  "serde_json",
  "sha1",
- "sha2",
  "ssh2",
  "tempfile",
  "thiserror 1.0.69",
@@ -1219,6 +1216,7 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "wiremock",
+ "xmlparser",
  "yup-oauth2",
  "zeroize",
 ]
@@ -1230,8 +1228,7 @@ dependencies = [
  "cloud_sync_core",
  "ignore",
  "md5",
- "sha1",
- "sha2",
+ "ring 0.17.14",
  "tempfile",
  "tokio",
  "tracing",
@@ -3962,7 +3959,7 @@ dependencies = [
  "cipher",
  "ctr",
  "futures",
- "pbkdf2 0.11.0",
+ "pbkdf2",
  "rand",
  "reqwest 0.11.27",
  "rsa",
@@ -4797,17 +4794,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "password-hash"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
-dependencies = [
- "base64ct",
- "rand_core",
- "subtle",
-]
-
-[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4821,19 +4807,7 @@ checksum = "83a0692ec44e4cf1ef28ca317f14f8f07da2d95ec3fa01f86e4467b725e60917"
 dependencies = [
  "digest",
  "hmac",
- "password-hash 0.4.2",
- "sha2",
-]
-
-[[package]]
-name = "pbkdf2"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
-dependencies = [
- "digest",
- "hmac",
- "password-hash 0.5.0",
+ "password-hash",
  "sha2",
 ]
 
@@ -5190,16 +5164,6 @@ name = "quick-xml"
 version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f50b1c63b38611e7d4d7f68b82d3ad0cc71a2ad2e7f61fc10f1328d917c93cd"
-dependencies = [
- "memchr",
- "serde",
-]
-
-[[package]]
-name = "quick-xml"
-version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1004a344b30a54e2ee58d66a71b32d2db2feb0a31f9a2d302bf0536f15de2a33"
 dependencies = [
  "memchr",
  "serde",
@@ -9017,6 +8981,12 @@ name = "xml-rs"
 version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
+
+[[package]]
+name = "xmlparser"
+version = "0.13.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
 name = "yoke"

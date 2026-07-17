@@ -10,8 +10,7 @@ use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
-use quick_xml::events::Event;
-use quick_xml::Reader;
+
 
 /// Storage provider client for Nextcloud storage servers.
 pub struct NextcloudProvider {
@@ -100,55 +99,53 @@ fn percent_decode(s: &str) -> String {
 }
 
 fn parse_propfind_response(xml: &str) -> Result<Vec<(String, u64, bool)>, StorageError> {
-    let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
-
-    let mut buf = Vec::new();
     let mut items = Vec::new();
-
     let mut current_href = None;
     let mut current_size = 0;
     let mut current_is_dir = false;
     let mut active_tag = String::new();
 
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                active_tag = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
-                if active_tag == "collection" {
-                    current_is_dir = true;
-                }
-            }
-            Ok(Event::Empty(ref e)) => {
-                let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+    for token in xmlparser::Tokenizer::from(xml) {
+        match token {
+            Ok(xmlparser::Token::ElementStart { local, .. }) => {
+                let name = local.as_str();
+                active_tag = name.to_string();
                 if name == "collection" {
                     current_is_dir = true;
                 }
             }
-            Ok(Event::End(ref e)) => {
-                let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
-                active_tag.clear();
-                if name == "response" {
-                    if let Some(href) = current_href.take() {
-                        items.push((href, current_size, current_is_dir));
+            Ok(xmlparser::Token::ElementEnd { end, .. }) => {
+                match end {
+                    xmlparser::ElementEnd::Close(_, local) => {
+                        active_tag.clear();
+                        let name = local.as_str();
+                        if name == "response" {
+                            if let Some(href) = current_href.take() {
+                                items.push((href, current_size, current_is_dir));
+                            }
+                            current_size = 0;
+                            current_is_dir = false;
+                        }
                     }
-                    current_size = 0;
-                    current_is_dir = false;
+                    xmlparser::ElementEnd::Empty => {
+                        active_tag.clear();
+                    }
+                    _ => {}
                 }
             }
-            Ok(Event::Text(ref e)) => {
-                let text = e.unescape().unwrap_or_default().into_owned();
-                if active_tag == "href" {
-                    current_href = Some(text);
-                } else if active_tag == "getcontentlength" {
-                    current_size = text.parse::<u64>().unwrap_or(0);
+            Ok(xmlparser::Token::Text { text }) => {
+                let val = text.as_str().trim();
+                if !val.is_empty() {
+                    if active_tag == "href" {
+                        current_href = Some(val.to_string());
+                    } else if active_tag == "getcontentlength" {
+                        current_size = val.parse::<u64>().unwrap_or(0);
+                    }
                 }
             }
-            Ok(Event::Eof) => break,
             Err(e) => return Err(StorageError::Provider { message: format!("XML parse error: {}", e), status: None }),
             _ => {}
         }
-        buf.clear();
     }
 
     Ok(items)

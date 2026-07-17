@@ -10,11 +10,9 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tokio::fs;
 use tracing::info;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
+use ring::hmac;
 use base64::Engine;
-use quick_xml::events::Event;
-use quick_xml::Reader;
+// Removed quick-xml imports
 
 /// Storage provider client for Azure Blob Storage REST API.
 pub struct AzureBlobProvider {
@@ -127,11 +125,9 @@ impl AzureBlobProvider {
             .decode(&self.credentials.account_key)
             .map_err(|e| StorageError::Authentication(format!("Invalid account key base64: {}", e)))?;
 
-        type HmacSha256 = Hmac<Sha256>;
-        let mut mac = HmacSha256::new_from_slice(&key_bytes)
-            .map_err(|e| StorageError::Authentication(format!("HMAC init error: {}", e)))?;
-        mac.update(signable.as_bytes());
-        let signature = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &key_bytes);
+        let tag = hmac::sign(&key, signable.as_bytes());
+        let signature = base64::engine::general_purpose::STANDARD.encode(tag.as_ref());
 
         Ok(format!("SharedKey {}:{}", self.credentials.account_name, signature))
     }
@@ -306,64 +302,68 @@ impl StorageBackend for AzureBlobProvider {
             }
 
             let body = res.text().await?;
-            let mut reader = Reader::from_str(&body);
-            let mut buf = Vec::new();
-
             let mut items = Vec::new();
             let mut current_name = String::new();
             let mut current_size = 0;
             let mut current_modified = SystemTime::now();
             let mut active_tag = String::new();
 
-            loop {
-                match reader.read_event_into(&mut buf) {
-                    Ok(Event::Start(ref e)) => {
-                        active_tag = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+            for token in xmlparser::Tokenizer::from(body.as_str()) {
+                match token {
+                    Ok(xmlparser::Token::ElementStart { local, .. }) => {
+                        active_tag = local.as_str().to_string();
                     }
-                    Ok(Event::End(ref e)) => {
-                        let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
-                        active_tag.clear();
-                        if name == "Blob" {
-                            // Strip prefix destination_folder if present
-                            let mut item_path = PathBuf::from(&current_name);
-                            if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                                let clean_dest = dest_folder.trim_matches('/');
-                                if !clean_dest.is_empty() {
-                                    if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                                        item_path = stripped.to_path_buf();
+                    Ok(xmlparser::Token::ElementEnd { end, .. }) => {
+                        match end {
+                            xmlparser::ElementEnd::Close(_, local) => {
+                                active_tag.clear();
+                                let name = local.as_str();
+                                if name == "Blob" {
+                                    let mut item_path = PathBuf::from(&current_name);
+                                    if let Some(ref dest_folder) = self.credentials.common.destination_folder {
+                                        let clean_dest = dest_folder.trim_matches('/');
+                                        if !clean_dest.is_empty() {
+                                            if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
+                                                item_path = stripped.to_path_buf();
+                                            }
+                                        }
                                     }
+
+                                    items.push(StorageItem {
+                                        path: item_path,
+                                        size: current_size,
+                                        modified: current_modified,
+                                        is_dir: false,
+                                        checksum: None,
+                                    });
+                                    current_name.clear();
+                                    current_size = 0;
+                                    current_modified = SystemTime::now();
                                 }
                             }
-
-                            items.push(StorageItem {
-                                path: item_path,
-                                size: current_size,
-                                modified: current_modified,
-                                is_dir: false, // Blobs are always files (Azure Blob Storage has virtual directories)
-                                checksum: None,
-                            });
-                            current_name.clear();
-                            current_size = 0;
-                            current_modified = SystemTime::now();
+                            xmlparser::ElementEnd::Empty => {
+                                active_tag.clear();
+                            }
+                            _ => {}
                         }
                     }
-                    Ok(Event::Text(ref e)) => {
-                        let text = e.unescape().unwrap_or_default().into_owned();
-                        if active_tag == "Name" {
-                            current_name = text;
-                        } else if active_tag == "Content-Length" {
-                            current_size = text.parse::<u64>().unwrap_or(0);
-                        } else if active_tag == "Last-Modified" {
-                            if let Ok(time) = httpdate::parse_http_date(&text) {
-                                current_modified = time;
+                    Ok(xmlparser::Token::Text { text }) => {
+                        let val = text.as_str().trim();
+                        if !val.is_empty() {
+                            if active_tag == "Name" {
+                                current_name = val.to_string();
+                            } else if active_tag == "Content-Length" {
+                                current_size = val.parse::<u64>().unwrap_or(0);
+                            } else if active_tag == "Last-Modified" {
+                                if let Ok(time) = httpdate::parse_http_date(val) {
+                                    current_modified = time;
+                                }
                             }
                         }
                     }
-                    Ok(Event::Eof) => break,
                     Err(e) => return Err(StorageError::Provider { message: format!("XML parse error: {}", e), status: None }),
                     _ => {}
                 }
-                buf.clear();
             }
 
             Ok(items)

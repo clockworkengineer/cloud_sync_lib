@@ -21,10 +21,11 @@ impl<B: StorageBackend> EncryptedBackend<B> {
         // Derive a 256-bit key from password using PBKDF2-HMAC-SHA256 (10,000 iterations)
         let salt = b"cloud_sync_lib_salt_aes256gcm";
         let mut key_bytes = [0u8; 32];
-        let _ = pbkdf2::pbkdf2::<hmac::Hmac<sha2::Sha256>>(
-            password.as_bytes(),
+        ring::pbkdf2::derive(
+            ring::pbkdf2::PBKDF2_HMAC_SHA256,
+            std::num::NonZeroU32::new(10_000).unwrap(),
             salt,
-            10_000,
+            password.as_bytes(),
             &mut key_bytes,
         );
         let key = *Key::<Aes256Gcm>::from_slice(&key_bytes);
