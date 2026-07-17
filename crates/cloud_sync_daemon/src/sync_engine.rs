@@ -1266,4 +1266,85 @@ mod tests {
         assert_eq!(path, "test.txt");
         assert_eq!(new_state.size, 16);
     }
+
+    #[tokio::test]
+    async fn test_conflict_policies_and_dry_run() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        let temp_base = std::env::temp_dir();
+        
+        let run_sync = |policy: cloud_sync_lib::ConflictPolicy, dry: bool| {
+            let unique_id = unique_id;
+            let temp_base = temp_base.clone();
+            async move {
+                let local_dir = temp_base.join(format!("local_policy_{}", unique_id));
+                let remote_dir = temp_base.join(format!("remote_policy_{}", unique_id));
+                let _ = tokio::fs::create_dir_all(&local_dir).await;
+                let _ = tokio::fs::create_dir_all(&remote_dir).await;
+
+                let local_file = local_dir.join("conflict.txt");
+                let remote_file = remote_dir.join("conflict.txt");
+                tokio::fs::write(&local_file, "initial").await.unwrap();
+                tokio::fs::write(&remote_file, "initial").await.unwrap();
+
+                let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
+                let remote_sim = Arc::new(TestBackendWrapper { sim });
+                let state_file = local_dir.join(".sync_state.bin");
+                let gitignore = SyncIgnore::empty();
+
+                super::sync_bidirectional(
+                    &local_dir,
+                    remote_sim.clone(),
+                    SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+                    &state_file,
+                    &gitignore,
+                    4,
+                    cloud_sync_lib::ConflictPolicy::RenameLocal,
+                    false
+                ).await.unwrap();
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                tokio::fs::write(&local_file, "local modified").await.unwrap();
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                tokio::fs::write(&remote_file, "remote modified").await.unwrap();
+
+                super::sync_bidirectional(
+                    &local_dir,
+                    remote_sim.clone(),
+                    SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+                    &state_file,
+                    &gitignore,
+                    4,
+                    policy,
+                    dry
+                ).await.unwrap();
+
+                (local_dir, remote_dir, state_file)
+            }
+        };
+
+        let (local, remote, _) = run_sync(cloud_sync_lib::ConflictPolicy::RenameLocal, true).await;
+        assert_eq!(tokio::fs::read_to_string(local.join("conflict.txt")).await.unwrap(), "local modified");
+        assert_eq!(tokio::fs::read_to_string(remote.join("conflict.txt")).await.unwrap(), "remote modified");
+        assert!(!local.join("conflict.txt.local-conflict").exists());
+
+        let (local, _remote, _) = run_sync(cloud_sync_lib::ConflictPolicy::RenameLocal, false).await;
+        assert_eq!(tokio::fs::read_to_string(local.join("conflict.txt")).await.unwrap(), "remote modified");
+        assert_eq!(tokio::fs::read_to_string(local.join("conflict.txt.local-conflict")).await.unwrap(), "local modified");
+
+        let (local, remote, _) = run_sync(cloud_sync_lib::ConflictPolicy::KeepLocal, false).await;
+        assert_eq!(tokio::fs::read_to_string(local.join("conflict.txt")).await.unwrap(), "local modified");
+        assert_eq!(tokio::fs::read_to_string(remote.join("conflict.txt")).await.unwrap(), "local modified");
+
+        let (local, remote, _) = run_sync(cloud_sync_lib::ConflictPolicy::KeepRemote, false).await;
+        assert_eq!(tokio::fs::read_to_string(local.join("conflict.txt")).await.unwrap(), "remote modified");
+        assert_eq!(tokio::fs::read_to_string(remote.join("conflict.txt")).await.unwrap(), "remote modified");
+
+        let (local, remote, _) = run_sync(cloud_sync_lib::ConflictPolicy::KeepNewer, false).await;
+        assert_eq!(tokio::fs::read_to_string(local.join("conflict.txt")).await.unwrap(), "remote modified");
+        assert_eq!(tokio::fs::read_to_string(remote.join("conflict.txt")).await.unwrap(), "remote modified");
+    }
 }
