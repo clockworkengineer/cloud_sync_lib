@@ -432,9 +432,9 @@ pub async fn sync_bidirectional(
     let mut sync_state = SyncState::load(state_file_path).await.unwrap_or_default();
 
     // 2. Scan directories
-    let local_scanned = crate::watcher::scan_local_directory(watch_dir, gitignore).await?;
     let mut local_files = HashMap::new();
-    for (rel_path, item) in local_scanned {
+    let mut scanner = crate::watcher::DirectoryScanner::new(watch_dir, gitignore);
+    while let Some((rel_path, item)) = scanner.next().await? {
         let checksum = if item.is_dir {
             None
         } else {

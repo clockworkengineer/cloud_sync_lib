@@ -30,60 +30,99 @@ pub struct ScannedItem {
     pub modified: SystemTime,
 }
 
+/// A lazy, streaming local directory scanner that avoids holding the whole directory tree in memory.
+pub struct DirectoryScanner<'a> {
+    watch_dir: PathBuf,
+    gitignore: &'a SyncIgnore,
+    queue: Vec<PathBuf>,
+    current_entries: Option<fs::ReadDir>,
+}
+
+impl<'a> DirectoryScanner<'a> {
+    pub fn new(watch_dir: &Path, gitignore: &'a SyncIgnore) -> Self {
+        Self {
+            watch_dir: watch_dir.to_path_buf(),
+            gitignore,
+            queue: vec![watch_dir.to_path_buf()],
+            current_entries: None,
+        }
+    }
+
+    pub async fn next(&mut self) -> Result<Option<(String, ScannedItem)>, std::io::Error> {
+        loop {
+            if let Some(ref mut entries) = self.current_entries {
+                match entries.next_entry().await {
+                    Ok(Some(entry)) => {
+                        let path = entry.path();
+                        let metadata = entry.metadata().await?;
+
+                        if metadata.is_dir() {
+                            if self.gitignore.is_ignored(&path, true) {
+                                continue;
+                            }
+                            self.queue.push(path.clone());
+                            if let Ok(rel_path) = path.strip_prefix(&self.watch_dir) {
+                                let rel_str = rel_path.to_string_lossy().to_string();
+                                if !rel_str.is_empty() {
+                                    return Ok(Some((rel_str, ScannedItem {
+                                        path,
+                                        is_dir: true,
+                                        size: 0,
+                                        modified: metadata.modified().unwrap_or_else(|_| SystemTime::now()),
+                                    })));
+                                }
+                            }
+                        } else if metadata.is_file() {
+                            if self.gitignore.is_ignored(&path, false) {
+                                continue;
+                            }
+                            if let Ok(rel_path) = path.strip_prefix(&self.watch_dir) {
+                                let rel_str = rel_path.to_string_lossy().to_string();
+                                if rel_str == ".sync_state.json"
+                                    || rel_str == ".sync_state.bin"
+                                    || rel_str == ".syncignore"
+                                    || (rel_str.starts_with(".sync_state_") && (rel_str.ends_with(".json") || rel_str.ends_with(".bin")))
+                                {
+                                    continue;
+                                }
+                                return Ok(Some((rel_str, ScannedItem {
+                                    path,
+                                    is_dir: false,
+                                    size: metadata.len(),
+                                    modified: metadata.modified().unwrap_or_else(|_| SystemTime::now()),
+                                })));
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        self.current_entries = None;
+                    }
+                    Err(e) => return Err(e),
+                }
+            } else {
+                if let Some(next_dir) = self.queue.pop() {
+                    if next_dir != self.watch_dir && self.gitignore.is_ignored(&next_dir, true) {
+                        continue;
+                    }
+                    self.current_entries = Some(fs::read_dir(next_dir).await?);
+                } else {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+}
+
 /// Recursively scans a local directory, building a map of relative file paths to their metadata, applying Gitignore pattern exclusions.
 pub async fn scan_local_directory(
     watch_dir: &Path,
     gitignore: &SyncIgnore,
 ) -> Result<HashMap<String, ScannedItem>, std::io::Error> {
     let mut files = HashMap::new();
-    let mut queue = vec![watch_dir.to_path_buf()];
-
-    while let Some(current_dir) = queue.pop() {
-        if current_dir != watch_dir && gitignore.is_ignored(&current_dir, true) {
-            continue;
-        }
-
-        let mut entries = fs::read_dir(current_dir).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            let metadata = entry.metadata().await?;
-
-            if metadata.is_dir() {
-                if gitignore.is_ignored(&path, true) {
-                    continue;
-                }
-                queue.push(path.clone());
-                if let Ok(rel_path) = path.strip_prefix(watch_dir) {
-                    let rel_str = rel_path.to_string_lossy().to_string();
-                    if !rel_str.is_empty() {
-                        files.insert(rel_str, ScannedItem {
-                            path: path.clone(),
-                            is_dir: true,
-                            size: 0,
-                            modified: metadata.modified().unwrap_or(SystemTime::now()),
-                        });
-                    }
-                }
-            } else if metadata.is_file() {
-                if gitignore.is_ignored(&path, false) {
-                    continue;
-                }
-                if let Ok(rel_path) = path.strip_prefix(watch_dir) {
-                    let rel_str = rel_path.to_string_lossy().to_string();
-                    if rel_str == ".sync_state.json" || rel_str == ".sync_state.bin" || rel_str == ".syncignore" || (rel_str.starts_with(".sync_state_") && (rel_str.ends_with(".json") || rel_str.ends_with(".bin"))) {
-                        continue;
-                    }
-                    files.insert(rel_str, ScannedItem {
-                        path: path.clone(),
-                        is_dir: false,
-                        size: metadata.len(),
-                        modified: metadata.modified().unwrap_or(SystemTime::now()),
-                    });
-                }
-            }
-        }
+    let mut scanner = DirectoryScanner::new(watch_dir, gitignore);
+    while let Some((rel_path, item)) = scanner.next().await? {
+        files.insert(rel_path, item);
     }
-
     Ok(files)
 }
 
