@@ -63,6 +63,7 @@ pub struct AppConfig {
     pub conflict_policy: Option<cloud_sync_lib::ConflictPolicy>,
     pub dry_run: Option<bool>,
     pub bandwidth_schedule: Option<Vec<BandwidthSchedule>>,
+    pub error_recovery: Option<ErrorRecoveryConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -71,6 +72,13 @@ pub struct BandwidthSchedule {
     pub end_time: String,
     pub max_upload_rate: Option<u64>,
     pub max_download_rate: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ErrorRecoveryConfig {
+    pub max_retries: Option<usize>,
+    pub initial_delay_ms: Option<u64>,
+    pub multiplier: Option<f64>,
 }
 
 impl Default for AppConfig {
@@ -114,6 +122,7 @@ impl Default for AppConfig {
             conflict_policy: Some(cloud_sync_lib::ConflictPolicy::RenameLocal),
             dry_run: Some(false),
             bandwidth_schedule: None,
+            error_recovery: None,
         }
     }
 }
@@ -213,5 +222,29 @@ mod tests {
         assert_eq!(schedules[0].end_time, "17:00");
         assert_eq!(schedules[0].max_upload_rate, Some(100));
         assert_eq!(schedules[0].max_download_rate, Some(200));
+    }
+
+    #[test]
+    fn test_error_recovery_parsing() {
+        let toml_str = r#"
+            watch_directory = "./watched_folder"
+            google_drive_root = "./cloud_simulation/google_drive"
+            dropbox_root = "./cloud_simulation/dropbox"
+            onedrive_root = "./cloud_simulation/onedrive"
+            webdav_root = "./cloud_simulation/webdav"
+            s3_root = "./cloud_simulation/s3"
+            sftp_root = "./cloud_simulation/sftp"
+            nextcloud_root = "./cloud_simulation/nextcloud"
+
+            [error_recovery]
+            max_retries = 3
+            initial_delay_ms = 1000
+            multiplier = 1.5
+        "#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        let recovery = config.error_recovery.unwrap();
+        assert_eq!(recovery.max_retries, Some(3));
+        assert_eq!(recovery.initial_delay_ms, Some(1000));
+        assert_eq!(recovery.multiplier, Some(1.5));
     }
 }

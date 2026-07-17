@@ -379,6 +379,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration
     let config = load_or_create_config(&config_file).await?;
 
+    // Apply error recovery configuration globally
+    if let Some(ref recovery) = config.error_recovery {
+        let mut retry_config = cloud_sync_lib::get_global_retry_config();
+        if let Some(max_retries) = recovery.max_retries {
+            retry_config.max_attempts = max_retries + 1;
+        }
+        if let Some(delay_ms) = recovery.initial_delay_ms {
+            retry_config.initial_delay = std::time::Duration::from_millis(delay_ms);
+        }
+        if let Some(mult) = recovery.multiplier {
+            retry_config.multiplier = mult;
+        }
+        cloud_sync_lib::set_global_retry_config(retry_config);
+        info!("Applied global error recovery configuration: {:?}", retry_config);
+    }
+
     // Ensure the directories exist
     fs::create_dir_all(&config.watch_directory).await?;
     let watch_dir = fs::canonicalize(&config.watch_directory).await?;

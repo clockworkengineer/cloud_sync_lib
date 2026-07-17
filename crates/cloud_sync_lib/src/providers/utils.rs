@@ -173,6 +173,44 @@ pub fn is_transient_error(err: &StorageError) -> bool {
     }
 }
 
+use std::sync::Mutex;
+
+/// Global retry configuration.
+#[derive(Debug, Clone, Copy)]
+pub struct RetryConfig {
+    pub max_attempts: usize,
+    pub initial_delay: std::time::Duration,
+    pub multiplier: f64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 5,
+            initial_delay: std::time::Duration::from_millis(500),
+            multiplier: 2.0,
+        }
+    }
+}
+
+static GLOBAL_RETRY_CONFIG: Mutex<Option<RetryConfig>> = Mutex::new(None);
+
+/// Sets the global retry configuration.
+pub fn set_global_retry_config(config: RetryConfig) {
+    if let Ok(mut lock) = GLOBAL_RETRY_CONFIG.lock() {
+        *lock = Some(config);
+    }
+}
+
+/// Retrieves the global retry configuration.
+pub fn get_global_retry_config() -> RetryConfig {
+    if let Ok(lock) = GLOBAL_RETRY_CONFIG.lock() {
+        lock.clone().unwrap_or_default()
+    } else {
+        RetryConfig::default()
+    }
+}
+
 /// Executes an asynchronous operation with exponential backoff on transient errors.
 pub async fn execute_with_retry<T, F, Fut>(
     provider_name: &str,
@@ -183,13 +221,15 @@ where
     F: Fn() -> Fut + Send + Sync,
     Fut: std::future::Future<Output = Result<T, StorageError>> + Send,
 {
+    let config = get_global_retry_config();
+    let max_attempts = config.max_attempts;
     let mut attempt = 0;
-    let max_attempts = 5;
     let mut delay = if cfg!(test) {
         std::time::Duration::from_millis(1)
     } else {
-        std::time::Duration::from_millis(500)
+        config.initial_delay
     };
+    let multiplier = config.multiplier;
 
     loop {
         match f().await {
@@ -214,13 +254,7 @@ where
                     );
                     
                     tokio::time::sleep(sleep_duration).await;
-                    if let StorageError::RateLimit { retry_after: Some(_), .. } = &e {
-                        // Keep using the explicit retry-after window for rate-limiting sleep duration,
-                        // but still double the default delay just in case we hit a non-rate-limit next
-                        delay *= 2;
-                    } else {
-                        delay *= 2;
-                    }
+                    delay = std::time::Duration::from_secs_f64(delay.as_secs_f64() * multiplier);
                     continue;
                 }
                 return Err(e);
