@@ -840,7 +840,22 @@ pub async fn sync_bidirectional(
     conflict_policy: cloud_sync_lib::ConflictPolicy,
     dry_run: bool,
     selective_sync: Option<Vec<String>>,
+    event_tx: Option<tokio::sync::broadcast::Sender<String>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let broadcast_event = |event_type: &str, message: &str, progress: Option<f64>, active_file: Option<&str>| {
+        if let Some(ref tx) = event_tx {
+            let payload = serde_json::json!({
+                "type": event_type,
+                "message": message,
+                "progress_percent": progress,
+                "active_file": active_file,
+            }).to_string();
+            let _ = tx.send(payload);
+        }
+    };
+
+    broadcast_event("status", "Starting synchronization...", Some(0.0), None);
+
     let sync_both = policy.sync_both();
     let sync_deletions = policy.sync_deletions();
 
@@ -1108,12 +1123,13 @@ pub async fn sync_bidirectional(
     // Phase 2: Files (Concurrent)
     use futures_util::stream::StreamExt;
     let file_paths: Vec<String> = file_paths.into_iter().filter(|path| !resolved_moves.contains(path)).collect();
-    let tasks = file_paths.into_iter().map(|rel_path| {
+    let sync_state_files = sync_state.files.clone();
+    let tasks = file_paths.into_iter().map(move |rel_path| {
         let watch_dir = watch_dir.to_path_buf();
         let backend = backend.clone();
         let local_opt = local_files.get(&rel_path).cloned();
         let remote_opt = remote_files.get(&rel_path).cloned();
-        let state_opt = sync_state.files.get(&rel_path).cloned();
+        let state_opt = sync_state_files.get(&rel_path).cloned();
 
         tokio::spawn(async move {
             sync_single_file(
@@ -1131,18 +1147,33 @@ pub async fn sync_bidirectional(
         })
     });
 
-    let results =
-        futures_util::stream::iter(tasks)
-            .buffer_unordered(max_concurrency)
-            .collect::<Vec<_>>()
-            .await;
+    let total_files = tasks.len();
+    let mut completed_files = 0;
+    let mut stream = futures_util::stream::iter(tasks).buffer_unordered(max_concurrency);
 
-    for join_res in results {
+    while let Some(join_res) = stream.next().await {
+        completed_files += 1;
         let task_res = join_res?;
         let updates = task_res.map_err(|e| e as Box<dyn std::error::Error>)?;
+        
+        let mut last_path = String::new();
         for (path, file_state) in updates {
+            last_path = path.clone();
             next_files_state.insert(path, file_state);
         }
+
+        let progress_percent = if total_files > 0 {
+            (completed_files as f64 / total_files as f64) * 100.0
+        } else {
+            100.0
+        };
+
+        broadcast_event(
+            "progress",
+            &format!("Processed file {} of {}", completed_files, total_files),
+            Some(progress_percent),
+            if last_path.is_empty() { None } else { Some(&last_path) }
+        );
     }
 
     // 4. Save catalog state
@@ -1152,6 +1183,8 @@ pub async fn sync_bidirectional(
     } else {
         info!("[DRY-RUN] Sync execution completed. Skipping saving sync state catalog to disk.");
     }
+
+    broadcast_event("status", "Synchronization completed successfully.", Some(100.0), None);
     Ok(())
 }
 
@@ -1203,7 +1236,7 @@ mod tests {
             cloud_sync_lib::SyncMode::TwoWay
         };
         let policy = SyncPolicy::new(sync_mode);
-        super::sync_bidirectional(watch_dir, backend, policy, state_file_path, gitignore, max_concurrency, cloud_sync_lib::ConflictPolicy::RenameLocal, false, None).await
+        super::sync_bidirectional(watch_dir, backend, policy, state_file_path, gitignore, max_concurrency, cloud_sync_lib::ConflictPolicy::RenameLocal, false, None, None).await
     }
 
     #[tokio::test]
@@ -1423,6 +1456,7 @@ mod tests {
                     4,
                     cloud_sync_lib::ConflictPolicy::RenameLocal,
                     false,
+                    None,
                     None
                 ).await.unwrap();
 
@@ -1440,6 +1474,7 @@ mod tests {
                     4,
                     policy,
                     dry,
+                    None,
                     None
                 ).await.unwrap();
 
@@ -1499,6 +1534,7 @@ mod tests {
             4,
             cloud_sync_lib::ConflictPolicy::RenameLocal,
             false,
+            None,
             None
         ).await.unwrap();
 
@@ -1517,6 +1553,7 @@ mod tests {
             4,
             cloud_sync_lib::ConflictPolicy::RenameLocal,
             false,
+            None,
             None
         ).await.unwrap();
 
@@ -1557,7 +1594,8 @@ mod tests {
             4,
             cloud_sync_lib::ConflictPolicy::RenameLocal,
             false,
-            Some(vec!["MyFolder".to_string()])
+            Some(vec!["MyFolder".to_string()]),
+            None
         ).await.unwrap();
 
         assert!(remote_sim.sim.resolve("MyFolder/inside.txt").exists());

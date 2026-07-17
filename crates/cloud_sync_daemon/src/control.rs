@@ -143,6 +143,7 @@ pub async fn handle_control_command(
                 let max_concurrency = s.max_concurrency;
                 let conflict_policy = s.conflict_policy;
                 let dry_run = s.dry_run;
+                let event_tx = s.event_tx.clone();
                 let state_clone = state.clone();
                 tokio::spawn(async move {
                     info!("Manual sync triggered via control command. Starting bidirectional sync...");
@@ -160,6 +161,7 @@ pub async fn handle_control_command(
                             conflict_policy,
                             dry_run,
                             active_backend.selective_sync.clone(),
+                            Some(event_tx.clone()),
                         ).await {
                             error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
                         }

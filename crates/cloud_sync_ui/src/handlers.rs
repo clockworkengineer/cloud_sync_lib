@@ -195,3 +195,52 @@ pub async fn api_clear(Json(payload): axum::Json<ClearRequest>) -> impl IntoResp
         }
     }
 }
+
+use axum::response::sse::{Event, Sse};
+use tokio::io::BufReader;
+use tokio::io::AsyncBufReadExt;
+
+fn constrain_stream<S>(stream: S) -> S
+where
+    S: futures_util::stream::Stream<Item = Result<Event, std::io::Error>>,
+{
+    stream
+}
+
+/// HTTP Endpoint: Exposes the Server-Sent Events stream from the daemon.
+pub async fn api_events() -> impl IntoResponse {
+    let stream = constrain_stream(async_stream::try_stream! {
+        let mut tcp_stream = TcpStream::connect(DAEMON_CONTROL_ADDR).await?;
+        tcp_stream.write_all(b"subscribe\n").await?;
+        tcp_stream.flush().await?;
+
+        let (reader, mut writer) = tcp_stream.into_split();
+        let mut reader = BufReader::new(reader);
+        let mut line = String::new();
+
+        loop {
+            tokio::select! {
+                read_res = reader.read_line(&mut line) => {
+                    match read_res {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let trimmed = line.trim();
+                            if !trimmed.starts_with("Status:") {
+                                yield Event::default().data(trimmed.to_string());
+                            }
+                            line.clear();
+                        }
+                        Err(_) => break,
+                    }
+                }
+                _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                    if writer.write_all(b"\n").await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
+}

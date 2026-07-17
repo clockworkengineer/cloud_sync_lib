@@ -13,7 +13,7 @@ use tower_http::cors::CorsLayer;
 
 use handlers::{
     serve_index, api_status, api_start, api_pause, api_resume, api_sync,
-    api_reload, api_stop, api_clear
+    api_reload, api_stop, api_clear, api_events
 };
 
 pub const UI_BIND_ADDR: &str = "127.0.0.1:8082";
@@ -27,6 +27,7 @@ pub async fn start_ui_server() -> Result<(), std::io::Error> {
     let router = Router::new()
         .route("/", get(serve_index))
         .route("/api/status", get(api_status))
+        .route("/api/events", get(api_events))
         .route("/api/start", post(api_start))
         .route("/api/pause", post(api_pause))
         .route("/api/resume", post(api_resume))

@@ -95,6 +95,8 @@ pub struct DaemonState {
     pub conflict_policy: cloud_sync_lib::ConflictPolicy,
     /// If true, runs synchronization in dry-run mode.
     pub dry_run: bool,
+    /// Event transmitter for real-time SSE updates.
+    pub event_tx: tokio::sync::broadcast::Sender<String>,
 }
 
 #[allow(dead_code)]
@@ -433,6 +435,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize Providers
     let backends = build_backends(&config, upload_limiter.clone(), download_limiter.clone());
 
+    let (event_tx, _) = tokio::sync::broadcast::channel::<String>(100);
+
     if single_shot {
         info!("Running single-shot bidirectional synchronization...");
         for active_backend in &backends {
@@ -450,6 +454,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 conflict_policy,
                 dry_run,
                 active_backend.selective_sync.clone(),
+                Some(event_tx.clone()),
             ).await {
                 error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
             }
@@ -522,6 +527,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         connection_errors: HashMap::new(),
         conflict_policy,
         dry_run,
+        event_tx,
     }));
 
     // Spawn background dynamic rate limiter task if a schedule is defined
@@ -648,9 +654,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(pull_interval)).await;
 
-            let (paused, backends, watch_dir, gitignore, max_concurrency, conflict_policy, dry_run) = {
+            let (paused, backends, watch_dir, gitignore, max_concurrency, conflict_policy, dry_run, event_tx_pull) = {
                 let s = state_pull.lock().await;
-                (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone(), s.max_concurrency, s.conflict_policy, s.dry_run)
+                (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone(), s.max_concurrency, s.conflict_policy, s.dry_run, s.event_tx.clone())
             };
 
             if paused {
@@ -672,6 +678,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     conflict_policy,
                     dry_run,
                     active_backend.selective_sync.clone(),
+                    Some(event_tx_pull.clone()),
                 ).await {
                     error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
                 }
@@ -709,12 +716,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let (reader, mut writer) = socket.split();
                             let mut reader = BufReader::new(reader);
                             let mut line = String::new();
-                            if reader.read_line(&mut line).await.is_ok() {
-                                let cmd = line.trim();
-                                let response = handle_control_command(cmd, &state, &shutdown_tx).await;
-                                let _ = writer.write_all(response.as_bytes()).await;
-                                let _ = writer.flush().await;
-                            }
+                             if reader.read_line(&mut line).await.is_ok() {
+                                 let cmd = line.trim();
+                                 if cmd == "subscribe" {
+                                     let mut rx = {
+                                         let s = state.lock().await;
+                                         s.event_tx.subscribe()
+                                     };
+                                     let _ = writer.write_all(b"Status: Subscribed\n").await;
+                                     let _ = writer.flush().await;
+                                     while let Ok(msg) = rx.recv().await {
+                                         if writer.write_all(format!("{}\n", msg).as_bytes()).await.is_err() {
+                                             break;
+                                         }
+                                         if writer.flush().await.is_err() {
+                                             break;
+                                         }
+                                     }
+                                 } else {
+                                     let response = handle_control_command(cmd, &state, &shutdown_tx).await;
+                                     let _ = writer.write_all(response.as_bytes()).await;
+                                     let _ = writer.flush().await;
+                                 }
+                             }
                         });
                     }
                 }

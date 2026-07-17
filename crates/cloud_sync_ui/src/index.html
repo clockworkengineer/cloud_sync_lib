@@ -951,10 +951,39 @@
             }
         }
 
+        function initEventSource() {
+            const eventSource = new EventSource('/api/events');
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'progress') {
+                        addLogEntry('info', `[Real-Time Progress] ${data.message} ${data.active_file ? `(${data.active_file})` : ''} - ${data.progress_percent ? Math.round(data.progress_percent) : 0}%`);
+                        const syncText = document.getElementById('status-text');
+                        if (syncText) {
+                            syncText.textContent = `Syncing: ${Math.round(data.progress_percent)}%`;
+                        }
+                    } else if (data.type === 'status') {
+                        addLogEntry('info', `[Status Update] ${data.message}`);
+                        pollStatus();
+                    } else if (data.type === 'error') {
+                        addLogEntry('error', `[Daemon Error] ${data.message}`);
+                    }
+                } catch (e) {
+                    console.error('Error parsing SSE event:', e);
+                }
+            };
+            eventSource.onerror = () => {
+                console.warn('SSE connection lost. Reconnecting in 5 seconds...');
+                eventSource.close();
+                setTimeout(initEventSource, 5000);
+            };
+        }
+
         // Initial loading and scheduling
         (async function init() {
             addLogEntry('info', "UI Client initialized. Connecting to Rust UI server...");
             await pollStatus();
+            initEventSource();
             
             // Poll status every 2 seconds
             setInterval(async () => {

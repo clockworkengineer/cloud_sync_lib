@@ -400,6 +400,7 @@ mod tests {
                 selective_sync: None,
             },
         ];
+        let (event_tx, _) = tokio::sync::broadcast::channel(10);
         let state = Arc::new(Mutex::new(DaemonState {
             paused: false,
             backends,
@@ -415,6 +416,7 @@ mod tests {
             connection_errors: HashMap::new(),
             conflict_policy: cloud_sync_lib::ConflictPolicy::RenameLocal,
             dry_run: false,
+            event_tx,
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));
@@ -502,6 +504,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let watch_dir = temp_dir.path().to_path_buf();
         
+        let (event_tx, _) = tokio::sync::broadcast::channel(10);
         let state = Arc::new(Mutex::new(DaemonState {
             paused: false,
             backends,
@@ -517,6 +520,7 @@ mod tests {
             connection_errors: HashMap::new(),
             conflict_policy: cloud_sync_lib::ConflictPolicy::RenameLocal,
             dry_run: false,
+            event_tx,
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));
