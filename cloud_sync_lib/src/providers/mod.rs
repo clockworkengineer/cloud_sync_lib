@@ -6,17 +6,7 @@
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "kebab-case")]
-pub enum SyncMode {
-    /// Two-way sync: uploads/downloads changes and propagates deletions.
-    TwoWay,
-    /// One-way sync: uploads changes and propagates deletions from local to remote.
-    #[default]
-    OneWay,
-    /// One-way sync without propagating deletions.
-    OneWayNoDeletions,
-}
+pub use cloud_sync_core::SyncMode;
 
 /// Common configuration settings shared by all storage providers.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Zeroize, ZeroizeOnDrop)]

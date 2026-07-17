@@ -70,7 +70,7 @@ pub async fn scan_local_directory(
                 }
                 if let Ok(rel_path) = path.strip_prefix(watch_dir) {
                     let rel_str = rel_path.to_string_lossy().to_string();
-                    if rel_str == ".sync_state.json" || rel_str == ".syncignore" || (rel_str.starts_with(".sync_state_") && rel_str.ends_with(".json")) {
+                    if rel_str == ".sync_state.json" || rel_str == ".sync_state.bin" || rel_str == ".syncignore" || (rel_str.starts_with(".sync_state_") && (rel_str.ends_with(".json") || rel_str.ends_with(".bin"))) {
                         continue;
                     }
                     files.insert(rel_str, ScannedItem {
@@ -188,7 +188,7 @@ pub async fn handle_event(
                         continue;
                     }
                 };
-                if remote_path_str == ".sync_state.json" || remote_path_str == ".syncignore" || (remote_path_str.starts_with(".sync_state_") && remote_path_str.ends_with(".json")) {
+                if remote_path_str == ".sync_state.json" || remote_path_str == ".sync_state.bin" || remote_path_str == ".syncignore" || (remote_path_str.starts_with(".sync_state_") && (remote_path_str.ends_with(".json") || remote_path_str.ends_with(".bin"))) {
                     continue;
                 }
                 info!("Path change detected: '{}' (dir: {}). Syncing to all cloud backends...", remote_path_str, is_directory);
@@ -261,7 +261,7 @@ pub async fn handle_event(
                         continue;
                     }
                 };
-                if remote_path_str == ".sync_state.json" || remote_path_str == ".syncignore" || (remote_path_str.starts_with(".sync_state_") && remote_path_str.ends_with(".json")) {
+                if remote_path_str == ".sync_state.json" || remote_path_str == ".sync_state.bin" || remote_path_str == ".syncignore" || (remote_path_str.starts_with(".sync_state_") && (remote_path_str.ends_with(".json") || remote_path_str.ends_with(".bin"))) {
                     continue;
                 }
                 info!("File deletion detected: '{}'. Deleting from all cloud backends...", remote_path_str);
@@ -407,14 +407,14 @@ mod tests {
         let watch_dir = temp_dir.path();
         
         tokio::fs::write(watch_dir.join("test.txt"), "hello").await.unwrap();
-        tokio::fs::write(watch_dir.join(".sync_state.json"), "{}").await.unwrap();
+        tokio::fs::write(watch_dir.join(".sync_state.bin"), "{}").await.unwrap();
         tokio::fs::write(watch_dir.join(".syncignore"), "*.log").await.unwrap();
 
         let gitignore = build_gitignore(watch_dir, &None);
         let items = scan_local_directory(watch_dir, &gitignore).await.unwrap();
 
         assert!(items.contains_key("test.txt"));
-        assert!(!items.contains_key(".sync_state.json"));
+        assert!(!items.contains_key(".sync_state.bin"));
         assert!(!items.contains_key(".syncignore"));
     }
 
@@ -475,14 +475,14 @@ mod tests {
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));
         
-        // 1. Check Create event for .sync_state.json
-        let sync_state_file = watch_dir.join(".sync_state.json");
+        // 1. Check Create event for .sync_state.bin
+        let sync_state_file = watch_dir.join(".sync_state.bin");
         tokio::fs::write(&sync_state_file, "{}").await.unwrap();
         let event = Event::new(EventKind::Create(notify::event::CreateKind::File))
             .add_path(sync_state_file.clone());
         handle_event(event, state.clone(), active_locks.clone()).await;
 
-        // 2. Check Remove event for .sync_state.json
+        // 2. Check Remove event for .sync_state.bin
         let event_remove = Event::new(EventKind::Remove(notify::event::RemoveKind::File))
             .add_path(sync_state_file);
         handle_event(event_remove, state.clone(), active_locks.clone()).await;

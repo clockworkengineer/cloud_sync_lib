@@ -144,7 +144,7 @@ pub async fn handle_control_command(
                     info!("Manual sync triggered via control command. Starting bidirectional sync...");
                     for active_backend in &backends {
                         let safe_name = active_backend.backend.name().to_lowercase().replace(" ", "_");
-                        let state_filename = format!(".sync_state_{}.json", safe_name);
+                        let state_filename = format!(".sync_state_{}.bin", safe_name);
                         let state_file_path = watch_dir.join(state_filename);
                         if let Err(e) = crate::sync_engine::sync_bidirectional(
                             &watch_dir,

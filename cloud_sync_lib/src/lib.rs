@@ -7,15 +7,17 @@
 //! folder fallback simulation for offline development and testing.
 
 pub mod providers;
-pub mod traits;
 pub mod rate_limit;
-pub mod state;
-pub mod ignore;
-pub mod checksum;
+
+pub use cloud_sync_core::traits;
+pub use cloud_sync_core::state;
+pub use cloud_sync_core::path;
+pub use cloud_sync_std::ignore;
+pub use cloud_sync_std::checksum;
 
 pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig, EncryptedBackend, SyncMode, BackendCredentials, BackendRegistry};
-pub use state::{SyncState, FileState};
-pub use ignore::SyncIgnore;
+pub use cloud_sync_core::{SyncState, FileState};
+pub use cloud_sync_std::SyncIgnore;
 #[cfg(feature = "google_drive")]
 pub use providers::{GoogleDriveProvider, GoogleDriveProviderBuilder};
 #[cfg(feature = "dropbox")]
@@ -44,7 +46,7 @@ pub use providers::{B2Provider, B2ProviderBuilder};
 pub use providers::{PCloudProvider, PCloudProviderBuilder};
 #[cfg(feature = "ipfs")]
 pub use providers::{IPFSProvider, IPFSProviderBuilder};
-pub use traits::{StorageBackend, StorageError, StorageItem, SyncPolicy};
+pub use cloud_sync_core::{StorageBackend, StorageError, StorageItem, SyncPolicy};
 
 #[cfg(test)]
 mod tests {

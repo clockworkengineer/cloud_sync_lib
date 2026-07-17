@@ -315,6 +315,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut config_file = DEFAULT_CONFIG_FILE.to_string();
     let mut ui_addr = None;
     let mut clear_remote = None;
+    let mut single_shot = false;
+    let mut pmu_hook = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -323,6 +325,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             i += 2;
         } else if args[i] == "--clear-remote" && i + 1 < args.len() {
             clear_remote = Some(args[i + 1].clone());
+            i += 2;
+        } else if args[i] == "--single-shot" || args[i] == "-s" {
+            single_shot = true;
+            i += 1;
+        } else if args[i] == "--pmu-hook" && i + 1 < args.len() {
+            pmu_hook = Some(args[i + 1].clone());
             i += 2;
         } else {
             config_file = args[i].clone();
@@ -357,6 +365,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize Providers
     let backends = build_backends(&config, upload_limiter.clone(), download_limiter.clone());
+
+    if single_shot {
+        info!("Running single-shot bidirectional synchronization...");
+        for active_backend in &backends {
+            let safe_name = active_backend.backend.name().to_lowercase().replace(" ", "_");
+            let state_filename = format!(".sync_state_{}.bin", safe_name);
+            let state_file_path = watch_dir.join(state_filename);
+            info!("Syncing backend: {}", active_backend.backend.name());
+            if let Err(e) = sync_engine::sync_bidirectional(
+                &watch_dir,
+                active_backend.backend.clone(),
+                active_backend.policy,
+                &state_file_path,
+                &gitignore,
+                config.max_concurrency.unwrap_or(4),
+            ).await {
+                error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
+            }
+        }
+        info!("Single-shot synchronization completed.");
+
+        let active_pmu_hook = pmu_hook.or(config.pmu_hook.clone());
+        if let Some(hook) = active_pmu_hook {
+            info!("Executing PMU completion hook: {}", hook);
+            #[cfg(target_os = "windows")]
+            let mut cmd = std::process::Command::new("cmd");
+            #[cfg(target_os = "windows")]
+            cmd.args(&["/C", &hook]);
+
+            #[cfg(not(target_os = "windows"))]
+            let mut cmd = std::process::Command::new("sh");
+            #[cfg(not(target_os = "windows"))]
+            cmd.args(&["-c", &hook]);
+
+            match cmd.status() {
+                Ok(status) => info!("PMU hook exited with status: {}", status),
+                Err(e) => error!("Failed to execute PMU hook: {}", e),
+            }
+        }
+        return Ok(());
+    }
 
     if let Some(target_provider) = clear_remote {
         let matching_backend = backends.iter().find(|ab| ab.backend.name().eq_ignore_ascii_case(&target_provider));
@@ -470,7 +519,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Periodic bidirectional sync started...");
             for active_backend in &backends {
                 let safe_name = active_backend.backend.name().to_lowercase().replace(" ", "_");
-                let state_filename = format!(".sync_state_{}.json", safe_name);
+                let state_filename = format!(".sync_state_{}.bin", safe_name);
                 let state_file_path = watch_dir.join(state_filename);
                 if let Err(e) = sync_engine::sync_bidirectional(
                     &watch_dir,

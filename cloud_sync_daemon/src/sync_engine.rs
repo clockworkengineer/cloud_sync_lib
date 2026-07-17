@@ -32,7 +32,7 @@ async fn scan_remote_dir(
                         info!("Skipping potentially unsafe remote path containing traversal: {}", path_str);
                         continue;
                     }
-                    if path_str == ".sync_state.json" || path_str == ".syncignore" || (path_str.starts_with(".sync_state_") && path_str.ends_with(".json")) {
+                    if path_str == ".sync_state.json" || path_str == ".sync_state.bin" || path_str == ".syncignore" || (path_str.starts_with(".sync_state_") && (path_str.ends_with(".json") || path_str.ends_with(".bin"))) {
                         continue;
                     }
                     if gitignore.is_ignored(&item.path, item.is_dir) {
@@ -671,7 +671,7 @@ mod tests {
         let local_path = &local_dir;
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
         let remote_sim = Arc::new(TestBackendWrapper { sim });
-        let state_file = local_path.join(".sync_state.json");
+        let state_file = local_path.join(".sync_state.bin");
         let gitignore = SyncIgnore::empty();
 
         // 1. Initial State (Both empty)
@@ -741,7 +741,7 @@ mod tests {
         let local_path = &local_dir;
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
         let remote_sim = Arc::new(TestBackendWrapper { sim });
-        let state_file = local_path.join(".sync_state.json");
+        let state_file = local_path.join(".sync_state.bin");
         let gitignore = SyncIgnore::empty();
 
         // 1. Initial State (Both empty)

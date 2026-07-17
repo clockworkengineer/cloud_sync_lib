@@ -15,28 +15,28 @@ This document outlines a concrete, actionable refactoring plan to adapt and opti
 
 ## 2. Refactoring Pillars
 
-### Pillar 1: Dependency Pruning & Lightweight Networking
-* **Action**: Swap `reqwest` for a lightweight, embedded-friendly HTTP/networking stack.
+### Pillar 1: Dependency Pruning & Lightweight Networking (Complete)
+* [x] **Action**: Swap `reqwest` for a lightweight, embedded-friendly HTTP/networking stack.
   * *Option A (Embedded Linux)*: Swap `reqwest` with `ureq` (minimal, synchronous, lightweight client) or compile with tiny TLS features.
   * *Option B (Bare-Metal/RTOS)*: Integrate with `embedded-nal` (Network Abstraction Layer) and ESP/STM hardware TCP sockets.
-* **Action**: Make all providers optional via cargo feature flags so the compiler only builds the specific backend needed by the device (e.g. only compiling `webdav` for a local NAS sync, saving hundreds of KB of flash).
+* [x] **Action**: Make all providers optional via cargo feature flags so the compiler only builds the specific backend needed by the device (e.g. only compiling `webdav` for a local NAS sync, saving hundreds of KB of flash).
 
-### Pillar 2: Static Dispatch & Zero-Allocation Design
-* **Action**: Eliminate dynamic dispatch (`dyn StorageBackend`, `Box<dyn Error>`). Replace them with compile-time generics (`impl StorageBackend`) or statically dispatched enums (`enum ActiveProvider`).
-* **Action**: Refactor key paths and filenames to use `&str` or `Cow<'a, str>` instead of allocating `String` and `PathBuf` on every directory traversal.
+### Pillar 2: Static Dispatch & Zero-Allocation Design (Complete)
+* [x] **Action**: Eliminate dynamic dispatch (`dyn StorageBackend`, `Box<dyn Error>`). Replace them with compile-time generics (`impl StorageBackend`) or statically dispatched enums (`enum ActiveProvider`).
+* [x] **Action**: Refactor key paths and filenames to use `&str` or `Cow<'a, str>` instead of allocating `String` and `PathBuf` on every directory traversal.
 
-### Pillar 3: Flash Wear Leveling & Compact State
-* **Action**: Replace JSON serialization (`serde_json` / `.sync_state.json`) with a lightweight binary format like **`postcard`** (designed for `no_std` and embedded microcontrollers) or **MessagePack**.
-* **Action**: Buffer state writes in memory and flush to persistent storage (Flash/EEPROM) only when changes occur, or implement a basic wear-leveling flash driver wrapper.
+### Pillar 3: Flash Wear Leveling & Compact State (Complete)
+* [x] **Action**: Replace JSON serialization (`serde_json` / `.sync_state.json`) with a lightweight binary format like **`postcard`** (designed for `no_std` and embedded microcontrollers) or **MessagePack**.
+* [x] **Action**: Buffer state writes in memory and flush to persistent storage (Flash/EEPROM) only when changes occur, or implement a basic wear-leveling flash driver wrapper.
 
-### Pillar 4: Sleep-Wake Cycles (Power Management)
-* **Action**: Replace the active loop (`tokio::time::sleep`) with a single-shot execution model. 
-* **Action**: Expose control hooks so the device can boot, execute a single sync iteration, write the updated state, signal completion to the power management unit (PMU), and go into deep sleep (RTC-wakeup).
+### Pillar 4: Sleep-Wake Cycles (Power Management) (Complete)
+* [x] **Action**: Replace the active loop (`tokio::time::sleep`) with a single-shot execution model. 
+* [x] **Action**: Expose control hooks so the device can boot, execute a single sync iteration, write the updated state, signal completion to the power management unit (PMU), and go into deep sleep (RTC-wakeup).
 
-### Pillar 5: `no_std` Core Architecture
-* **Action**: Split `cloud_sync_lib` into:
-  * `cloud_sync_core`: A `no_std` crate defining traits, state structures, and safe path normalization.
-  * `cloud_sync_std`: An optional `std` companion crate providing filesystem helper utilities.
+### Pillar 5: `no_std` Core Architecture (Complete)
+* [x] **Action**: Split `cloud_sync_lib` into:
+  * [x] `cloud_sync_core`: A `no_std` crate defining traits, state structures, and safe path normalization.
+  * [x] `cloud_sync_std`: An optional `std` companion crate providing filesystem helper utilities.
 
 ---
 

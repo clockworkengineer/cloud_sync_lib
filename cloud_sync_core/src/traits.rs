@@ -1,107 +1,119 @@
-//! Trait definitions and core storage abstractions for `cloud_sync_lib`.
-//!
-//! This module defines the common error types, item metadata structure,
-//! and the `StorageBackend` trait that all cloud storage providers must implement.
+use alloc::string::String;
+use alloc::vec::Vec;
+use alloc::boxed::Box;
 
+#[cfg(feature = "std")]
 use std::path::{Path, PathBuf};
+#[cfg(feature = "std")]
 use std::time::SystemTime;
-use thiserror::Error;
-use crate::providers::SyncMode;
 
-/// Storage errors that can occur when executing storage backend operations.
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum StorageError {
-    /// Errors originating from local I/O operations.
-    #[error("I/O error occurred: {0}")]
-    Io(#[from] std::io::Error),
+    #[cfg(feature = "std")]
+    Io(std::io::Error),
 
-    /// Errors resulting from authorization or access token retrieval issues.
-    #[error("Authentication failed: {0}")]
     Authentication(String),
-
-    /// Errors when the requested remote resource does not exist.
-    #[error("Resource not found: {0}")]
     NotFound(String),
-
-    /// Errors resulting from provider rate limits / API throttling.
-    #[error("Rate limit exceeded. Try again later: {message}")]
+    
     RateLimit {
         message: String,
+        #[cfg(feature = "std")]
         retry_after: Option<std::time::Duration>,
     },
 
-    /// Errors returned from the cloud provider's API.
-    #[error("Storage provider error: {message} (status: {status:?})")]
     Provider {
         message: String,
         status: Option<u16>,
     },
 
-    /// Errors originating from the underlying HTTP client library.
-    #[error("HTTP client error: {0}")]
-    Reqwest(#[from] reqwest::Error),
+    #[cfg(feature = "std")]
+    Reqwest(reqwest::Error),
 
-    /// Authentication expired or invalid credentials.
-    #[error("Authentication expired: {0}")]
     AuthenticationExpired(String),
-
-    /// A conflict occurred (e.g. duplicate folders or resource state mismatch).
-    #[error("Conflict: {0}")]
     Conflict(String),
-
-    /// A connection failure occurred with the remote host.
-    #[error("Connection failed: {0}")]
     ConnectionFailed(String),
 }
 
-/// Common metadata returned by listings or query commands.
+#[cfg(feature = "std")]
+impl From<std::io::Error> for StorageError {
+    fn from(err: std::io::Error) -> Self {
+        StorageError::Io(err)
+    }
+}
+
+#[cfg(feature = "std")]
+impl From<reqwest::Error> for StorageError {
+    fn from(err: reqwest::Error) -> Self {
+        StorageError::Reqwest(err)
+    }
+}
+
+impl core::fmt::Display for StorageError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            #[cfg(feature = "std")]
+            StorageError::Io(e) => write!(f, "I/O error occurred: {}", e),
+            StorageError::Authentication(s) => write!(f, "Authentication failed: {}", s),
+            StorageError::NotFound(s) => write!(f, "Resource not found: {}", s),
+            StorageError::RateLimit { message, .. } => write!(f, "Rate limit exceeded. Try again later: {}", message),
+            StorageError::Provider { message, status } => {
+                write!(f, "Storage provider error: {} (status: {:?})", message, status)
+            }
+            #[cfg(feature = "std")]
+            StorageError::Reqwest(e) => write!(f, "HTTP client error: {}", e),
+            StorageError::AuthenticationExpired(s) => write!(f, "Authentication expired: {}", s),
+            StorageError::Conflict(s) => write!(f, "Conflict: {}", s),
+            StorageError::ConnectionFailed(s) => write!(f, "Connection failed: {}", s),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for StorageError {}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageItem {
-    /// Relative path representing the remote storage resource.
+    #[cfg(feature = "std")]
     pub path: PathBuf,
-    /// Exact file size in bytes (set to 0 for directories).
+    #[cfg(not(feature = "std"))]
+    pub path: String,
+
     pub size: u64,
-    /// Last modification date from the storage provider.
+
+    #[cfg(feature = "std")]
     pub modified: SystemTime,
-    /// Indicates whether the item is a folder or directory.
+    #[cfg(not(feature = "std"))]
+    pub modified: u64,
+
     pub is_dir: bool,
-    /// Optional checksum of the file (typically SHA-256, MD5, or provider-specific hash).
     pub checksum: Option<String>,
 }
 
-/// Generic trait representing any storage target (e.g. S3, Google Drive, Local Simulation).
-///
-/// Implements standard REST-like commands for manipulation and query,
-/// with support for custom prefixes, directories, and error handling.
 #[async_trait::async_trait]
 pub trait StorageBackend: Send + Sync {
-    /// Returns the user-friendly name of the storage backend.
     fn name(&self) -> &str;
 
-    /// Uploads a file from `local_path` to the cloud's `remote_path`.
+    #[cfg(feature = "std")]
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError>;
 
-    /// Downloads a file from the cloud's `remote_path` to `local_path`.
+    #[cfg(feature = "std")]
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError>;
 
-    /// Deletes a file or directory at the cloud's `remote_path`.
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError>;
 
-    /// Lists the contents of the cloud's directory at `remote_path`.
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError>;
 
-    /// Creates a folder/directory at the cloud's `remote_path`.
     async fn create_folder(&self, _remote_path: &str) -> Result<(), StorageError> {
         Ok(())
     }
 
-    /// Computes the local checksum of a file matching the provider's expected format.
-    /// Returns `Ok(None)` if the provider does not support checksum verification.
+    #[cfg(feature = "std")]
     async fn compute_local_checksum(&self, _local_path: &Path) -> Result<Option<String>, StorageError> {
         Ok(None)
     }
 }
 
+#[cfg(feature = "std")]
 #[async_trait::async_trait]
 impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
     fn name(&self) -> &str {
@@ -127,6 +139,7 @@ impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
     }
 }
 
+#[cfg(feature = "std")]
 #[async_trait::async_trait]
 impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
     fn name(&self) -> &str {
@@ -152,16 +165,15 @@ impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
     }
 }
 
-/// Sync policy details indicating directionality and deletion behavior.
-///
-/// # Examples
-///
-/// ```
-/// use cloud_sync_lib::{SyncPolicy, SyncMode};
-/// let policy = SyncPolicy::new(SyncMode::TwoWay);
-/// assert!(policy.sync_deletions());
-/// assert!(policy.sync_both());
-/// ```
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum SyncMode {
+    TwoWay,
+    #[default]
+    OneWay,
+    OneWayNoDeletions,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyncPolicy {
     pub mode: SyncMode,

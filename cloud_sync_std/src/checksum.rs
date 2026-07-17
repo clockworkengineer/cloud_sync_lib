@@ -75,5 +75,3 @@ pub async fn compute_sha1(path: &Path) -> io::Result<String> {
     }
     Ok(format!("{:x}", hasher.finalize()))
 }
-
-

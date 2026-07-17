@@ -6,6 +6,8 @@ members = [
     "cloud_sync_tauri",
     "cloud_sync_egui",
     "cloud_sync_backup",
+    "cloud_sync_core",
+    "cloud_sync_std",
 ]
 resolver = "2"
 

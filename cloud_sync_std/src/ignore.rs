@@ -64,4 +64,3 @@ mod tests {
         assert!(!gitignore.is_ignored(Path::new("error.log"), false));
     }
 }
-
