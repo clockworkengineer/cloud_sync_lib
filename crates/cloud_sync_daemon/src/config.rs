@@ -62,6 +62,15 @@ pub struct AppConfig {
     pub pmu_hook: Option<String>,
     pub conflict_policy: Option<cloud_sync_lib::ConflictPolicy>,
     pub dry_run: Option<bool>,
+    pub bandwidth_schedule: Option<Vec<BandwidthSchedule>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BandwidthSchedule {
+    pub start_time: String,
+    pub end_time: String,
+    pub max_upload_rate: Option<u64>,
+    pub max_download_rate: Option<u64>,
 }
 
 impl Default for AppConfig {
@@ -104,6 +113,7 @@ impl Default for AppConfig {
             pmu_hook: None,
             conflict_policy: Some(cloud_sync_lib::ConflictPolicy::RenameLocal),
             dry_run: Some(false),
+            bandwidth_schedule: None,
         }
     }
 }
@@ -154,7 +164,9 @@ mod tests {
                 enabled: Some(false),
                 sync_mode: None,
                 encryption_password: None,
-                ..Default::default()
+                max_upload_rate: None,
+                max_download_rate: None,
+                selective_sync: None,
             },
         });
         assert!(!is_provider_enabled(&creds_disabled));
@@ -168,9 +180,38 @@ mod tests {
                 enabled: Some(true),
                 sync_mode: None,
                 encryption_password: None,
-                ..Default::default()
+                max_upload_rate: None,
+                max_download_rate: None,
+                selective_sync: None,
             },
         });
         assert!(is_provider_enabled(&creds_enabled));
+    }
+
+    #[test]
+    fn test_bandwidth_schedule_parsing() {
+        let toml_str = r#"
+            watch_directory = "./watched_folder"
+            google_drive_root = "./cloud_simulation/google_drive"
+            dropbox_root = "./cloud_simulation/dropbox"
+            onedrive_root = "./cloud_simulation/onedrive"
+            webdav_root = "./cloud_simulation/webdav"
+            s3_root = "./cloud_simulation/s3"
+            sftp_root = "./cloud_simulation/sftp"
+            nextcloud_root = "./cloud_simulation/nextcloud"
+
+            [[bandwidth_schedule]]
+            start_time = "09:00"
+            end_time = "17:00"
+            max_upload_rate = 100
+            max_download_rate = 200
+        "#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        let schedules = config.bandwidth_schedule.unwrap();
+        assert_eq!(schedules.len(), 1);
+        assert_eq!(schedules[0].start_time, "09:00");
+        assert_eq!(schedules[0].end_time, "17:00");
+        assert_eq!(schedules[0].max_upload_rate, Some(100));
+        assert_eq!(schedules[0].max_download_rate, Some(200));
     }
 }

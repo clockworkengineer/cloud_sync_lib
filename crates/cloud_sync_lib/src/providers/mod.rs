@@ -24,6 +24,9 @@ pub struct CommonProviderSettings {
     pub max_upload_rate: Option<u64>,
     /// Optional download rate limit in KB/s.
     pub max_download_rate: Option<u64>,
+    /// Optional selective synchronization folder paths.
+    #[zeroize(skip)]
+    pub selective_sync: Option<Vec<String>>,
 }
 
 pub trait ProviderConfig {
@@ -65,6 +68,10 @@ pub trait ProviderConfig {
 
     fn max_download_rate(&self) -> Option<u64> {
         self.common_settings().max_download_rate
+    }
+
+    fn selective_sync(&self) -> Option<Vec<String>> {
+        self.common_settings().selective_sync.clone()
     }
 }
 

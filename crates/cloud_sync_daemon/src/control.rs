@@ -159,6 +159,7 @@ pub async fn handle_control_command(
                             max_concurrency,
                             conflict_policy,
                             dry_run,
+                            active_backend.selective_sync.clone(),
                         ).await {
                             error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
                         }

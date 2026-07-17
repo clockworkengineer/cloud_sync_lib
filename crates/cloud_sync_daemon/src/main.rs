@@ -62,6 +62,7 @@ pub const MAX_SYNC_ATTEMPTS: u32 = 3;
 pub struct ActiveBackend {
     pub backend: Arc<dyn StorageBackend>,
     pub policy: cloud_sync_lib::SyncPolicy,
+    pub selective_sync: Option<Vec<String>>,
 }
 
 /// Internal state of the daemon.
@@ -129,6 +130,7 @@ fn try_add_backend<C, F>(
             .with_limiters(provider_upload_limiter, provider_download_limiter);
         let fallback = SimulatedFallback::new(inner, local_sim, provider_name, sync_mode);
 
+        let selective_sync = creds_option.as_ref().and_then(|c| c.selective_sync());
         let backend: Arc<dyn StorageBackend> = if let Some(password) = creds_option.as_ref().and_then(|c| c.encryption_password()) {
             Arc::new(cloud_sync_lib::EncryptedBackend::new(fallback, password))
         } else {
@@ -137,6 +139,7 @@ fn try_add_backend<C, F>(
         backends.push(ActiveBackend {
             backend,
             policy: cloud_sync_lib::SyncPolicy::new(sync_mode),
+            selective_sync,
         });
     } else {
         info!("{} provider is disabled in configuration.", provider_name);
@@ -398,12 +401,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Initialize rate limiters
-    let upload_limiter = config.max_upload_rate.map(|rate| {
-        cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024)
-    });
-    let download_limiter = config.max_download_rate.map(|rate| {
-        cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024)
-    });
+    let upload_limiter = if config.max_upload_rate.is_some() || config.bandwidth_schedule.is_some() {
+        let initial_rate = config.max_upload_rate.unwrap_or(0);
+        Some(cloud_sync_lib::rate_limit::TokenBucket::new(initial_rate * 1024))
+    } else {
+        None
+    };
+    let download_limiter = if config.max_download_rate.is_some() || config.bandwidth_schedule.is_some() {
+        let initial_rate = config.max_download_rate.unwrap_or(0);
+        Some(cloud_sync_lib::rate_limit::TokenBucket::new(initial_rate * 1024))
+    } else {
+        None
+    };
 
     // Initialize Providers
     let backends = build_backends(&config, upload_limiter.clone(), download_limiter.clone());
@@ -424,6 +433,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 config.max_concurrency.unwrap_or(4),
                 conflict_policy,
                 dry_run,
+                active_backend.selective_sync.clone(),
             ).await {
                 error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
             }
@@ -497,6 +507,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         conflict_policy,
         dry_run,
     }));
+
+    // Spawn background dynamic rate limiter task if a schedule is defined
+    if let Some(ref schedule) = config.bandwidth_schedule {
+        let schedule_clone = schedule.clone();
+        let state_limit = state.clone();
+        let default_upload = config.max_upload_rate.unwrap_or(0);
+        let default_download = config.max_download_rate.unwrap_or(0);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                let now = chrono::Local::now().time();
+                
+                // Find matching schedule
+                let mut active_upload = None;
+                let mut active_download = None;
+
+                for window in &schedule_clone {
+                    let start_parts: Vec<&str> = window.start_time.split(':').collect();
+                    let end_parts: Vec<&str> = window.end_time.split(':').collect();
+
+                    if start_parts.len() == 2 && end_parts.len() == 2 {
+                        if let (Ok(sh), Ok(sm), Ok(eh), Ok(em)) = (
+                            start_parts[0].parse::<u32>(),
+                            start_parts[1].parse::<u32>(),
+                            end_parts[0].parse::<u32>(),
+                            end_parts[1].parse::<u32>(),
+                        ) {
+                            if let (Some(start_time), Some(end_time)) = (
+                                chrono::NaiveTime::from_hms_opt(sh, sm, 0),
+                                chrono::NaiveTime::from_hms_opt(eh, em, 0),
+                            ) {
+                                let in_window = if start_time <= end_time {
+                                    now >= start_time && now <= end_time
+                                } else {
+                                    now >= start_time || now <= end_time
+                                };
+
+                                if in_window {
+                                    active_upload = window.max_upload_rate;
+                                    active_download = window.max_download_rate;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let target_upload = active_upload.unwrap_or(default_upload);
+                let target_download = active_download.unwrap_or(default_download);
+
+                let s = state_limit.lock().await;
+                if let Some(ref limiter) = s.upload_limiter {
+                    let cur_rate = limiter.rate() / 1024;
+                    if cur_rate != target_upload {
+                        info!("Dynamic Scheduler: Adjusting upload limit to {} KB/s", target_upload);
+                        limiter.set_rate(target_upload * 1024);
+                    }
+                }
+                if let Some(ref limiter) = s.download_limiter {
+                    let cur_rate = limiter.rate() / 1024;
+                    if cur_rate != target_download {
+                        info!("Dynamic Scheduler: Adjusting download limit to {} KB/s", target_download);
+                        limiter.set_rate(target_download * 1024);
+                    }
+                }
+            }
+        });
+    }
 
     // Spawn periodic backend health check task
     let state_health = state.clone();
@@ -576,6 +655,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     max_concurrency,
                     conflict_policy,
                     dry_run,
+                    active_backend.selective_sync.clone(),
                 ).await {
                     error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
                 }

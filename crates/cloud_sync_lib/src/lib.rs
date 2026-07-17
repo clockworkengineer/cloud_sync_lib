@@ -178,13 +178,7 @@ mod tests {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
             refresh_token: "mock_refresh".to_string(),
-            common: CommonProviderSettings {
-                destination_folder: None,
-                enabled: None,
-                sync_mode: None,
-                encryption_password: None,
-                ..Default::default()
-            },
+            common: CommonProviderSettings::default(),
         };
 
         // Create provider and set endpoints to mock server
@@ -390,13 +384,7 @@ mod tests {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
             refresh_token: "mock_refresh".to_string(),
-            common: CommonProviderSettings {
-                destination_folder: None,
-                enabled: None,
-                sync_mode: None,
-                encryption_password: None,
-                ..Default::default()
-            },
+            common: CommonProviderSettings::default(),
         };
 
         // Create provider and set endpoints to mock server
@@ -593,13 +581,7 @@ mod tests {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
             refresh_token: "mock_refresh".to_string(),
-            common: CommonProviderSettings {
-                destination_folder: None,
-                enabled: None,
-                sync_mode: None,
-                encryption_password: None,
-                ..Default::default()
-            },
+            common: CommonProviderSettings::default(),
         };
 
         // Create provider and set endpoints to mock server
@@ -812,7 +794,9 @@ mod tests {
                 enabled: None,
                 sync_mode: None,
                 encryption_password: None,
-                ..Default::default()
+                max_upload_rate: None,
+                max_download_rate: None,
+                selective_sync: None,
             },
         };
 
@@ -1007,7 +991,9 @@ mod tests {
                 enabled: None,
                 sync_mode: None,
                 encryption_password: None,
-                ..Default::default()
+                max_upload_rate: None,
+                max_download_rate: None,
+                selective_sync: None,
             },
         };
 

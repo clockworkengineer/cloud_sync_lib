@@ -12,13 +12,13 @@ use tokio::io::{AsyncRead, ReadBuf};
 struct BucketState {
     tokens: f64,
     last_update: Instant,
+    rate: u64,
+    capacity: u64,
 }
 
 /// A thread-safe Token Bucket rate limiter.
 #[derive(Clone, Debug)]
 pub struct TokenBucket {
-    rate: u64, // bytes per second
-    capacity: u64,
     state: Arc<Mutex<BucketState>>,
 }
 
@@ -28,42 +28,50 @@ impl TokenBucket {
     pub fn new(rate: u64) -> Self {
         let capacity = rate;
         Self {
-            rate,
-            capacity,
             state: Arc::new(Mutex::new(BucketState {
                 tokens: capacity as f64,
                 last_update: Instant::now(),
+                rate,
+                capacity,
             })),
         }
     }
 
     /// Returns the configured rate in bytes per second.
     pub fn rate(&self) -> u64 {
-        self.rate
+        self.state.lock().unwrap().rate
+    }
+
+    /// Sets the configured rate dynamically in bytes per second.
+    pub fn set_rate(&self, new_rate: u64) {
+        let mut state = self.state.lock().unwrap();
+        state.rate = new_rate;
+        state.capacity = new_rate;
+        state.tokens = state.tokens.min(new_rate as f64);
     }
 
     /// Synchronously consumes `amount` tokens. Returns the duration to sleep if not enough tokens are available.
     pub fn consume(&self, amount: u64) -> Option<Duration> {
-        if self.rate == 0 {
+        let mut state = self.state.lock().unwrap();
+        let rate = state.rate;
+        if rate == 0 {
             return None;
         }
 
-        let mut state = self.state.lock().unwrap();
         let now = Instant::now();
         let elapsed = now.duration_since(state.last_update).as_secs_f64();
         state.last_update = now;
 
         // Replenish tokens
-        state.tokens = (state.tokens + elapsed * self.rate as f64).min(self.capacity as f64);
+        state.tokens = (state.tokens + elapsed * rate as f64).min(state.capacity as f64);
 
         if state.tokens >= amount as f64 {
             state.tokens -= amount as f64;
             None
         } else {
-            let needed = amount as f64 - state.tokens;
-            let wait_secs = needed / self.rate as f64;
-            state.tokens = 0.0;
-            Some(Duration::from_secs_f64(wait_secs))
+            let missing = amount as f64 - state.tokens;
+            let sleep_secs = missing / rate as f64;
+            Some(Duration::from_secs_f64(sleep_secs))
         }
     }
 }

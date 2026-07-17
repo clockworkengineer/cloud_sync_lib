@@ -392,10 +392,12 @@ mod tests {
             ActiveBackend {
                 backend: backend_true,
                 policy: cloud_sync_lib::SyncPolicy::new(cloud_sync_lib::SyncMode::OneWay),
+                selective_sync: None,
             },
             ActiveBackend {
                 backend: backend_false,
                 policy: cloud_sync_lib::SyncPolicy::new(cloud_sync_lib::SyncMode::OneWayNoDeletions),
+                selective_sync: None,
             },
         ];
         let state = Arc::new(Mutex::new(DaemonState {
@@ -494,6 +496,7 @@ mod tests {
         let backends = vec![ActiveBackend {
             backend,
             policy: cloud_sync_lib::SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+            selective_sync: None,
         }];
 
         let temp_dir = tempfile::tempdir().unwrap();

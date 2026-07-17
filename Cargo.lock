@@ -1161,6 +1161,7 @@ name = "cloud_sync_daemon"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "cloud_sync_lib",
  "futures-util",
  "ignore",

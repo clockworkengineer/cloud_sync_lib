@@ -809,6 +809,26 @@ async fn sync_single_file(
     Ok(updates)
 }
 
+fn is_path_selected(rel_path: &str, selective_sync: &Option<Vec<String>>) -> bool {
+    if let Some(list) = selective_sync {
+        if list.is_empty() {
+            return false;
+        }
+        for prefix in list {
+            let prefix_replaced = prefix.replace('\\', "/");
+            let prefix_norm = prefix_replaced.trim_start_matches('/').trim_end_matches('/');
+            let path_replaced = rel_path.replace('\\', "/");
+            let path_norm = path_replaced.trim_start_matches('/').trim_end_matches('/');
+            if path_norm == prefix_norm || path_norm.starts_with(&format!("{}/", prefix_norm)) {
+                return true;
+            }
+        }
+        false
+    } else {
+        true
+    }
+}
+
 /// Main entry point for performing a bidirectional synchronization step.
 pub async fn sync_bidirectional(
     watch_dir: &Path,
@@ -819,6 +839,7 @@ pub async fn sync_bidirectional(
     max_concurrency: usize,
     conflict_policy: cloud_sync_lib::ConflictPolicy,
     dry_run: bool,
+    selective_sync: Option<Vec<String>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sync_both = policy.sync_both();
     let sync_deletions = policy.sync_deletions();
@@ -848,14 +869,26 @@ pub async fn sync_bidirectional(
     let mut next_files_state = HashMap::new();
     let mut all_paths = HashSet::new();
 
+    for (path, state) in &sync_state.files {
+        if !is_path_selected(path, &selective_sync) {
+            next_files_state.insert(path.clone(), state.clone());
+        }
+    }
+
     for path in local_files.keys() {
-        all_paths.insert(path.clone());
+        if is_path_selected(path, &selective_sync) {
+            all_paths.insert(path.clone());
+        }
     }
     for path in remote_files.keys() {
-        all_paths.insert(path.clone());
+        if is_path_selected(path, &selective_sync) {
+            all_paths.insert(path.clone());
+        }
     }
     for path in sync_state.files.keys() {
-        all_paths.insert(path.clone());
+        if is_path_selected(path, &selective_sync) {
+            all_paths.insert(path.clone());
+        }
     }
 
     let mut dir_paths = Vec::new();
@@ -1170,7 +1203,7 @@ mod tests {
             cloud_sync_lib::SyncMode::TwoWay
         };
         let policy = SyncPolicy::new(sync_mode);
-        super::sync_bidirectional(watch_dir, backend, policy, state_file_path, gitignore, max_concurrency, cloud_sync_lib::ConflictPolicy::RenameLocal, false).await
+        super::sync_bidirectional(watch_dir, backend, policy, state_file_path, gitignore, max_concurrency, cloud_sync_lib::ConflictPolicy::RenameLocal, false, None).await
     }
 
     #[tokio::test]
@@ -1389,7 +1422,8 @@ mod tests {
                     &gitignore,
                     4,
                     cloud_sync_lib::ConflictPolicy::RenameLocal,
-                    false
+                    false,
+                    None
                 ).await.unwrap();
 
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -1405,7 +1439,8 @@ mod tests {
                     &gitignore,
                     4,
                     policy,
-                    dry
+                    dry,
+                    None
                 ).await.unwrap();
 
                 (local_dir, remote_dir, state_file)
@@ -1463,7 +1498,8 @@ mod tests {
             &gitignore,
             4,
             cloud_sync_lib::ConflictPolicy::RenameLocal,
-            false
+            false,
+            None
         ).await.unwrap();
 
         assert!(remote_sim.sim.resolve("old_name.txt").exists());
@@ -1480,10 +1516,51 @@ mod tests {
             &gitignore,
             4,
             cloud_sync_lib::ConflictPolicy::RenameLocal,
-            false
+            false,
+            None
         ).await.unwrap();
 
         assert!(!remote_sim.sim.resolve("old_name.txt").exists());
         assert!(remote_sim.sim.resolve("new_name.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_selective_sync() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        let temp_base = std::env::temp_dir();
+        let local_dir = temp_base.join(format!("local_sel_{}", unique_id));
+        let remote_dir = temp_base.join(format!("remote_sel_{}", unique_id));
+        tokio::fs::create_dir_all(&local_dir).await.unwrap();
+        tokio::fs::create_dir_all(&remote_dir).await.unwrap();
+
+        let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
+        let remote_sim = Arc::new(TestBackendWrapper { sim });
+        let state_file = local_dir.join(".sync_state.bin");
+        let gitignore = SyncIgnore::empty();
+
+        let inside_file = local_dir.join("MyFolder/inside.txt");
+        let outside_file = local_dir.join("outside.txt");
+        tokio::fs::create_dir_all(local_dir.join("MyFolder")).await.unwrap();
+        tokio::fs::write(&inside_file, "inside").await.unwrap();
+        tokio::fs::write(&outside_file, "outside").await.unwrap();
+
+        super::sync_bidirectional(
+            &local_dir,
+            remote_sim.clone(),
+            SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+            &state_file,
+            &gitignore,
+            4,
+            cloud_sync_lib::ConflictPolicy::RenameLocal,
+            false,
+            Some(vec!["MyFolder".to_string()])
+        ).await.unwrap();
+
+        assert!(remote_sim.sim.resolve("MyFolder/inside.txt").exists());
+        assert!(!remote_sim.sim.resolve("outside.txt").exists());
     }
 }
