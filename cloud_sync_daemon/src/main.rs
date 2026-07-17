@@ -90,6 +90,10 @@ pub struct DaemonState {
     pub max_concurrency: usize,
     /// Map of backend name to its last connection error message (if any).
     pub connection_errors: HashMap<String, String>,
+    /// Selected conflict resolution strategy.
+    pub conflict_policy: cloud_sync_lib::ConflictPolicy,
+    /// If true, runs synchronization in dry-run mode.
+    pub dry_run: bool,
 }
 
 #[allow(dead_code)]
@@ -319,6 +323,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut clear_remote = None;
     let mut single_shot = false;
     let mut pmu_hook = None;
+    let mut cli_dry_run = false;
+    let mut cli_conflict_policy = None;
+    let mut cli_excludes = Vec::new();
 
     let mut i = 1;
     while i < args.len() {
@@ -333,6 +340,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             i += 1;
         } else if args[i] == "--pmu-hook" && i + 1 < args.len() {
             pmu_hook = Some(args[i + 1].clone());
+            i += 2;
+        } else if args[i] == "--dry-run" {
+            cli_dry_run = true;
+            i += 1;
+        } else if args[i] == "--conflict-policy" && i + 1 < args.len() {
+            let policy_str = args[i + 1].clone();
+            let policy = match policy_str.as_str() {
+                "rename-local" => cloud_sync_lib::ConflictPolicy::RenameLocal,
+                "rename-remote" => cloud_sync_lib::ConflictPolicy::RenameRemote,
+                "keep-newer" => cloud_sync_lib::ConflictPolicy::KeepNewer,
+                "keep-local" => cloud_sync_lib::ConflictPolicy::KeepLocal,
+                "keep-remote" => cloud_sync_lib::ConflictPolicy::KeepRemote,
+                _ => {
+                    error!("Unknown conflict policy: '{}'. Using RenameLocal.", policy_str);
+                    cloud_sync_lib::ConflictPolicy::RenameLocal
+                }
+            };
+            cli_conflict_policy = Some(policy);
+            i += 2;
+        } else if args[i] == "--exclude" && i + 1 < args.len() {
+            cli_excludes.push(args[i + 1].clone());
             i += 2;
         } else {
             config_file = args[i].clone();
@@ -354,8 +382,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Watching directory: {:?}", watch_dir);
 
     // Initialize gitignore matcher
-    let gitignore = watcher::build_gitignore(&watch_dir, &config.exclude);
-    let exclude = config.exclude.clone();
+    let mut final_excludes = config.exclude.clone().unwrap_or_default();
+    final_excludes.extend(cli_excludes);
+    let gitignore = watcher::build_gitignore(&watch_dir, &Some(final_excludes.clone()));
+    let exclude = Some(final_excludes);
+
+    let conflict_policy = cli_conflict_policy
+        .or(config.conflict_policy)
+        .unwrap_or(cloud_sync_lib::ConflictPolicy::RenameLocal);
+
+    let dry_run = if cli_dry_run {
+        true
+    } else {
+        config.dry_run.unwrap_or(false)
+    };
 
     // Initialize rate limiters
     let upload_limiter = config.max_upload_rate.map(|rate| {
@@ -382,6 +422,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &state_file_path,
                 &gitignore,
                 config.max_concurrency.unwrap_or(4),
+                conflict_policy,
+                dry_run,
             ).await {
                 error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
             }
@@ -452,6 +494,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         download_limiter,
         max_concurrency: config.max_concurrency.unwrap_or(4),
         connection_errors: HashMap::new(),
+        conflict_policy,
+        dry_run,
     }));
 
     // Spawn periodic backend health check task
@@ -509,9 +553,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(pull_interval)).await;
 
-            let (paused, backends, watch_dir, gitignore, max_concurrency) = {
+            let (paused, backends, watch_dir, gitignore, max_concurrency, conflict_policy, dry_run) = {
                 let s = state_pull.lock().await;
-                (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone(), s.max_concurrency)
+                (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone(), s.max_concurrency, s.conflict_policy, s.dry_run)
             };
 
             if paused {
@@ -530,6 +574,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &state_file_path,
                     &gitignore,
                     max_concurrency,
+                    conflict_policy,
+                    dry_run,
                 ).await {
                     error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
                 }

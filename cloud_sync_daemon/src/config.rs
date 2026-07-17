@@ -60,6 +60,8 @@ pub struct AppConfig {
     pub pull_interval_secs: Option<u64>,
     pub max_concurrency: Option<usize>,
     pub pmu_hook: Option<String>,
+    pub conflict_policy: Option<cloud_sync_lib::ConflictPolicy>,
+    pub dry_run: Option<bool>,
 }
 
 impl Default for AppConfig {
@@ -100,6 +102,8 @@ impl Default for AppConfig {
             pull_interval_secs: Some(30),
             max_concurrency: Some(4),
             pmu_hook: None,
+            conflict_policy: Some(cloud_sync_lib::ConflictPolicy::RenameLocal),
+            dry_run: Some(false),
         }
     }
 }

@@ -411,6 +411,8 @@ mod tests {
             download_limiter: None,
             max_concurrency: 4,
             connection_errors: HashMap::new(),
+            conflict_policy: cloud_sync_lib::ConflictPolicy::RenameLocal,
+            dry_run: false,
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));
@@ -510,6 +512,8 @@ mod tests {
             download_limiter: None,
             max_concurrency: 4,
             connection_errors: HashMap::new(),
+            conflict_policy: cloud_sync_lib::ConflictPolicy::RenameLocal,
+            dry_run: false,
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));

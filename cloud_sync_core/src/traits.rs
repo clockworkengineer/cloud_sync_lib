@@ -198,3 +198,14 @@ impl SyncPolicy {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConflictPolicy {
+    #[default]
+    RenameLocal,
+    RenameRemote,
+    KeepNewer,
+    KeepLocal,
+    KeepRemote,
+}

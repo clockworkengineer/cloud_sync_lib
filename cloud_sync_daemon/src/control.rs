@@ -120,7 +120,9 @@ pub async fn handle_control_command(
                     s.download_limiter = download_limiter;
                     s.exclude = config.exclude.clone();
                     s.gitignore = crate::watcher::build_gitignore(&s.watch_dir, &config.exclude);
-                    info!("Configuration reloaded successfully. Active backends and rate limits updated.");
+                    s.conflict_policy = config.conflict_policy.unwrap_or_default();
+                    s.dry_run = config.dry_run.unwrap_or(false);
+                    info!("Configuration reloaded successfully. Active backends, conflict policy, dry-run, and rate limits updated.");
                     "Status: Config reloaded successfully\n".to_string()
                 }
                 Err(e) => {
@@ -139,6 +141,8 @@ pub async fn handle_control_command(
                 let backends = s.backends.clone();
                 let gitignore = s.gitignore.clone();
                 let max_concurrency = s.max_concurrency;
+                let conflict_policy = s.conflict_policy;
+                let dry_run = s.dry_run;
                 let state_clone = state.clone();
                 tokio::spawn(async move {
                     info!("Manual sync triggered via control command. Starting bidirectional sync...");
@@ -153,6 +157,8 @@ pub async fn handle_control_command(
                             &state_file_path,
                             &gitignore,
                             max_concurrency,
+                            conflict_policy,
+                            dry_run,
                         ).await {
                             error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
                         }
