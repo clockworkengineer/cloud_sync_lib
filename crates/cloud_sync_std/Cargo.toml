@@ -1,0 +1,15 @@
+[package]
+name = "cloud_sync_std"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cloud_sync_core = { path = "../cloud_sync_core" }
+ignore = "0.4"
+tokio = { version = "1", features = ["fs", "io-util"] }
+ring = { version = "0.17", features = ["alloc"] }
+md5 = "0.7"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

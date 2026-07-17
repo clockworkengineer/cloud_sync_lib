@@ -1,13 +1,13 @@
 [workspace]
 members = [
-    "cloud_sync_lib",
-    "cloud_sync_daemon",
-    "cloud_sync_ui",
-    "cloud_sync_tauri",
-    "cloud_sync_egui",
-    "cloud_sync_backup",
-    "cloud_sync_core",
-    "cloud_sync_std",
+    "crates/cloud_sync_lib",
+    "crates/cloud_sync_daemon",
+    "crates/cloud_sync_ui",
+    "crates/cloud_sync_tauri",
+    "crates/cloud_sync_egui",
+    "crates/cloud_sync_backup",
+    "crates/cloud_sync_core",
+    "crates/cloud_sync_std",
 ]
 resolver = "2"
 
