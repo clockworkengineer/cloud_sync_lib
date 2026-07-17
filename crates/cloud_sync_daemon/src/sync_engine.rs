@@ -987,8 +987,94 @@ pub async fn sync_bidirectional(
         }
     }
 
+    // Phase 1.5: Intelligent File Move/Rename Detection
+    let mut resolved_moves = HashSet::new();
+    if sync_both && sync_deletions {
+        let mut from_candidates = Vec::new();
+        let mut to_candidates = Vec::new();
+
+        for path in &file_paths {
+            let local_opt = local_files.get(path);
+            let remote_opt = remote_files.get(path);
+            let state_opt = sync_state.files.get(path);
+
+            if local_opt.is_none() && remote_opt.is_some() && state_opt.is_some() {
+                from_candidates.push(path.clone());
+            } else if local_opt.is_some() && remote_opt.is_none() && state_opt.is_none() {
+                to_candidates.push(path.clone());
+            }
+        }
+
+        let mut matched_from = HashSet::new();
+        for to_path in &to_candidates {
+            let to_file = local_files.get(to_path).unwrap();
+            if to_file.is_dir {
+                continue;
+            }
+
+            let mut best_match = None;
+            for from_path in &from_candidates {
+                if matched_from.contains(from_path) {
+                    continue;
+                }
+                let from_state = sync_state.files.get(from_path).unwrap();
+                if from_state.is_dir.unwrap_or(false) {
+                    continue;
+                }
+
+                if to_file.size == from_state.size {
+                    if let (Some(to_chk), Some(from_chk)) = (&to_file.checksum, &from_state.checksum) {
+                        if to_chk == from_chk {
+                            best_match = Some(from_path.clone());
+                            break;
+                        }
+                    } else {
+                        best_match = Some(from_path.clone());
+                    }
+                }
+            }
+
+            if let Some(from_path) = best_match {
+                matched_from.insert(from_path.clone());
+                info!("Intelligent Move Detection: local move detected from '{}' to '{}'", from_path, to_path);
+
+                let rename_res = if !dry_run {
+                    backend.rename(&from_path, &to_path).await
+                } else {
+                    info!("[DRY-RUN] Would rename remote path '{}' to '{}'", from_path, to_path);
+                    Ok(())
+                };
+
+                match rename_res {
+                    Ok(()) => {
+                        resolved_moves.insert(from_path.clone());
+                        resolved_moves.insert(to_path.clone());
+
+                        let remote_mtime = if !dry_run {
+                            get_remote_mtime(backend.as_ref(), to_path).await.unwrap_or(SystemTime::now())
+                        } else {
+                            SystemTime::now()
+                        };
+
+                        next_files_state.insert(to_path.clone(), FileState {
+                            size: to_file.size,
+                            local_modified: to_file.modified,
+                            remote_modified: remote_mtime,
+                            is_dir: Some(false),
+                            checksum: to_file.checksum.clone(),
+                        });
+                    }
+                    Err(e) => {
+                        info!("Remote rename not supported or failed: {}. Falling back to default sync paths.", e);
+                    }
+                }
+            }
+        }
+    }
+
     // Phase 2: Files (Concurrent)
     use futures_util::stream::StreamExt;
+    let file_paths: Vec<String> = file_paths.into_iter().filter(|path| !resolved_moves.contains(path)).collect();
     let tasks = file_paths.into_iter().map(|rel_path| {
         let watch_dir = watch_dir.to_path_buf();
         let backend = backend.clone();
@@ -1346,5 +1432,58 @@ mod tests {
         let (local, remote, _) = run_sync(cloud_sync_lib::ConflictPolicy::KeepNewer, false).await;
         assert_eq!(tokio::fs::read_to_string(local.join("conflict.txt")).await.unwrap(), "remote modified");
         assert_eq!(tokio::fs::read_to_string(remote.join("conflict.txt")).await.unwrap(), "remote modified");
+    }
+
+    #[tokio::test]
+    async fn test_intelligent_move_detection() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        let temp_base = std::env::temp_dir();
+        let local_dir = temp_base.join(format!("local_move_{}", unique_id));
+        let remote_dir = temp_base.join(format!("remote_move_{}", unique_id));
+        tokio::fs::create_dir_all(&local_dir).await.unwrap();
+        tokio::fs::create_dir_all(&remote_dir).await.unwrap();
+
+        let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
+        let remote_sim = Arc::new(TestBackendWrapper { sim });
+        let state_file = local_dir.join(".sync_state.bin");
+        let gitignore = SyncIgnore::empty();
+
+        let old_file = local_dir.join("old_name.txt");
+        tokio::fs::write(&old_file, "this is some unique content").await.unwrap();
+
+        super::sync_bidirectional(
+            &local_dir,
+            remote_sim.clone(),
+            SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+            &state_file,
+            &gitignore,
+            4,
+            cloud_sync_lib::ConflictPolicy::RenameLocal,
+            false
+        ).await.unwrap();
+
+        assert!(remote_sim.sim.resolve("old_name.txt").exists());
+
+        tokio::fs::remove_file(&old_file).await.unwrap();
+        let new_file = local_dir.join("new_name.txt");
+        tokio::fs::write(&new_file, "this is some unique content").await.unwrap();
+
+        super::sync_bidirectional(
+            &local_dir,
+            remote_sim.clone(),
+            SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+            &state_file,
+            &gitignore,
+            4,
+            cloud_sync_lib::ConflictPolicy::RenameLocal,
+            false
+        ).await.unwrap();
+
+        assert!(!remote_sim.sim.resolve("old_name.txt").exists());
+        assert!(remote_sim.sim.resolve("new_name.txt").exists());
     }
 }

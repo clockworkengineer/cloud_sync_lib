@@ -139,6 +139,21 @@ impl LocalSimulation {
         Ok(())
     }
 
+    /// Simulates renaming a file or folder in the local simulation folder.
+    pub async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let source = self.resolve(from);
+        let dest = self.resolve(to);
+        info!("[{}] (Simulated) Renaming remote path '{}' to '{}'", self.provider_name, from, to);
+        if !source.exists() {
+            return Err(StorageError::NotFound(from.to_string()));
+        }
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        fs::rename(source, dest).await?;
+        Ok(())
+    }
+
     /// Simulates listing contents of the local simulation folder.
     ///
     /// # Arguments
@@ -198,6 +213,10 @@ impl StorageBackend for LocalSimulation {
 
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         self.create_folder(remote_path).await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.rename(from, to).await
     }
 
     async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
