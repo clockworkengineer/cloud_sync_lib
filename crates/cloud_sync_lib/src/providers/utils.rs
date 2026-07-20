@@ -119,7 +119,7 @@ impl OAuthTokenManager {
 ///
 /// # Returns
 /// A `StorageError` wrapping the details from the response.
-pub async fn parse_response_error(res: reqwest::Response, provider_name: &str, action: &str) -> StorageError {
+pub async fn translate_http_error(res: reqwest::Response, provider_name: &str, action: &str) -> StorageError {
     let status = res.status();
     
     // Inspect Retry-After header
@@ -441,7 +441,7 @@ mod tests {
             async move {
                 let res = cl.get(&url).send().await.map_err(StorageError::Reqwest)?;
                 if !res.status().is_success() {
-                    return Err(parse_response_error(res, "test_retry_after", "get").await);
+                    return Err(translate_http_error(res, "test_retry_after", "get").await);
                 }
                 Ok("success")
             }

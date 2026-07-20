@@ -5,7 +5,7 @@
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::NextcloudCredentials;
-use crate::providers::utils::parse_response_error;
+use crate::providers::utils::translate_http_error;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -174,7 +174,7 @@ impl StorageBackend for NextcloudProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "upload").await);
+                return Err(translate_http_error(res, self.name(), "upload").await);
             }
 
             Ok(())
@@ -192,7 +192,7 @@ impl StorageBackend for NextcloudProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "download").await);
+                return Err(translate_http_error(res, self.name(), "download").await);
             }
 
             if let Some(parent) = local_path.parent() {
@@ -215,7 +215,7 @@ impl StorageBackend for NextcloudProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "delete").await);
+                return Err(translate_http_error(res, self.name(), "delete").await);
             }
 
             Ok(())
@@ -270,7 +270,7 @@ impl StorageBackend for NextcloudProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "list").await);
+                return Err(translate_http_error(res, self.name(), "list").await);
             }
 
             let body = res.text().await?;

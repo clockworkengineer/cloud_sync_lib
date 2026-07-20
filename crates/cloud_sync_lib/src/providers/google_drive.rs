@@ -5,7 +5,7 @@
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
-use crate::providers::utils::parse_response_error;
+use crate::providers::utils::translate_http_error;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -266,7 +266,7 @@ impl StorageBackend for GoogleDriveProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "upload").await);
+                return Err(translate_http_error(res, self.name(), "upload").await);
             }
 
             Ok(())
@@ -285,7 +285,7 @@ impl StorageBackend for GoogleDriveProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "download").await);
+                return Err(translate_http_error(res, self.name(), "download").await);
             }
 
             super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
@@ -305,7 +305,7 @@ impl StorageBackend for GoogleDriveProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "delete").await);
+                return Err(translate_http_error(res, self.name(), "delete").await);
             }
 
             Ok(())

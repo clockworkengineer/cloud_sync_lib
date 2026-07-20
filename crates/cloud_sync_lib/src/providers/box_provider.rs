@@ -5,7 +5,7 @@
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
-use crate::providers::utils::parse_response_error;
+use crate::providers::utils::translate_http_error;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -145,7 +145,7 @@ impl BoxProvider {
             .await?;
 
         if !res.status().is_success() {
-            return Err(parse_response_error(res, self.name(), "refresh_token").await);
+            return Err(translate_http_error(res, self.name(), "refresh_token").await);
         }
 
         let token_resp = res.json::<BoxTokenResponse>().await?;
@@ -208,7 +208,7 @@ impl BoxProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "list_folder_items").await);
+                return Err(translate_http_error(res, self.name(), "list_folder_items").await);
             }
 
             let folder_items = res.json::<BoxFolderItems>().await?;
@@ -236,7 +236,7 @@ impl BoxProvider {
                             .await?;
 
                         if !create_res.status().is_success() {
-                            return Err(parse_response_error(create_res, self.name(), "create_folder").await);
+                            return Err(translate_http_error(create_res, self.name(), "create_folder").await);
                         }
 
                         let new_folder = create_res.json::<BoxItem>().await?;
@@ -287,7 +287,7 @@ impl StorageBackend for BoxProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "list").await);
+                return Err(translate_http_error(res, self.name(), "list").await);
             }
 
             let items = res.json::<BoxFolderItems>().await?;
@@ -343,7 +343,7 @@ impl StorageBackend for BoxProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "check_existing_file").await);
+                return Err(translate_http_error(res, self.name(), "check_existing_file").await);
             }
 
             let folder_items = res.json::<BoxFolderItems>().await?;
@@ -368,7 +368,7 @@ impl StorageBackend for BoxProvider {
                         .await?;
 
                     if !upload_res.status().is_success() {
-                        return Err(parse_response_error(upload_res, self.name(), "upload_version").await);
+                        return Err(translate_http_error(upload_res, self.name(), "upload_version").await);
                     }
                 }
                 None => {
@@ -391,7 +391,7 @@ impl StorageBackend for BoxProvider {
                         .await?;
 
                     if !upload_res.status().is_success() {
-                        return Err(parse_response_error(upload_res, self.name(), "upload_new").await);
+                        return Err(translate_http_error(upload_res, self.name(), "upload_new").await);
                     }
                 }
             }
@@ -416,7 +416,7 @@ impl StorageBackend for BoxProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "download").await);
+                return Err(translate_http_error(res, self.name(), "download").await);
             }
 
             let bytes = res.bytes().await?;
@@ -442,7 +442,7 @@ impl StorageBackend for BoxProvider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "delete").await);
+                return Err(translate_http_error(res, self.name(), "delete").await);
             }
 
             Ok(())

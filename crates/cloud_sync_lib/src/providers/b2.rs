@@ -5,7 +5,7 @@
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::B2Credentials;
-use crate::providers::utils::parse_response_error;
+use crate::providers::utils::translate_http_error;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -166,7 +166,7 @@ impl B2Provider {
             .await?;
 
         if !res.status().is_success() {
-            return Err(parse_response_error(res, "B2", "authorize").await);
+            return Err(translate_http_error(res, "B2", "authorize").await);
         }
 
         let body: B2AuthorizeResponse = res.json().await?;
@@ -202,7 +202,7 @@ impl B2Provider {
             .await?;
 
         if !res.status().is_success() {
-            return Err(parse_response_error(res, "B2", "list_buckets").await);
+            return Err(translate_http_error(res, "B2", "list_buckets").await);
         }
 
         let body: ListBucketsResponse = res.json().await?;
@@ -244,7 +244,7 @@ impl StorageBackend for B2Provider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "get_upload_url").await);
+                return Err(translate_http_error(res, self.name(), "get_upload_url").await);
             }
 
             let upload_info: B2UploadUrlResponse = res.json().await?;
@@ -262,7 +262,7 @@ impl StorageBackend for B2Provider {
                 .await?;
 
             if !upload_res.status().is_success() {
-                return Err(parse_response_error(upload_res, self.name(), "upload").await);
+                return Err(translate_http_error(upload_res, self.name(), "upload").await);
             }
 
             Ok(())
@@ -284,7 +284,7 @@ impl StorageBackend for B2Provider {
                 .await?;
 
             if !res.status().is_success() {
-                return Err(parse_response_error(res, self.name(), "download").await);
+                return Err(translate_http_error(res, self.name(), "download").await);
             }
 
             if let Some(parent) = local_path.parent() {
@@ -316,7 +316,7 @@ impl StorageBackend for B2Provider {
                 .await?;
 
             if !list_res.status().is_success() {
-                return Err(parse_response_error(list_res, self.name(), "list_for_delete").await);
+                return Err(translate_http_error(list_res, self.name(), "list_for_delete").await);
             }
 
             let list_body: ListFileNamesResponse = list_res.json().await?;
@@ -336,7 +336,7 @@ impl StorageBackend for B2Provider {
                 .await?;
 
             if !del_res.status().is_success() {
-                return Err(parse_response_error(del_res, self.name(), "delete").await);
+                return Err(translate_http_error(del_res, self.name(), "delete").await);
             }
 
             Ok(())
@@ -376,7 +376,7 @@ impl StorageBackend for B2Provider {
                     .await?;
 
                 if !res.status().is_success() {
-                    return Err(parse_response_error(res, self.name(), "list").await);
+                    return Err(translate_http_error(res, self.name(), "list").await);
                 }
 
                 let body: ListFileNamesResponse = res.json().await?;
