@@ -114,7 +114,7 @@ async fn scan_backend_files<B: StorageBackend + ?Sized>(backend: &B) -> Result<H
         match backend.list(&current).await {
             Ok(items) => {
                 for item in items {
-                    let path_str = item.path.to_string_lossy().to_string();
+                    let path_str = item.path.to_string_lossy().to_string().replace('\\', "/");
                     if item.is_dir {
                         queue.push(path_str.clone());
                     }
@@ -175,6 +175,11 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
             if source_item.is_dir {
                 println!("[Backup] Creating remote directory: {}", rel_path);
                 destination.create_folder(&rel_path).await?;
+                sync_count += 1;
+                synced_history.insert(
+                    rel_path.clone(),
+                    (source_item.size, source_item.modified, source_item.checksum.clone()),
+                );
             } else {
                 println!("[Backup] Syncing file: {}", rel_path);
 

@@ -129,8 +129,15 @@ impl StorageBackend for DropboxProvider {
                 .ok()
                 .map(|t| {
                     let datetime = time::OffsetDateTime::from(t);
-                    datetime.format(&time::format_description::well_known::Rfc3339)
-                        .unwrap_or_default()
+                    format!(
+                        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                        datetime.year(),
+                        datetime.month() as u8,
+                        datetime.day(),
+                        datetime.hour(),
+                        datetime.minute(),
+                        datetime.second()
+                    )
                 });
 
             let mut api_arg = serde_json::json!({
