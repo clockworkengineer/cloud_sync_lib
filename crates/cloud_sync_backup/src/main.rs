@@ -1,23 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::collections::HashMap;
-use cloud_sync_lib::{StorageBackend, StorageItem, LocalSimulation, SimulatedFallback};
-#[cfg(feature = "google_drive")]
-use cloud_sync_lib::GoogleDriveProvider;
-#[cfg(feature = "dropbox")]
-use cloud_sync_lib::DropboxProvider;
-#[cfg(feature = "onedrive")]
-use cloud_sync_lib::OneDriveProvider;
-#[cfg(feature = "webdav")]
-use cloud_sync_lib::WebDAVProvider;
-#[cfg(feature = "s3")]
-use cloud_sync_lib::S3Provider;
-#[cfg(feature = "sftp")]
-use cloud_sync_lib::SFTPProvider;
-#[cfg(feature = "nextcloud")]
-use cloud_sync_lib::NextcloudProvider;
-#[cfg(feature = "mega")]
-use cloud_sync_lib::MegaProvider;
+use cloud_sync_lib::{StorageBackend, StorageItem, LocalSimulation, BackendRegistry, BackendCredentials};
 
 mod config;
 use config::{BackupConfig, load_config};
@@ -30,79 +14,60 @@ fn build_backend(provider_name: &str, custom_path: Option<&str>, config: &Backup
             let path = PathBuf::from(path_str);
             Ok(Arc::new(LocalSimulation::new(path, "Local".to_string())))
         }
-        #[cfg(feature = "google_drive")]
-        "google_drive" | "google drive" => {
-            let creds = config.google_credentials.clone().ok_or("Google credentials not configured")?;
-            let root = config.google_drive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/google_drive"));
-            let inner = Arc::new(GoogleDriveProvider::new(creds));
-            let local_sim = LocalSimulation::new(root, "Google Drive".to_string());
-            let fallback = SimulatedFallback::new(Some(inner), local_sim, "Google Drive", cloud_sync_lib::SyncMode::OneWay);
-            Ok(Arc::new(fallback))
+        _ => {
+            let (creds, root) = match name_lower.as_str() {
+                #[cfg(feature = "google_drive")]
+                "google_drive" | "google drive" => {
+                    let creds = config.google_credentials.clone().ok_or("Google credentials not configured")?;
+                    let root = config.google_drive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/google_drive"));
+                    (BackendCredentials::GoogleDrive(creds), root)
+                }
+                #[cfg(feature = "dropbox")]
+                "dropbox" => {
+                    let creds = config.dropbox_credentials.clone().ok_or("Dropbox credentials not configured")?;
+                    let root = config.dropbox_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/dropbox"));
+                    (BackendCredentials::Dropbox(creds), root)
+                }
+                #[cfg(feature = "onedrive")]
+                "onedrive" => {
+                    let creds = config.onedrive_credentials.clone().ok_or("OneDrive credentials not configured")?;
+                    let root = config.onedrive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/onedrive"));
+                    (BackendCredentials::OneDrive(creds), root)
+                }
+                #[cfg(feature = "webdav")]
+                "webdav" => {
+                    let creds = config.webdav_credentials.clone().ok_or("WebDAV credentials not configured")?;
+                    let root = config.webdav_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/webdav"));
+                    (BackendCredentials::WebDAV(creds), root)
+                }
+                #[cfg(feature = "s3")]
+                "s3" => {
+                    let creds = config.s3_credentials.clone().ok_or("S3 credentials not configured")?;
+                    let root = config.s3_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/s3"));
+                    (BackendCredentials::S3(creds), root)
+                }
+                #[cfg(feature = "sftp")]
+                "sftp" => {
+                    let creds = config.sftp_credentials.clone().ok_or("SFTP credentials not configured")?;
+                    let root = config.sftp_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/sftp"));
+                    (BackendCredentials::SFTP(creds), root)
+                }
+                #[cfg(feature = "nextcloud")]
+                "nextcloud" => {
+                    let creds = config.nextcloud_credentials.clone().ok_or("Nextcloud credentials not configured")?;
+                    let root = config.nextcloud_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/nextcloud"));
+                    (BackendCredentials::Nextcloud(creds), root)
+                }
+                #[cfg(feature = "mega")]
+                "mega" => {
+                    let creds = config.mega_credentials.clone().ok_or("MEGA credentials not configured")?;
+                    let root = config.mega_root.clone().unwrap_or_else(|| PathBuf::from("mega_backup"));
+                    (BackendCredentials::Mega(creds), root)
+                }
+                _ => return Err(format!("Unsupported backup provider or disabled feature: {}", provider_name).into()),
+            };
+            Ok(BackendRegistry::build_wrapped(creds, root, None, None))
         }
-        #[cfg(feature = "dropbox")]
-        "dropbox" => {
-            let creds = config.dropbox_credentials.clone().ok_or("Dropbox credentials not configured")?;
-            let root = config.dropbox_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/dropbox"));
-            let inner = Arc::new(DropboxProvider::new(creds));
-            let local_sim = LocalSimulation::new(root, "Dropbox".to_string());
-            let fallback = SimulatedFallback::new(Some(inner), local_sim, "Dropbox", cloud_sync_lib::SyncMode::OneWay);
-            Ok(Arc::new(fallback))
-        }
-        #[cfg(feature = "onedrive")]
-        "onedrive" => {
-            let creds = config.onedrive_credentials.clone().ok_or("OneDrive credentials not configured")?;
-            let root = config.onedrive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/onedrive"));
-            let inner = Arc::new(OneDriveProvider::new(creds));
-            let local_sim = LocalSimulation::new(root, "OneDrive".to_string());
-            let fallback = SimulatedFallback::new(Some(inner), local_sim, "OneDrive", cloud_sync_lib::SyncMode::OneWay);
-            Ok(Arc::new(fallback))
-        }
-        #[cfg(feature = "webdav")]
-        "webdav" => {
-            let creds = config.webdav_credentials.clone().ok_or("WebDAV credentials not configured")?;
-            let root = config.webdav_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/webdav"));
-            let inner = Arc::new(WebDAVProvider::new(creds));
-            let local_sim = LocalSimulation::new(root, "WebDAV".to_string());
-            let fallback = SimulatedFallback::new(Some(inner), local_sim, "WebDAV", cloud_sync_lib::SyncMode::OneWay);
-            Ok(Arc::new(fallback))
-        }
-        #[cfg(feature = "s3")]
-        "s3" => {
-            let creds = config.s3_credentials.clone().ok_or("S3 credentials not configured")?;
-            let root = config.s3_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/s3"));
-            let inner = Arc::new(S3Provider::new(creds));
-            let local_sim = LocalSimulation::new(root, "S3".to_string());
-            let fallback = SimulatedFallback::new(Some(inner), local_sim, "S3", cloud_sync_lib::SyncMode::OneWay);
-            Ok(Arc::new(fallback))
-        }
-        #[cfg(feature = "sftp")]
-        "sftp" => {
-            let creds = config.sftp_credentials.clone().ok_or("SFTP credentials not configured")?;
-            let root = config.sftp_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/sftp"));
-            let inner = Arc::new(SFTPProvider::new(creds));
-            let local_sim = LocalSimulation::new(root, "SFTP".to_string());
-            let fallback = SimulatedFallback::new(Some(inner), local_sim, "SFTP", cloud_sync_lib::SyncMode::OneWay);
-            Ok(Arc::new(fallback))
-        }
-        #[cfg(feature = "nextcloud")]
-        "nextcloud" => {
-            let creds = config.nextcloud_credentials.clone().ok_or("Nextcloud credentials not configured")?;
-            let root = config.nextcloud_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/nextcloud"));
-            let inner = Arc::new(NextcloudProvider::new(creds));
-            let local_sim = LocalSimulation::new(root, "Nextcloud".to_string());
-            let fallback = SimulatedFallback::new(Some(inner), local_sim, "Nextcloud", cloud_sync_lib::SyncMode::OneWay);
-            Ok(Arc::new(fallback))
-        }
-        #[cfg(feature = "mega")]
-        "mega" => {
-            let creds = config.mega_credentials.clone().ok_or("MEGA credentials not configured")?;
-            let root = config.mega_root.clone().unwrap_or_else(|| PathBuf::from("mega_backup"));
-            let inner = Arc::new(MegaProvider::new(creds));
-            let local_sim = LocalSimulation::new(root, "MEGA".to_string());
-            let fallback = SimulatedFallback::new(Some(inner), local_sim, "MEGA", cloud_sync_lib::SyncMode::OneWay);
-            Ok(Arc::new(fallback))
-        }
-        _ => Err(format!("Unsupported backup provider or disabled feature: {}", provider_name).into()),
     }
 }
 

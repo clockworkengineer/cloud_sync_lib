@@ -10,35 +10,7 @@ pub mod watcher;
 pub mod sync_engine;
 pub mod utils;
 
-use cloud_sync_lib::{StorageBackend, SimulatedFallback, LocalSimulation, ProviderConfig};
-#[cfg(feature = "google_drive")]
-use cloud_sync_lib::GoogleDriveProvider;
-#[cfg(feature = "dropbox")]
-use cloud_sync_lib::DropboxProvider;
-#[cfg(feature = "onedrive")]
-use cloud_sync_lib::OneDriveProvider;
-#[cfg(feature = "webdav")]
-use cloud_sync_lib::WebDAVProvider;
-#[cfg(feature = "s3")]
-use cloud_sync_lib::S3Provider;
-#[cfg(feature = "sftp")]
-use cloud_sync_lib::SFTPProvider;
-#[cfg(feature = "nextcloud")]
-use cloud_sync_lib::NextcloudProvider;
-#[cfg(feature = "box")]
-use cloud_sync_lib::BoxProvider;
-#[cfg(feature = "mega")]
-use cloud_sync_lib::MegaProvider;
-#[cfg(feature = "azure_blob")]
-use cloud_sync_lib::AzureBlobProvider;
-#[cfg(feature = "gcs")]
-use cloud_sync_lib::GCSProvider;
-#[cfg(feature = "b2")]
-use cloud_sync_lib::B2Provider;
-#[cfg(feature = "pcloud")]
-use cloud_sync_lib::PCloudProvider;
-#[cfg(feature = "ipfs")]
-use cloud_sync_lib::IPFSProvider;
+use cloud_sync_lib::{StorageBackend, BackendRegistry, BackendCredentials};
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -100,51 +72,29 @@ pub struct DaemonState {
 }
 
 #[allow(dead_code)]
-fn try_add_backend<C, F>(
+fn try_add_backend(
     backends: &mut Vec<ActiveBackend>,
-    creds_option: &Option<C>,
+    creds_option: Option<BackendCredentials>,
     sim_root: PathBuf,
-    provider_name: &str,
     upload_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
     download_limiter: Option<cloud_sync_lib::rate_limit::TokenBucket>,
-    build_provider: F,
-) where
-    C: ProviderConfig + Clone + 'static,
-    F: FnOnce(C, Option<cloud_sync_lib::rate_limit::TokenBucket>, Option<cloud_sync_lib::rate_limit::TokenBucket>) -> Arc<dyn StorageBackend>,
-{
-    if is_provider_enabled(creds_option) {
-        let sync_mode = creds_option.as_ref().map(|c| c.sync_mode()).unwrap_or(cloud_sync_lib::SyncMode::OneWay);
-        
-        let provider_upload_limiter = creds_option.as_ref()
-            .and_then(|c| c.max_upload_rate())
-            .map(|rate| cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024))
-            .or_else(|| upload_limiter.clone());
+) {
+    if let Some(creds) = creds_option {
+        let sync_mode = creds.sync_mode();
+        let selective_sync = creds.selective_sync();
 
-        let provider_download_limiter = creds_option.as_ref()
-            .and_then(|c| c.max_download_rate())
-            .map(|rate| cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024))
-            .or_else(|| download_limiter.clone());
+        let backend = BackendRegistry::build_wrapped(
+            creds,
+            sim_root,
+            upload_limiter,
+            download_limiter,
+        );
 
-        let inner = creds_option.clone()
-            .map(|creds| build_provider(creds, provider_upload_limiter.clone(), provider_download_limiter.clone()));
-
-        let local_sim = LocalSimulation::new(sim_root, provider_name.to_string())
-            .with_limiters(provider_upload_limiter, provider_download_limiter);
-        let fallback = SimulatedFallback::new(inner, local_sim, provider_name, sync_mode);
-
-        let selective_sync = creds_option.as_ref().and_then(|c| c.selective_sync());
-        let backend: Arc<dyn StorageBackend> = if let Some(password) = creds_option.as_ref().and_then(|c| c.encryption_password()) {
-            Arc::new(cloud_sync_lib::EncryptedBackend::new(fallback, password))
-        } else {
-            Arc::new(fallback)
-        };
         backends.push(ActiveBackend {
             backend,
             policy: cloud_sync_lib::SyncPolicy::new(sync_mode),
             selective_sync,
         });
-    } else {
-        info!("{} provider is disabled in configuration.", provider_name);
     }
 }
 
@@ -160,155 +110,127 @@ pub fn build_backends(
     #[cfg(feature = "google_drive")]
     try_add_backend(
         &mut backends,
-        &config.google_credentials,
+        config.google_credentials.clone().map(BackendCredentials::GoogleDrive),
         config.google_drive_root.clone(),
-        "Google Drive",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, ul, dl| Arc::new(GoogleDriveProvider::new(creds).with_limiters(ul, dl)),
     );
 
     #[cfg(feature = "dropbox")]
     try_add_backend(
         &mut backends,
-        &config.dropbox_credentials,
+        config.dropbox_credentials.clone().map(BackendCredentials::Dropbox),
         config.dropbox_root.clone(),
-        "Dropbox",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, ul, dl| Arc::new(DropboxProvider::new(creds).with_limiters(ul, dl)),
     );
 
     #[cfg(feature = "onedrive")]
     try_add_backend(
         &mut backends,
-        &config.onedrive_credentials,
+        config.onedrive_credentials.clone().map(BackendCredentials::OneDrive),
         config.onedrive_root.clone(),
-        "OneDrive",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, ul, dl| Arc::new(OneDriveProvider::new(creds).with_limiters(ul, dl)),
     );
 
     #[cfg(feature = "webdav")]
     try_add_backend(
         &mut backends,
-        &config.webdav_credentials,
+        config.webdav_credentials.clone().map(BackendCredentials::WebDAV),
         config.webdav_root.clone(),
-        "WebDAV",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, ul, dl| Arc::new(WebDAVProvider::new(creds).with_limiters(ul, dl)),
     );
 
     #[cfg(feature = "s3")]
     try_add_backend(
         &mut backends,
-        &config.s3_credentials,
+        config.s3_credentials.clone().map(BackendCredentials::S3),
         config.s3_root.clone(),
-        "S3",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(S3Provider::new(creds)),
     );
 
     #[cfg(feature = "sftp")]
     try_add_backend(
         &mut backends,
-        &config.sftp_credentials,
+        config.sftp_credentials.clone().map(BackendCredentials::SFTP),
         config.sftp_root.clone(),
-        "SFTP",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(SFTPProvider::new(creds)),
     );
 
     #[cfg(feature = "nextcloud")]
     try_add_backend(
         &mut backends,
-        &config.nextcloud_credentials,
+        config.nextcloud_credentials.clone().map(BackendCredentials::Nextcloud),
         config.nextcloud_root.clone(),
-        "Nextcloud",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(NextcloudProvider::new(creds)),
     );
 
     #[cfg(feature = "box")]
     try_add_backend(
         &mut backends,
-        &config.box_credentials,
+        config.box_credentials.clone().map(BackendCredentials::Box),
         config.box_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_BOX_ROOT)),
-        "Box",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(BoxProvider::new(creds)),
     );
 
     #[cfg(feature = "mega")]
     try_add_backend(
         &mut backends,
-        &config.mega_credentials,
+        config.mega_credentials.clone().map(BackendCredentials::Mega),
         config.mega_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_MEGA_ROOT)),
-        "MEGA",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(MegaProvider::new(creds)),
     );
 
     #[cfg(feature = "azure_blob")]
     try_add_backend(
         &mut backends,
-        &config.azure_blob_credentials,
+        config.azure_blob_credentials.clone().map(BackendCredentials::AzureBlob),
         config.azure_blob_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_AZURE_BLOB_ROOT)),
-        "Azure Blob",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(AzureBlobProvider::new(creds)),
     );
 
     #[cfg(feature = "gcs")]
     try_add_backend(
         &mut backends,
-        &config.gcs_credentials,
+        config.gcs_credentials.clone().map(BackendCredentials::GCS),
         config.gcs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_GCS_ROOT)),
-        "GCS",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(GCSProvider::new(creds)),
     );
 
     #[cfg(feature = "b2")]
     try_add_backend(
         &mut backends,
-        &config.b2_credentials,
+        config.b2_credentials.clone().map(BackendCredentials::B2),
         config.b2_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_B2_ROOT)),
-        "B2",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(B2Provider::new(creds)),
     );
 
     #[cfg(feature = "pcloud")]
     try_add_backend(
         &mut backends,
-        &config.pcloud_credentials,
+        config.pcloud_credentials.clone().map(BackendCredentials::PCloud),
         config.pcloud_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_PCLOUD_ROOT)),
-        "pCloud",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(PCloudProvider::new(creds)),
     );
 
     #[cfg(feature = "ipfs")]
     try_add_backend(
         &mut backends,
-        &config.ipfs_credentials,
+        config.ipfs_credentials.clone().map(BackendCredentials::IPFS),
         config.ipfs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_IPFS_ROOT)),
-        "IPFS",
         upload_limiter.clone(),
         download_limiter.clone(),
-        |creds, _ul, _dl| Arc::new(IPFSProvider::new(creds)),
     );
 
     backends
