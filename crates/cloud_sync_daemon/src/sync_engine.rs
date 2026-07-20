@@ -7,6 +7,7 @@ use tracing::info;
 
 #[derive(Clone, Debug)]
 struct FileInfo {
+    permissions: Option<u32>,
     size: u64,
     modified: SystemTime,
     is_dir: bool,
@@ -45,6 +46,7 @@ async fn scan_remote_dir(
                             modified: item.modified,
                             is_dir: true,
                             checksum: None,
+                            permissions: item.permissions,
                         });
                     } else {
                         files.insert(path_str, FileInfo {
@@ -52,6 +54,7 @@ async fn scan_remote_dir(
                             modified: item.modified,
                             is_dir: false,
                             checksum: item.checksum,
+                            permissions: item.permissions,
                         });
                     }
                 }
@@ -82,6 +85,7 @@ async fn get_remote_file_info(backend: &dyn StorageBackend, rel_path: &str) -> O
                     modified: item.modified,
                     is_dir: item.is_dir,
                     checksum: item.checksum,
+                    permissions: item.permissions,
                 });
             }
         }
@@ -123,15 +127,36 @@ async fn verified_upload(
     }
 }
 
+async fn set_local_permissions(path: &Path, mode: Option<u32>) -> Result<(), std::io::Error> {
+    if let Some(mode) = mode {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).await?;
+        }
+        #[cfg(not(unix))]
+        {
+            if let Ok(metadata) = tokio::fs::metadata(path).await {
+                let mut perms = metadata.permissions();
+                perms.set_readonly((mode & 0o200) == 0);
+                let _ = tokio::fs::set_permissions(path, perms).await;
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn verified_download(
     backend: &dyn StorageBackend,
     remote_path: &str,
     local_path: &Path,
     remote_checksum: Option<&str>,
+    mode: Option<u32>,
 ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
     let mut retries = 0;
     loop {
         backend.download(remote_path, local_path).await?;
+        let _ = set_local_permissions(local_path, mode).await;
         let local_checksum = backend.compute_local_checksum(local_path).await.ok().flatten();
         if let (Some(ref local_hash), Some(ref remote_hash)) = (&local_checksum, &remote_checksum) {
             if local_hash != *remote_hash {
@@ -166,6 +191,9 @@ async fn sync_single_file(
 ) -> Result<Vec<(String, FileState)>, Box<dyn std::error::Error + Send + Sync>> {
     let mut updates = Vec::new();
     let local_file_path = watch_dir.join(&rel_path);
+    let current_permissions = local_opt.as_ref().and_then(|l| l.permissions)
+        .or_else(|| remote_opt.as_ref().and_then(|r| r.permissions))
+        .or_else(|| state_opt.as_ref().and_then(|s| s.permissions));
 
     match (local_opt, remote_opt, state_opt) {
         // Case 1: Exists everywhere (check for modifications)
@@ -215,6 +243,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((conflict_rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: local.size,
                             local_modified: conflict_local_mtime,
                             remote_modified: conflict_remote_mtime,
@@ -224,7 +253,7 @@ async fn sync_single_file(
 
                         info!("Downloading remote file '{}' to original local path", rel_path);
                         let local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?
+                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                             None
@@ -236,6 +265,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: remote.size,
                             local_modified: replaced_local_mtime,
                             remote_modified: remote.modified,
@@ -249,7 +279,7 @@ async fn sync_single_file(
 
                         info!("Conflict Policy (RenameRemote): Downloading remote conflict copy '{}' to {:?}", conflict_rel_path, conflict_local_path);
                         let conflict_local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &conflict_local_path, remote.checksum.as_deref()).await?
+                            verified_download(backend.as_ref(), &rel_path, &conflict_local_path, remote.checksum.as_deref(), remote.permissions).await?
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, conflict_local_path);
                             None
@@ -261,6 +291,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((conflict_rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: remote.size,
                             local_modified: conflict_local_mtime,
                             remote_modified: remote.modified,
@@ -282,6 +313,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: local.size,
                             local_modified: local.modified,
                             remote_modified: remote_mtime,
@@ -304,6 +336,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: local.size,
                             local_modified: local.modified,
                             remote_modified: remote_mtime,
@@ -314,7 +347,7 @@ async fn sync_single_file(
                     cloud_sync_lib::ConflictPolicy::KeepRemote => {
                         info!("Conflict Policy (KeepRemote): Overwriting local file '{:?}' with remote changes", local_file_path);
                         let local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?
+                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                             None
@@ -326,6 +359,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: remote.size,
                             local_modified: local_mtime,
                             remote_modified: remote.modified,
@@ -351,6 +385,7 @@ async fn sync_single_file(
                             };
 
                             updates.push((rel_path.clone(), FileState {
+                                permissions: current_permissions,
                                 size: local.size,
                                 local_modified: local.modified,
                                 remote_modified: remote_mtime,
@@ -360,7 +395,7 @@ async fn sync_single_file(
                         } else {
                             info!("Conflict Policy (KeepNewer): Remote is newer ({:?} < {:?}). Choosing KeepRemote.", local_time, remote_time);
                             let local_checksum = if !dry_run {
-                                verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?
+                                verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
                             } else {
                                 info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                                 None
@@ -372,6 +407,7 @@ async fn sync_single_file(
                             };
 
                             updates.push((rel_path.clone(), FileState {
+                                permissions: current_permissions,
                                 size: remote.size,
                                 local_modified: local_mtime,
                                 remote_modified: remote.modified,
@@ -395,6 +431,7 @@ async fn sync_single_file(
                     remote.clone()
                 };
                 updates.push((rel_path.clone(), FileState {
+                    permissions: current_permissions,
                     size: local.size,
                     local_modified: local.modified,
                     remote_modified: remote_info.modified,
@@ -405,7 +442,7 @@ async fn sync_single_file(
                 if sync_both {
                     info!("Bidirectional: downloading remote modification '{}' to local", rel_path);
                     let local_checksum = if !dry_run {
-                        verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?
+                        verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
                     } else {
                         info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                         None
@@ -416,6 +453,7 @@ async fn sync_single_file(
                         local.modified
                     };
                     updates.push((rel_path.clone(), FileState {
+                        permissions: current_permissions,
                         size: remote.size,
                         local_modified: new_local_mtime,
                         remote_modified: remote.modified,
@@ -424,6 +462,7 @@ async fn sync_single_file(
                     }));
                 } else {
                     updates.push((rel_path.clone(), FileState {
+                        permissions: current_permissions,
                         size: remote.size,
                         local_modified: local.modified,
                         remote_modified: remote.modified,
@@ -443,6 +482,7 @@ async fn sync_single_file(
             };
             if local.size == remote.size || same_checksum {
                 updates.push((rel_path.clone(), FileState {
+                    permissions: current_permissions,
                     size: local.size,
                     local_modified: local.modified,
                     remote_modified: remote.modified,
@@ -487,6 +527,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((conflict_rel_path, FileState {
+                            permissions: current_permissions,
                             size: local.size,
                             local_modified: conflict_local_mtime,
                             remote_modified: conflict_remote_mtime,
@@ -496,7 +537,7 @@ async fn sync_single_file(
 
                         info!("Downloading remote file '{}' to original local path", rel_path);
                         let local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?
+                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                             None
@@ -508,6 +549,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: remote.size,
                             local_modified: replaced_local_mtime,
                             remote_modified: remote.modified,
@@ -521,7 +563,7 @@ async fn sync_single_file(
 
                         info!("Downloading remote conflict copy '{}' to {:?}", conflict_rel_path, conflict_local_path);
                         let conflict_local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &conflict_local_path, remote.checksum.as_deref()).await?
+                            verified_download(backend.as_ref(), &rel_path, &conflict_local_path, remote.checksum.as_deref(), remote.permissions).await?
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, conflict_local_path);
                             None
@@ -533,6 +575,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((conflict_rel_path, FileState {
+                            permissions: current_permissions,
                             size: remote.size,
                             local_modified: conflict_local_mtime,
                             remote_modified: remote.modified,
@@ -554,6 +597,7 @@ async fn sync_single_file(
                         };
 
                         updates.push((rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: local.size,
                             local_modified: local.modified,
                             remote_modified: remote_mtime,
@@ -575,6 +619,7 @@ async fn sync_single_file(
                             remote.clone()
                         };
                         updates.push((rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: local.size,
                             local_modified: local.modified,
                             remote_modified: remote_info.modified,
@@ -585,7 +630,7 @@ async fn sync_single_file(
                     cloud_sync_lib::ConflictPolicy::KeepRemote => {
                         info!("Conflict: downloading remote file '{}' to local (KeepRemote)", rel_path);
                         let local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?
+                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                             None
@@ -596,6 +641,7 @@ async fn sync_single_file(
                             SystemTime::now()
                         };
                         updates.push((rel_path.clone(), FileState {
+                            permissions: current_permissions,
                             size: remote.size,
                             local_modified: local_mtime,
                             remote_modified: remote.modified,
@@ -620,6 +666,7 @@ async fn sync_single_file(
                                 remote.clone()
                             };
                             updates.push((rel_path.clone(), FileState {
+                                permissions: current_permissions,
                                 size: local.size,
                                 local_modified: local.modified,
                                 remote_modified: remote_info.modified,
@@ -629,7 +676,7 @@ async fn sync_single_file(
                         } else {
                             info!("Conflict (KeepNewer): Remote is newer ({:?} < {:?}). Choosing KeepRemote.", local_time, remote_time);
                             let local_checksum = if !dry_run {
-                                verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?
+                                verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
                             } else {
                                 info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                                 None
@@ -640,6 +687,7 @@ async fn sync_single_file(
                                 SystemTime::now()
                             };
                             updates.push((rel_path.clone(), FileState {
+                                permissions: current_permissions,
                                 size: remote.size,
                                 local_modified: local_mtime,
                                 remote_modified: remote.modified,
@@ -666,6 +714,7 @@ async fn sync_single_file(
                 SystemTime::now()
             };
             updates.push((rel_path.clone(), FileState {
+                permissions: current_permissions,
                 size: local.size,
                 local_modified: local.modified,
                 remote_modified: remote_mtime,
@@ -678,7 +727,7 @@ async fn sync_single_file(
             if sync_both {
                 info!("Bidirectional: downloading new remote file '{}' to local", rel_path);
                 let local_checksum = if !dry_run {
-                    verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?
+                    verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
                 } else {
                     info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                     None
@@ -689,6 +738,7 @@ async fn sync_single_file(
                     SystemTime::now()
                 };
                 updates.push((rel_path.clone(), FileState {
+                    permissions: current_permissions,
                     size: remote.size,
                     local_modified: new_local_mtime,
                     remote_modified: remote.modified,
@@ -716,6 +766,7 @@ async fn sync_single_file(
                     SystemTime::now()
                 };
                 updates.push((rel_path.clone(), FileState {
+                    permissions: current_permissions,
                     size: local.size,
                     local_modified: local.modified,
                     remote_modified: remote_mtime,
@@ -744,6 +795,7 @@ async fn sync_single_file(
                         SystemTime::now()
                     };
                     updates.push((rel_path.clone(), FileState {
+                        permissions: current_permissions,
                         size: local.size,
                         local_modified: local.modified,
                         remote_modified: remote_mtime,
@@ -762,7 +814,7 @@ async fn sync_single_file(
                 if sync_both {
                     info!("Bidirectional: re-downloading modified remote file '{}' that was deleted locally", rel_path);
                     let local_checksum = if !dry_run {
-                        verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref()).await?
+                        verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
                     } else {
                         info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                         None
@@ -773,6 +825,7 @@ async fn sync_single_file(
                         remote.modified
                     };
                     updates.push((rel_path.clone(), FileState {
+                        permissions: current_permissions,
                         size: remote.size,
                         local_modified: new_local_mtime,
                         remote_modified: remote.modified,
@@ -872,6 +925,7 @@ pub async fn sync_bidirectional(
             backend.compute_local_checksum(&item.path).await.ok().flatten()
         };
         local_files.insert(rel_path, FileInfo {
+            permissions: item.permissions,
             size: item.size,
             modified: item.modified,
             is_dir: item.is_dir,
@@ -934,6 +988,7 @@ pub async fn sync_bidirectional(
         match (local_opt, remote_opt, state_opt) {
             (Some(local), Some(remote), _) => {
                 next_files_state.insert(rel_path.clone(), FileState {
+                        permissions: None,
                     size: 0,
                     local_modified: local.modified,
                     remote_modified: remote.modified,
@@ -951,6 +1006,7 @@ pub async fn sync_bidirectional(
                     info!("[DRY-RUN] Would create remote directory '{}'", rel_path);
                 }
                 next_files_state.insert(rel_path.clone(), FileState {
+                        permissions: None,
                     size: 0,
                     local_modified: local.modified,
                     remote_modified: if !dry_run {
@@ -979,6 +1035,7 @@ pub async fn sync_bidirectional(
                         SystemTime::now()
                     };
                     next_files_state.insert(rel_path.clone(), FileState {
+                        permissions: None,
                         size: 0,
                         local_modified: new_local_mtime,
                         remote_modified: remote.modified,
@@ -1008,6 +1065,7 @@ pub async fn sync_bidirectional(
                         info!("[DRY-RUN] Would create remote directory '{}'", rel_path);
                     }
                     next_files_state.insert(rel_path.clone(), FileState {
+                        permissions: None,
                         size: 0,
                         local_modified: local.modified,
                         remote_modified: if !dry_run {
@@ -1105,6 +1163,7 @@ pub async fn sync_bidirectional(
                         };
 
                         next_files_state.insert(to_path.clone(), FileState {
+                            permissions: to_file.permissions,
                             size: to_file.size,
                             local_modified: to_file.modified,
                             remote_modified: remote_mtime,
@@ -1383,6 +1442,7 @@ mod tests {
             remote_modified: SystemTime::UNIX_EPOCH,
             is_dir: Some(false),
             checksum: Some("old_checksum".to_string()),
+            permissions: None,
         };
 
         let local_info = FileInfo {
@@ -1390,6 +1450,7 @@ mod tests {
             modified: local_mtime,
             is_dir: false,
             checksum: Some("new_checksum".to_string()),
+            permissions: None,
         };
 
         let remote_info = FileInfo {
@@ -1397,6 +1458,7 @@ mod tests {
             modified: SystemTime::UNIX_EPOCH,
             is_dir: false,
             checksum: Some("old_checksum".to_string()),
+            permissions: None,
         };
 
         let updates = sync_single_file(

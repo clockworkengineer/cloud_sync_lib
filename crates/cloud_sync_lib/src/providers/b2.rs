@@ -400,7 +400,8 @@ impl StorageBackend for B2Provider {
                         modified,
                         is_dir: false, // B2 is a flat namespace, folders are virtual
                         checksum: None,
-                    });
+                        permissions: None,
+                });
                 }
 
                 if body.next_file_name.is_some() {

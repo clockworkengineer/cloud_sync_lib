@@ -264,7 +264,8 @@ impl StorageBackend for OneDriveProvider {
                             modified: std::time::SystemTime::now(),
                             is_dir,
                             checksum: None,
-                        });
+                            permissions: None,
+                });
                     }
                 }
 

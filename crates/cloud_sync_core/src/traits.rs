@@ -87,6 +87,7 @@ pub struct StorageItem {
 
     pub is_dir: bool,
     pub checksum: Option<String>,
+    pub permissions: Option<u32>,
 }
 
 #[async_trait::async_trait]

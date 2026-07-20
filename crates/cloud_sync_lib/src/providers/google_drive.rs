@@ -374,7 +374,8 @@ impl StorageBackend for GoogleDriveProvider {
                             modified,
                             is_dir,
                             checksum,
-                        });
+                            permissions: None,
+                });
                     }
                 }
 

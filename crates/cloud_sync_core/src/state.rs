@@ -29,6 +29,9 @@ pub struct FileState {
     /// Optional checksum of the file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<alloc::string::String>,
+    /// Optional file permissions (Unix mode bits).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<u32>,
 }
 
 /// Represents the overall catalog state of the synchronization.

@@ -192,6 +192,7 @@ impl StorageBackend for S3Provider {
                     modified: std::time::SystemTime::now(),
                     is_dir: false,
                     checksum,
+                    permissions: None,
                 });
             }
 
@@ -212,6 +213,7 @@ impl StorageBackend for S3Provider {
                     modified: std::time::SystemTime::now(),
                     is_dir: true,
                     checksum: None,
+                    permissions: None,
                 });
             }
         }

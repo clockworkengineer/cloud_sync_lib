@@ -241,6 +241,7 @@ impl StorageBackend for IPFSProvider {
                     modified,
                     is_dir: false,
                     checksum: None,
+                    permissions: None,
                 });
             }
 

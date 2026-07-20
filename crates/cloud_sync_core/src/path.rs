@@ -59,3 +59,20 @@ pub fn format_absolute_path<'a>(remote_path: &'a str, destination_folder: Option
 
     Cow::Owned(full_path)
 }
+
+#[cfg(feature = "std")]
+pub fn get_permissions(permissions: &std::fs::Permissions) -> Option<u32> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        Some(permissions.mode())
+    }
+    #[cfg(not(unix))]
+    {
+        if permissions.readonly() {
+            Some(0o444)
+        } else {
+            Some(0o666)
+        }
+    }
+}

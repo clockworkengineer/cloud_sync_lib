@@ -28,6 +28,7 @@ pub struct ScannedItem {
     pub is_dir: bool,
     pub size: u64,
     pub modified: SystemTime,
+    pub permissions: Option<u32>,
 }
 
 /// A lazy, streaming local directory scanner that avoids holding the whole directory tree in memory.
@@ -69,6 +70,7 @@ impl<'a> DirectoryScanner<'a> {
                                         is_dir: true,
                                         size: 0,
                                         modified: metadata.modified().unwrap_or_else(|_| SystemTime::now()),
+                                        permissions: cloud_sync_lib::path::get_permissions(&metadata.permissions()),
                                     })));
                                 }
                             }
@@ -90,6 +92,7 @@ impl<'a> DirectoryScanner<'a> {
                                     is_dir: false,
                                     size: metadata.len(),
                                     modified: metadata.modified().unwrap_or_else(|_| SystemTime::now()),
+                                    permissions: cloud_sync_lib::path::get_permissions(&metadata.permissions()),
                                 })));
                             }
                         }

@@ -310,6 +310,7 @@ impl StorageBackend for BoxProvider {
                     size: item.size.unwrap_or(0),
                     modified,
                     checksum: item.sha1,
+                    permissions: None,
                 }
             }).collect();
 

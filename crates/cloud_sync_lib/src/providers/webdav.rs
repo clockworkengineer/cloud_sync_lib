@@ -344,7 +344,8 @@ impl StorageBackend for WebDAVProvider {
                         modified: std::time::SystemTime::now(),
                         is_dir,
                         checksum: None,
-                    });
+                        permissions: None,
+                });
                 }
             }
 

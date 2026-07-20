@@ -310,7 +310,8 @@ impl StorageBackend for DropboxProvider {
                             modified,
                             is_dir,
                             checksum,
-                        });
+                            permissions: None,
+                });
                     }
                 }
 

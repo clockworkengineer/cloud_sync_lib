@@ -85,6 +85,7 @@ impl LocalSimulation {
                 let ft = filetime::FileTime::from_system_time(modified);
                 let _ = filetime::set_file_mtime(&destination, ft);
             }
+            let _ = std::fs::set_permissions(&destination, metadata.permissions());
         }
         Ok(())
     }
@@ -107,6 +108,9 @@ impl LocalSimulation {
             fs::create_dir_all(parent).await?;
         }
         copy_rate_limited(&source, local_path, self.download_limiter.clone()).await?;
+        if let Ok(metadata) = std::fs::metadata(&source) {
+            let _ = std::fs::set_permissions(local_path, metadata.permissions());
+        }
         Ok(())
     }
 
@@ -183,6 +187,7 @@ impl LocalSimulation {
                 modified: metadata.modified().unwrap_or(std::time::SystemTime::now()),
                 is_dir,
                 checksum,
+                permissions: cloud_sync_core::get_permissions(&metadata.permissions()),
             });
         }
         Ok(items)

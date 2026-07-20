@@ -301,7 +301,8 @@ impl StorageBackend for NextcloudProvider {
                         modified: std::time::SystemTime::now(),
                         is_dir,
                         checksum: None,
-                    });
+                        permissions: None,
+                });
                 }
             }
 

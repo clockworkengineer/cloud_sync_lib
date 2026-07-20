@@ -335,7 +335,8 @@ impl StorageBackend for AzureBlobProvider {
                                         modified: current_modified,
                                         is_dir: false,
                                         checksum: None,
-                                    });
+                                        permissions: None,
+                });
                                     current_name.clear();
                                     current_size = 0;
                                     current_modified = SystemTime::now();

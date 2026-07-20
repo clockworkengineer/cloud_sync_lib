@@ -218,7 +218,8 @@ impl StorageBackend for PCloudProvider {
                             modified,
                             is_dir: false,
                             checksum: None,
-                        });
+                            permissions: None,
+                });
                     }
                 }
             }

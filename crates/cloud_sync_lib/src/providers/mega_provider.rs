@@ -294,7 +294,8 @@ impl StorageBackend for MegaProvider {
                                 .unwrap_or_else(SystemTime::now),
                             is_dir,
                             checksum: None,
-                        }
+                            permissions: None,
+                }
                     })
                     .collect();
 
