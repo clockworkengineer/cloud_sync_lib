@@ -47,6 +47,69 @@ pub async fn refresh_oauth2_token(
     Ok(token.to_string())
 }
 
+/// Thread-safe manager to cache and refresh OAuth2 tokens automatically.
+pub struct OAuthTokenManager {
+    client: reqwest::Client,
+    token_url: String,
+    client_id: String,
+    client_secret: String,
+    refresh_token: String,
+    provider_name: String,
+    cache: tokio::sync::RwLock<Option<(String, std::time::Instant)>>,
+}
+
+impl OAuthTokenManager {
+    pub fn new(
+        client: reqwest::Client,
+        token_url: &str,
+        client_id: &str,
+        client_secret: &str,
+        refresh_token: &str,
+        provider_name: &str,
+    ) -> Self {
+        Self {
+            client,
+            token_url: token_url.to_string(),
+            client_id: client_id.to_string(),
+            client_secret: client_secret.to_string(),
+            refresh_token: refresh_token.to_string(),
+            provider_name: provider_name.to_string(),
+            cache: tokio::sync::RwLock::new(None),
+        }
+    }
+
+    pub async fn get_access_token(&self) -> Result<String, StorageError> {
+        {
+            let cache = self.cache.read().await;
+            if let Some((ref token, expiry)) = *cache {
+                if std::time::Instant::now() + std::time::Duration::from_secs(30) < expiry {
+                    return Ok(token.clone());
+                }
+            }
+        }
+
+        let mut cache = self.cache.write().await;
+        if let Some((ref token, expiry)) = *cache {
+            if std::time::Instant::now() + std::time::Duration::from_secs(30) < expiry {
+                return Ok(token.clone());
+            }
+        }
+
+        let token = refresh_oauth2_token(
+            &self.client,
+            &self.token_url,
+            &self.client_id,
+            &self.client_secret,
+            &self.refresh_token,
+            &self.provider_name,
+        ).await?;
+
+        let expiry = std::time::Instant::now() + std::time::Duration::from_secs(3300);
+        *cache = Some((token.clone(), expiry));
+        Ok(token)
+    }
+}
+
 /// Unified helper to parse error response from the provider REST API and map it to `StorageError`.
 ///
 /// # Arguments

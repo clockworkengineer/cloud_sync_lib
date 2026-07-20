@@ -359,6 +359,7 @@ pub use pcloud::{PCloudProvider, PCloudProviderBuilder};
 pub use ipfs::{IPFSProvider, IPFSProviderBuilder};
 pub use fallback::SimulatedFallback;
 pub use encryption::EncryptedBackend;
+pub use utils::OAuthTokenManager;
 
 use std::sync::Arc;
 use crate::traits::StorageBackend;

@@ -15,7 +15,7 @@ pub use cloud_sync_core::path;
 pub use cloud_sync_std::ignore;
 pub use cloud_sync_std::checksum;
 
-pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig, EncryptedBackend, SyncMode, BackendCredentials, BackendRegistry};
+pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig, EncryptedBackend, SyncMode, BackendCredentials, BackendRegistry, OAuthTokenManager};
 pub use cloud_sync_core::{SyncState, FileState, ConflictPolicy};
 pub use cloud_sync_std::SyncIgnore;
 pub use providers::utils::{RetryConfig, set_global_retry_config, get_global_retry_config};

@@ -5,7 +5,7 @@
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::OAuthCredentials;
-use crate::providers::utils::{refresh_oauth2_token, parse_response_error};
+use crate::providers::utils::parse_response_error;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -16,10 +16,10 @@ pub struct OneDriveProvider {
     client: reqwest::Client,
     /// Credentials configuration (client id/secret, refresh token).
     credentials: OAuthCredentials,
-    /// The authentication/token URL.
-    auth_url: String,
     /// The base API URL.
     api_url: String,
+    /// Shared OAuth token manager.
+    token_manager: std::sync::Arc<super::utils::OAuthTokenManager>,
     /// Optional upload rate limiter.
     upload_limiter: Option<crate::rate_limit::TokenBucket>,
     /// Optional download rate limiter.
@@ -40,13 +40,23 @@ impl OneDriveProvider {
     /// # Returns
     /// A new instance of `OneDriveProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
+        let client = super::utils::build_http_client();
+        let auth_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token".to_string();
+        let token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::new(
+            client.clone(),
+            &auth_url,
+            &credentials.client_id,
+            &credentials.client_secret,
+            &credentials.refresh_token,
+            "OneDrive",
+        ));
         let upload_limiter = credentials.common.max_upload_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         let download_limiter = credentials.common.max_download_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         Self {
-            client: super::utils::build_http_client(),
+            client,
             credentials,
-            auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token".to_string(),
             api_url: "https://graph.microsoft.com/v1.0".to_string(),
+            token_manager,
             upload_limiter,
             download_limiter,
         }
@@ -77,8 +87,15 @@ impl OneDriveProvider {
     /// The modified `OneDriveProvider` instance.
     #[cfg(test)]
     pub fn with_endpoints(mut self, auth_url: String, api_url: String) -> Self {
-        self.auth_url = auth_url;
         self.api_url = api_url;
+        self.token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::new(
+            self.client.clone(),
+            &auth_url,
+            &self.credentials.client_id,
+            &self.credentials.client_secret,
+            &self.credentials.refresh_token,
+            "OneDrive",
+        ));
         self
     }
 
@@ -87,14 +104,7 @@ impl OneDriveProvider {
     /// # Returns
     /// The access token string, or a `StorageError` if authorization fails.
     async fn get_access_token(&self) -> Result<String, StorageError> {
-        refresh_oauth2_token(
-            &self.client,
-            &self.auth_url,
-            &self.credentials.client_id,
-            &self.credentials.client_secret,
-            &self.credentials.refresh_token,
-            self.name(),
-        ).await
+        self.token_manager.get_access_token().await
     }
 
     /// Formats the remote path, incorporating the optional destination folder prefix.
