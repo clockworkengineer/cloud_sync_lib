@@ -72,6 +72,51 @@ pub async fn run_connection_diagnostics(
     Ok(())
 }
 
+/// Declarative macro generating standalone verifier binaries.
+#[macro_export]
+macro_rules! define_verifier_binary {
+    ($title:expr, $feature:expr, $creds_field:ident, $ProviderStruct:ident, $tmp_file:expr) => {
+        #[cfg(feature = $feature)]
+        #[path = "../config.rs"]
+        pub mod config;
+
+        #[cfg(feature = $feature)]
+        #[path = "common.rs"]
+        pub mod common;
+
+        #[cfg(feature = $feature)]
+        #[tokio::main]
+        async fn main() -> Result<(), Box<dyn std::error::Error>> {
+            println!("{} Connection Verifier", $title);
+            println!("-----------------------------");
+
+            let config_file = common::resolve_config_file();
+            println!("Loading configuration from: {}", config_file);
+            let config = config::load_or_create_config(config_file).await?;
+
+            let credentials = match config.$creds_field {
+                Some(creds) => creds,
+                None => {
+                    eprintln!("Error: [{}] section not found in configuration.", stringify!($creds_field));
+                    std::process::exit(1);
+                }
+            };
+
+            println!("Destination Folder: {:?}", credentials.common.destination_folder);
+
+            println!("\nInitializing {} provider...", $title);
+            let provider = cloud_sync_lib::$ProviderStruct::new(credentials);
+
+            common::run_connection_diagnostics(&provider, $tmp_file).await
+        }
+
+        #[cfg(not(feature = $feature))]
+        fn main() {
+            println!("{} provider feature is not enabled. Recompile with --features {} to use this verifier.", $title, $feature);
+        }
+    };
+}
+
 #[allow(dead_code)]
 fn main() {}
 
