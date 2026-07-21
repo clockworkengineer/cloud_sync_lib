@@ -4,7 +4,6 @@ use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::SFTPCredentials;
 use std::path::Path;
 use std::net::TcpStream;
-use std::io::{Read, Write};
 use ssh2::{Session, Sftp};
 use async_trait::async_trait;
 use tracing::info;
@@ -106,14 +105,7 @@ impl StorageBackend for SFTPProvider {
             let mut remote_file = sftp.create(resolved_path).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
             let mut local_file = std::fs::File::open(&local_path)?;
             
-            let mut buffer = vec![0; 16384];
-            loop {
-                let bytes_read = local_file.read(&mut buffer)?;
-                if bytes_read == 0 {
-                    break;
-                }
-                remote_file.write_all(&buffer[..bytes_read])?;
-            }
+            crate::providers::utils::copy_buffered(&mut local_file, &mut remote_file)?;
 
             Ok(())
         })
@@ -141,14 +133,7 @@ impl StorageBackend for SFTPProvider {
             }
             let mut local_file = std::fs::File::create(&local_path)?;
 
-            let mut buffer = vec![0; 16384];
-            loop {
-                let bytes_read = remote_file.read(&mut buffer)?;
-                if bytes_read == 0 {
-                    break;
-                }
-                local_file.write_all(&buffer[..bytes_read])?;
-            }
+            crate::providers::utils::copy_buffered(&mut remote_file, &mut local_file)?;
 
             Ok(())
         })

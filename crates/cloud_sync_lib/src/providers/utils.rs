@@ -220,6 +220,21 @@ pub async fn translate_http_error(res: reqwest::Response, provider_name: &str, a
     err
 }
 
+/// Copies bytes from a reader to a writer using a standardized buffer size.
+pub fn copy_buffered<R: std::io::Read, W: std::io::Write>(mut reader: R, mut writer: W) -> std::io::Result<u64> {
+    let mut buffer = [0u8; 16384];
+    let mut total_copied = 0;
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        writer.write_all(&buffer[..bytes_read])?;
+        total_copied += bytes_read as u64;
+    }
+    Ok(total_copied)
+}
+
 pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path, strip_destination_prefix, url_encode, url_encode_path};
 
 /// Generates standard `builder()`, `new()`, `timeout()`, and `custom_headers()` methods for a provider and its builder.
