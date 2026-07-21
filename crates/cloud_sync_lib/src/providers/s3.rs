@@ -18,20 +18,15 @@ pub struct S3Provider {
     credentials: S3Credentials,
 }
 
-impl S3Provider {
-    /// Returns a new builder to configure the provider.
-    pub fn builder(credentials: S3Credentials) -> S3ProviderBuilder {
-        S3ProviderBuilder::new(credentials)
-    }
+crate::impl_provider_builder!(S3Provider, S3ProviderBuilder, S3Credentials);
 
-    /// Creates a new `S3Provider` using the provided credentials.
-    ///
-    /// # Arguments
-    /// * `credentials` - S3 credentials and bucket configuration.
-    ///
-    /// # Returns
-    /// A new instance of `S3Provider`.
-    pub fn new(credentials: S3Credentials) -> Self {
+impl S3Provider {
+
+    pub fn with_client_options(
+        credentials: S3Credentials,
+        _timeout: Option<std::time::Duration>,
+        _custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
         let region = if let Some(ref ep) = credentials.endpoint {
             s3::Region::Custom {
                 region: credentials.region.clone(),
@@ -243,20 +238,8 @@ impl S3ProviderBuilder {
         }
     }
 
-    /// Configures the connection timeout.
-    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.timeout = Some(timeout);
-        self
-    }
-
-    /// Configures custom HTTP headers.
-    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
-        self.custom_headers = Some(headers);
-        self
-    }
-
     /// Builds the provider.
     pub fn build(self) -> S3Provider {
-        S3Provider::new(self.credentials)
+        S3Provider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

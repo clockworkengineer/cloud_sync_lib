@@ -125,16 +125,9 @@ fn url_encode(input: &str) -> String {
     encoded
 }
 
-impl B2Provider {
-    /// Returns a new builder to configure the provider.
-    pub fn builder(credentials: B2Credentials) -> B2ProviderBuilder {
-        B2ProviderBuilder::new(credentials)
-    }
+crate::impl_provider_builder!(B2Provider, B2ProviderBuilder, B2Credentials);
 
-    /// Creates a new `B2Provider` using the provided credentials.
-    pub fn new(credentials: B2Credentials) -> Self {
-        Self::with_client_options(credentials, None, None)
-    }
+impl B2Provider {
 
     /// Creates a new `B2Provider` with custom HTTP client options.
     pub fn with_client_options(
@@ -434,18 +427,6 @@ impl B2ProviderBuilder {
             timeout: None,
             custom_headers: None,
         }
-    }
-
-    /// Configures the connection timeout.
-    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.timeout = Some(timeout);
-        self
-    }
-
-    /// Configures custom HTTP headers.
-    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
-        self.custom_headers = Some(headers);
-        self
     }
 
     /// Builds the provider.

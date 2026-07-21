@@ -14,14 +14,14 @@ pub struct SFTPProvider {
     creds: SFTPCredentials,
 }
 
-impl SFTPProvider {
-    /// Returns a new builder to configure the provider.
-    pub fn builder(credentials: SFTPCredentials) -> SFTPProviderBuilder {
-        SFTPProviderBuilder::new(credentials)
-    }
+crate::impl_provider_builder!(SFTPProvider, SFTPProviderBuilder, SFTPCredentials);
 
-    /// Creates a new `SFTPProvider` instance.
-    pub fn new(creds: SFTPCredentials) -> Self {
+impl SFTPProvider {
+    pub fn with_client_options(
+        creds: SFTPCredentials,
+        _timeout: Option<std::time::Duration>,
+        _custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
         Self { creds }
     }
 
@@ -256,20 +256,8 @@ impl SFTPProviderBuilder {
         }
     }
 
-    /// Configures the connection timeout.
-    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.timeout = Some(timeout);
-        self
-    }
-
-    /// Configures custom HTTP headers.
-    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
-        self.custom_headers = Some(headers);
-        self
-    }
-
     /// Builds the provider.
     pub fn build(self) -> SFTPProvider {
-        SFTPProvider::new(self.credentials)
+        SFTPProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

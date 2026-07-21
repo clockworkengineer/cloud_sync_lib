@@ -47,16 +47,9 @@ pub struct PCloudProvider {
     api_url: String,
 }
 
-impl PCloudProvider {
-    /// Returns a new builder to configure the provider.
-    pub fn builder(credentials: PCloudCredentials) -> PCloudProviderBuilder {
-        PCloudProviderBuilder::new(credentials)
-    }
+crate::impl_provider_builder!(PCloudProvider, PCloudProviderBuilder, PCloudCredentials);
 
-    /// Creates a new `PCloudProvider` using the provided credentials.
-    pub fn new(credentials: PCloudCredentials) -> Self {
-        Self::with_client_options(credentials, None, None)
-    }
+impl PCloudProvider {
 
     /// Creates a new `PCloudProvider` with custom HTTP client options.
     pub fn with_client_options(
@@ -246,18 +239,6 @@ impl PCloudProviderBuilder {
             timeout: None,
             custom_headers: None,
         }
-    }
-
-    /// Configures the connection timeout.
-    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.timeout = Some(timeout);
-        self
-    }
-
-    /// Configures custom HTTP headers.
-    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
-        self.custom_headers = Some(headers);
-        self
     }
 
     /// Builds the provider.

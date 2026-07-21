@@ -28,22 +28,9 @@ pub struct DropboxProvider {
     download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
-impl DropboxProvider {
-    /// Returns a new builder to configure the provider.
-    pub fn builder(credentials: OAuthCredentials) -> DropboxProviderBuilder {
-        DropboxProviderBuilder::new(credentials)
-    }
+crate::impl_provider_builder!(DropboxProvider, DropboxProviderBuilder, OAuthCredentials);
 
-    /// Creates a new `DropboxProvider` using the provided OAuth credentials.
-    ///
-    /// # Arguments
-    /// * `credentials` - OAuth credentials and sync configuration.
-    ///
-    /// # Returns
-    /// A new instance of `DropboxProvider`.
-    pub fn new(credentials: OAuthCredentials) -> Self {
-        Self::with_client_options(credentials, None, None)
-    }
+impl DropboxProvider {
 
     /// Creates a new `DropboxProvider` with custom HTTP client options.
     pub fn with_client_options(
@@ -372,18 +359,6 @@ impl DropboxProviderBuilder {
             timeout: None,
             custom_headers: None,
         }
-    }
-
-    /// Configures the connection timeout.
-    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.timeout = Some(timeout);
-        self
-    }
-
-    /// Configures custom HTTP headers.
-    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
-        self.custom_headers = Some(headers);
-        self
     }
 
     /// Builds the provider.

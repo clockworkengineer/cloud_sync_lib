@@ -24,16 +24,9 @@ pub struct AzureBlobProvider {
     api_url: String,
 }
 
-impl AzureBlobProvider {
-    /// Returns a new builder to configure the provider.
-    pub fn builder(credentials: AzureBlobCredentials) -> AzureBlobProviderBuilder {
-        AzureBlobProviderBuilder::new(credentials)
-    }
+crate::impl_provider_builder!(AzureBlobProvider, AzureBlobProviderBuilder, AzureBlobCredentials);
 
-    /// Creates a new `AzureBlobProvider` using the provided credentials.
-    pub fn new(credentials: AzureBlobCredentials) -> Self {
-        Self::with_client_options(credentials, None, None)
-    }
+impl AzureBlobProvider {
 
     /// Creates a new `AzureBlobProvider` with custom HTTP client options.
     pub fn with_client_options(
@@ -390,18 +383,6 @@ impl AzureBlobProviderBuilder {
             timeout: None,
             custom_headers: None,
         }
-    }
-
-    /// Configures the connection timeout.
-    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.timeout = Some(timeout);
-        self
-    }
-
-    /// Configures custom HTTP headers.
-    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
-        self.custom_headers = Some(headers);
-        self
     }
 
     /// Builds the provider.

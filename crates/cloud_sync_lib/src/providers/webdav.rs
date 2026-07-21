@@ -25,15 +25,9 @@ pub struct WebDAVProvider {
     download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
-impl WebDAVProvider {
-    /// Returns a new builder to configure the provider.
-    pub fn builder(credentials: WebDAVCredentials) -> WebDAVProviderBuilder {
-        WebDAVProviderBuilder::new(credentials)
-    }
+crate::impl_provider_builder!(WebDAVProvider, WebDAVProviderBuilder, WebDAVCredentials);
 
-    pub fn new(credentials: WebDAVCredentials) -> Self {
-        Self::with_client_options(credentials, None, None)
-    }
+impl WebDAVProvider {
 
     /// Creates a new `WebDAVProvider` with custom HTTP client options.
     pub fn with_client_options(
@@ -372,18 +366,6 @@ impl WebDAVProviderBuilder {
             timeout: None,
             custom_headers: None,
         }
-    }
-
-    /// Configures the connection timeout.
-    pub fn timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.timeout = Some(timeout);
-        self
-    }
-
-    /// Configures custom HTTP headers.
-    pub fn custom_headers(mut self, headers: reqwest::header::HeaderMap) -> Self {
-        self.custom_headers = Some(headers);
-        self
     }
 
     /// Builds the provider.
