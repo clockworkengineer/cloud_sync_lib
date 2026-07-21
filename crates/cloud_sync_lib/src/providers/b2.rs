@@ -7,7 +7,7 @@ use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::B2Credentials;
 use crate::providers::utils::translate_http_error;
 use async_trait::async_trait;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, Duration};
 use tokio::fs;
@@ -390,15 +390,7 @@ impl StorageBackend for B2Provider {
 
                 let body: ListFileNamesResponse = res.json().await?;
                 for file in body.files {
-                    let mut item_path = PathBuf::from(&file.file_name);
-                    if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                        let clean_dest = dest_folder.trim_matches('/');
-                        if !clean_dest.is_empty() {
-                            if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                                item_path = stripped.to_path_buf();
-                            }
-                        }
-                    }
+                    let item_path = super::utils::strip_destination_prefix(Path::new(&file.file_name), self.credentials.common.destination_folder.as_deref());
 
                     // Convert B2 timestamp (milliseconds since epoch) to SystemTime
                     let modified = SystemTime::UNIX_EPOCH + Duration::from_millis(file.upload_timestamp);

@@ -208,7 +208,7 @@ pub async fn translate_http_error(res: reqwest::Response, provider_name: &str, a
     }
 }
 
-pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path};
+pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path, strip_destination_prefix};
 
 /// Centralized helper to build a standard reqwest::Client with proper pooling, timeout, and custom header settings.
 pub fn build_http_client(

@@ -61,6 +61,19 @@ pub fn format_absolute_path<'a>(remote_path: &'a str, destination_folder: Option
 }
 
 #[cfg(feature = "std")]
+pub fn strip_destination_prefix(item_path: &std::path::Path, destination_folder: Option<&str>) -> std::path::PathBuf {
+    if let Some(dest_folder) = destination_folder {
+        let clean_dest = dest_folder.trim_matches('/');
+        if !clean_dest.is_empty() {
+            if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
+                return stripped.to_path_buf();
+            }
+        }
+    }
+    item_path.to_path_buf()
+}
+
+#[cfg(feature = "std")]
 pub fn get_permissions(permissions: &std::fs::Permissions) -> Option<u32> {
     #[cfg(unix)]
     {

@@ -7,7 +7,7 @@ use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::GCSCredentials;
 use crate::providers::utils::translate_http_error;
 use async_trait::async_trait;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::SystemTime;
 use tokio::fs;
 use tracing::info;
@@ -250,16 +250,7 @@ impl StorageBackend for GCSProvider {
 
             if let Some(objects) = list_response.items {
                 for obj in objects {
-                    // Strip prefix destination_folder if present
-                    let mut item_path = PathBuf::from(&obj.name);
-                    if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                        let clean_dest = dest_folder.trim_matches('/');
-                        if !clean_dest.is_empty() {
-                            if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                                item_path = stripped.to_path_buf();
-                            }
-                        }
-                    }
+                    let item_path = super::utils::strip_destination_prefix(Path::new(&obj.name), self.credentials.common.destination_folder.as_deref());
 
                     // Parse GCS RFC3339 time format
                     let modified = time::OffsetDateTime::parse(&obj.updated, &time::format_description::well_known::Rfc3339)

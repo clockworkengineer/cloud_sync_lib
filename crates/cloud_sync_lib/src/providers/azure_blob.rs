@@ -6,7 +6,7 @@ use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::AzureBlobCredentials;
 use crate::providers::utils::translate_http_error;
 use async_trait::async_trait;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::SystemTime;
 use tokio::fs;
 use tracing::info;
@@ -328,15 +328,7 @@ impl StorageBackend for AzureBlobProvider {
                                 active_tag.clear();
                                 let name = local.as_str();
                                 if name == "Blob" {
-                                    let mut item_path = PathBuf::from(&current_name);
-                                    if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                                        let clean_dest = dest_folder.trim_matches('/');
-                                        if !clean_dest.is_empty() {
-                                            if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                                                item_path = stripped.to_path_buf();
-                                            }
-                                        }
-                                    }
+                                    let item_path = super::utils::strip_destination_prefix(Path::new(&current_name), self.credentials.common.destination_folder.as_deref());
 
                                     items.push(StorageItem {
                                         path: item_path,

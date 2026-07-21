@@ -7,7 +7,7 @@ use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::PCloudCredentials;
 use crate::providers::utils::translate_http_error;
 use async_trait::async_trait;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, Duration};
 use tokio::fs;
 use tracing::info;
@@ -206,16 +206,7 @@ impl StorageBackend for PCloudProvider {
                             continue;
                         }
 
-                        // Strip destination folder prefix from returned paths
-                        let mut item_path = PathBuf::from(&entry.name);
-                        if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                            let clean_dest = dest_folder.trim_matches('/');
-                            if !clean_dest.is_empty() {
-                                if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                                    item_path = stripped.to_path_buf();
-                                }
-                            }
-                        }
+                        let item_path = super::utils::strip_destination_prefix(Path::new(&entry.name), self.credentials.common.destination_folder.as_deref());
 
                         let modified = entry.modified
                             .map(|m| SystemTime::UNIX_EPOCH + Duration::from_secs(m))

@@ -7,7 +7,7 @@ use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::IPFSCredentials;
 use crate::providers::utils::translate_http_error;
 use async_trait::async_trait;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::SystemTime;
 use tokio::fs;
 use tracing::info;
@@ -228,15 +228,7 @@ impl StorageBackend for IPFSProvider {
             let mut items = Vec::new();
 
             for row in list_response.rows {
-                let mut item_path = PathBuf::from(&row.metadata.name);
-                if let Some(ref dest_folder) = self.credentials.common.destination_folder {
-                    let clean_dest = dest_folder.trim_matches('/');
-                    if !clean_dest.is_empty() {
-                        if let Ok(stripped) = item_path.strip_prefix(clean_dest) {
-                            item_path = stripped.to_path_buf();
-                        }
-                    }
-                }
+                let item_path = super::utils::strip_destination_prefix(Path::new(&row.metadata.name), self.credentials.common.destination_folder.as_deref());
 
                 let modified = row.date_pinned
                     .as_ref()
