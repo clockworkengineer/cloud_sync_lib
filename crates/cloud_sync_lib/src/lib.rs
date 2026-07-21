@@ -67,6 +67,18 @@ mod tests {
     use std::io::Write;
     use tempfile::tempdir;
 
+    async fn mount_oauth_mock(server: &wiremock::MockServer, token_val: &str) {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, ResponseTemplate};
+        Mock::given(method("POST"))
+            .and(path("/oauth"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": token_val
+            })))
+            .mount(server)
+            .await;
+    }
+
     /// Generic runner for SimulatedFallback flow test across different providers
     async fn run_simulated_flow_test<B>(provider_name: &str)
     where
@@ -122,13 +134,7 @@ mod tests {
         let server = MockServer::start().await;
 
         // 1. Mock OAuth Token endpoint
-        Mock::given(method("POST"))
-            .and(path("/oauth"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "access_token": "mocked-token-123"
-            })))
-            .mount(&server)
-            .await;
+        mount_oauth_mock(&server, "mocked-token-123").await;
 
         // 2. Mock File Search / Listing endpoint
         Mock::given(method("GET"))
@@ -335,13 +341,7 @@ mod tests {
         let server = MockServer::start().await;
 
         // 1. Mock OAuth Token endpoint
-        Mock::given(method("POST"))
-            .and(path("/oauth"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "access_token": "mocked-dropbox-token-123"
-            })))
-            .mount(&server)
-            .await;
+        mount_oauth_mock(&server, "mocked-dropbox-token-123").await;
 
         // 2. Mock Upload endpoint (POST to /content/upload)
         Mock::given(method("POST"))
@@ -541,13 +541,7 @@ mod tests {
         let server = MockServer::start().await;
 
         // 1. Mock OAuth Token endpoint
-        Mock::given(method("POST"))
-            .and(path("/oauth"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "access_token": "mocked-onedrive-token-123"
-            })))
-            .mount(&server)
-            .await;
+        mount_oauth_mock(&server, "mocked-onedrive-token-123").await;
 
         // 2. Mock Upload endpoint (PUT to /me/drive/root:/hello.txt:/content)
         Mock::given(method("PUT"))

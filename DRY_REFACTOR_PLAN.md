@@ -31,12 +31,15 @@ This document outlines the multi-phase DRY (Don't Repeat Yourself) refactoring r
 ### Phase 5 [COMPLETED]
 1. **Macroize Remote Path Formatting (`format_path`):** Extended `impl_provider_builder!` to auto-generate `format_path` for absolute/relative paths and refactored 10 providers (`commit 85e2834`).
 
+### Phase 6 [COMPLETED]
+1. **Macroize OAuth Token Retrieval Delegation (`get_access_token`):** Defined `impl_oauth_token_helper!` macro and refactored all 4 OAuth providers (`commit f602771`).
+
 ---
 
-## Phase 6 Refactor Plan
+## Phase 7 Refactor Plan
 
-### 1. Macroize OAuth Token Retrieval Delegation (`get_access_token`)
-- **Problem:** Several OAuth-based HTTP storage providers (`google_drive.rs`, `dropbox.rs`, `onedrive.rs`, `box_provider.rs`) repeat the identical boilerplate delegate helper `get_access_token` to call their inner `OAuthTokenManager`.
+### 1. Unify WireMock Server Initialization Boilerplate
+- **Problem:** Mock HTTP flow integration tests (`test_google_drive_mock_http_flow`, `test_dropbox_mock_http_flow`, `test_onedrive_mock_http_flow`, `test_webdav_mock_http_flow`, `test_s3_mock_http_flow`) repeat identical `wiremock` server setup, token mock handlers, and verification assertions.
 - **Refactor Plan:**
-  1. Define a helper macro `impl_oauth_token_helper!(Provider)` or extend `impl_provider_builder!` in `crates/cloud_sync_lib/src/providers/utils.rs` to generate this delegate block automatically.
-  2. Refactor all 4 OAuth providers to use this macro block.
+  1. Define a centralized helper `mount_oauth_mock(server: &wiremock::MockServer, token_path: &str, token_val: &str)` in the test helper module.
+  2. Refactor all 5 mock HTTP flow integration tests to consume the helper.
