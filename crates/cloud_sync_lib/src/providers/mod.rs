@@ -553,5 +553,13 @@ impl BackendRegistry {
             Arc::new(rate_limited)
         }
     }
+
+    /// Convenience factory to build a fully wrapped storage backend with default limiters.
+    pub fn create_backend(
+        creds: BackendCredentials,
+        sim_root: std::path::PathBuf,
+    ) -> Arc<dyn StorageBackend> {
+        Self::build_wrapped(creds, sim_root, None, None)
+    }
 }
 

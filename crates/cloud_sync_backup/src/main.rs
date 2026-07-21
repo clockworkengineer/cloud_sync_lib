@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::collections::HashMap;
-use cloud_sync_lib::{StorageBackend, StorageItem, LocalSimulation, BackendRegistry, BackendCredentials};
+use cloud_sync_lib::{StorageBackend, StorageItem, LocalSimulation, BackendCredentials};
 
 mod config;
 use config::{BackupConfig, load_config};
@@ -66,7 +66,7 @@ fn build_backend(provider_name: &str, custom_path: Option<&str>, config: &Backup
                 }
                 _ => return Err(format!("Unsupported backup provider or disabled feature: {}", provider_name).into()),
             };
-            Ok(BackendRegistry::build_wrapped(creds, root, None, None))
+            Ok(cloud_sync_lib::create_backend(creds, root))
         }
     }
 }

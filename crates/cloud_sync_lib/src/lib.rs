@@ -22,6 +22,14 @@ pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCred
 pub use cloud_sync_core::{SyncState, FileState, ConflictPolicy};
 pub use cloud_sync_std::SyncIgnore;
 pub use providers::utils::{RetryConfig, set_global_retry_config, get_global_retry_config};
+
+/// Dynamically constructs a fully-wrapped `StorageBackend` instance from `BackendCredentials` and target root path.
+pub fn create_backend(
+    creds: BackendCredentials,
+    sim_root: std::path::PathBuf,
+) -> std::sync::Arc<dyn traits::StorageBackend> {
+    BackendRegistry::create_backend(creds, sim_root)
+}
 #[cfg(feature = "google_drive")]
 pub use providers::{GoogleDriveProvider, GoogleDriveProviderBuilder};
 #[cfg(feature = "dropbox")]
