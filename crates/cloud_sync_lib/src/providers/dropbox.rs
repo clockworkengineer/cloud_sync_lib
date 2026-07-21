@@ -61,16 +61,14 @@ impl DropboxProvider {
             &credentials.refresh_token,
             "Dropbox",
         ));
-        let upload_limiter = credentials.common.max_upload_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
-        let download_limiter = credentials.common.max_download_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         Self {
             client,
             credentials,
             api_url: "https://api.dropboxapi.com/2/files".to_string(),
             content_url: "https://content.dropboxapi.com/2/files".to_string(),
             token_manager,
-            upload_limiter,
-            download_limiter,
+            upload_limiter: None,
+            download_limiter: None,
         }
     }
 

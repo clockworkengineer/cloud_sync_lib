@@ -41,14 +41,12 @@ impl WebDAVProvider {
         timeout: Option<std::time::Duration>,
         custom_headers: Option<reqwest::header::HeaderMap>,
     ) -> Self {
-        let upload_limiter = credentials.common.max_upload_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
-        let download_limiter = credentials.common.max_download_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         Self {
             client: super::utils::build_http_client(timeout, custom_headers),
             url: credentials.url.clone(),
             credentials,
-            upload_limiter,
-            download_limiter,
+            upload_limiter: None,
+            download_limiter: None,
         }
     }
 

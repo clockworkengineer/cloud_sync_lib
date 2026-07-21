@@ -1,4 +1,7 @@
+use crate::traits::{StorageBackend, StorageError, StorageItem};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
+use async_trait::async_trait;
 use std::time::Instant;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -7,6 +10,73 @@ use tokio::time::{sleep_until, Duration, Instant as TokioInstant, Sleep};
 use futures_util::stream::Stream;
 use bytes::Bytes;
 use tokio::io::{AsyncRead, ReadBuf};
+
+/// Generic rate-limiting wrapper for any [`StorageBackend`].
+///
+/// Uniformly applies upload and download bandwidth throttling using token buckets across any backend.
+pub struct RateLimitingBackend<B: StorageBackend> {
+    inner: B,
+    upload_limiter: Option<TokenBucket>,
+    download_limiter: Option<TokenBucket>,
+}
+
+impl<B: StorageBackend> RateLimitingBackend<B> {
+    /// Creates a new `RateLimitingBackend` wrapper.
+    pub fn new(inner: B, upload_limiter: Option<TokenBucket>, download_limiter: Option<TokenBucket>) -> Self {
+        Self {
+            inner,
+            upload_limiter,
+            download_limiter,
+        }
+    }
+}
+
+#[async_trait]
+impl<B: StorageBackend> StorageBackend for RateLimitingBackend<B> {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        let res = self.inner.upload(local_path, remote_path).await;
+        if res.is_ok() {
+            if let Some(ref limiter) = self.upload_limiter {
+                if let Ok(meta) = tokio::fs::metadata(local_path).await {
+                    if let Some(delay) = limiter.consume(meta.len()) {
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+            }
+        }
+        res
+    }
+
+    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        let res = self.inner.download(remote_path, local_path).await;
+        if res.is_ok() {
+            if let Some(ref limiter) = self.download_limiter {
+                if let Ok(meta) = tokio::fs::metadata(local_path).await {
+                    if let Some(delay) = limiter.consume(meta.len()) {
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+            }
+        }
+        res
+    }
+
+    async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+        self.inner.delete(remote_path).await
+    }
+
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        self.inner.list(remote_path).await
+    }
+
+    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+        self.inner.compute_local_checksum(local_path).await
+    }
+}
 
 #[derive(Debug)]
 struct BucketState {

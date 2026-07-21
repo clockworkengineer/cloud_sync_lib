@@ -54,16 +54,14 @@ impl GoogleDriveProvider {
             &credentials.refresh_token,
             "Google Drive",
         ));
-        let upload_limiter = credentials.common.max_upload_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
-        let download_limiter = credentials.common.max_download_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         Self {
             client,
             credentials,
             api_url: "https://www.googleapis.com/drive/v3/files".to_string(),
             upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
             token_manager,
-            upload_limiter,
-            download_limiter,
+            upload_limiter: None,
+            download_limiter: None,
         }
     }
 

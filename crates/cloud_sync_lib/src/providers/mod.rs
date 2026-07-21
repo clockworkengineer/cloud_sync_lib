@@ -541,10 +541,16 @@ impl BackendRegistry {
             .with_limiters(upload_limiter.clone(), download_limiter.clone());
         let fallback = fallback::SimulatedFallback::new(Some(inner), local_sim, provider_name, sync_mode);
 
+        let rate_limited = crate::rate_limit::RateLimitingBackend::new(
+            fallback,
+            upload_limiter,
+            download_limiter,
+        );
+
         if let Some(password) = encryption_password {
-            Arc::new(encryption::EncryptedBackend::new(fallback, password))
+            Arc::new(encryption::EncryptedBackend::new(rate_limited, password))
         } else {
-            Arc::new(fallback)
+            Arc::new(rate_limited)
         }
     }
 }
