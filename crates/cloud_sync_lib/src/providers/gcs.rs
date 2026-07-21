@@ -39,7 +39,7 @@ pub struct GCSProvider {
 
 use super::utils::url_encode;
 
-crate::impl_provider_builder!(GCSProvider, GCSProviderBuilder, GCSCredentials);
+crate::impl_provider_builder!(GCSProvider, GCSProviderBuilder, GCSCredentials, relative);
 
 impl GCSProvider {
 
@@ -69,9 +69,6 @@ impl GCSProvider {
         self
     }
 
-    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
-    }
 
     /// Retrieves an access token for GCS if service account credentials are provided.
     async fn get_access_token(&self) -> Result<Option<String>, StorageError> {

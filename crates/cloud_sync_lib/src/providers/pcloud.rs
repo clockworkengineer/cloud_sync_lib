@@ -47,7 +47,7 @@ pub struct PCloudProvider {
     api_url: String,
 }
 
-crate::impl_provider_builder!(PCloudProvider, PCloudProviderBuilder, PCloudCredentials);
+crate::impl_provider_builder!(PCloudProvider, PCloudProviderBuilder, PCloudCredentials, absolute);
 
 impl PCloudProvider {
 
@@ -70,9 +70,7 @@ impl PCloudProvider {
         }
     }
 
-    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_absolute_path(remote_path, self.credentials.common.destination_folder.as_deref())
-    }
+
 }
 
 #[async_trait]

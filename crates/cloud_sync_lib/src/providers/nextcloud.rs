@@ -22,7 +22,7 @@ pub struct NextcloudProvider {
     url: String,
 }
 
-crate::impl_provider_builder!(NextcloudProvider, NextcloudProviderBuilder, NextcloudCredentials);
+crate::impl_provider_builder!(NextcloudProvider, NextcloudProviderBuilder, NextcloudCredentials, absolute);
 
 impl NextcloudProvider {
 
@@ -48,9 +48,6 @@ impl NextcloudProvider {
         self
     }
 
-    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_absolute_path(remote_path, self.credentials.common.destination_folder.as_deref())
-    }
 
     /// Ensures that parent directories exist on the Nextcloud server.
     async fn ensure_parent_dirs(&self, remote_path: &str) -> Result<(), StorageError> {

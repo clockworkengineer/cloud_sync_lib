@@ -245,6 +245,22 @@ pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, for
 /// Generates standard `builder()`, `new()`, `timeout()`, and `custom_headers()` methods for a provider and its builder.
 #[macro_export]
 macro_rules! impl_provider_builder {
+    ($provider:ident, $builder:ident, $creds:ty, absolute) => {
+        $crate::impl_provider_builder!($provider, $builder, $creds);
+        impl $provider {
+            fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
+                $crate::providers::utils::format_absolute_path(remote_path, self.credentials.common.destination_folder.as_deref())
+            }
+        }
+    };
+    ($provider:ident, $builder:ident, $creds:ty, relative) => {
+        $crate::impl_provider_builder!($provider, $builder, $creds);
+        impl $provider {
+            fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
+                $crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
+            }
+        }
+    };
     ($provider:ident, $builder:ident, $creds:ty) => {
         impl $provider {
             /// Returns a new builder to configure the provider.

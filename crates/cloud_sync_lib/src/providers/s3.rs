@@ -18,7 +18,7 @@ pub struct S3Provider {
     credentials: S3Credentials,
 }
 
-crate::impl_provider_builder!(S3Provider, S3ProviderBuilder, S3Credentials);
+crate::impl_provider_builder!(S3Provider, S3ProviderBuilder, S3Credentials, relative);
 
 impl S3Provider {
 
@@ -83,16 +83,7 @@ impl S3Provider {
         self
     }
 
-    /// Formats the remote path, incorporating the optional destination folder prefix.
-    ///
-    /// # Arguments
-    /// * `remote_path` - The relative destination path.
-    ///
-    /// # Returns
-    /// The fully-resolved S3 object key string.
-    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
-    }
+
 }
 
 #[async_trait]

@@ -112,7 +112,7 @@ pub struct B2Provider {
 
 use super::utils::url_encode_path as url_encode;
 
-crate::impl_provider_builder!(B2Provider, B2ProviderBuilder, B2Credentials);
+crate::impl_provider_builder!(B2Provider, B2ProviderBuilder, B2Credentials, relative);
 
 impl B2Provider {
 
@@ -203,9 +203,6 @@ impl B2Provider {
         Ok(bucket.bucket_id.clone())
     }
 
-    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
-    }
 }
 
 #[async_trait]

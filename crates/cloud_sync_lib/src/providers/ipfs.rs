@@ -50,7 +50,7 @@ pub struct IPFSProvider {
     gateway_url: String,
 }
 
-crate::impl_provider_builder!(IPFSProvider, IPFSProviderBuilder, IPFSCredentials);
+crate::impl_provider_builder!(IPFSProvider, IPFSProviderBuilder, IPFSCredentials, relative);
 
 impl IPFSProvider {
 
@@ -80,9 +80,6 @@ impl IPFSProvider {
         }
     }
 
-    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
-    }
 
     /// Helper to query the Pinata PinList to find the CID (IpfsHash) for a given remote filename.
     async fn resolve_cid(&self, remote_path: &str) -> Result<String, StorageError> {

@@ -26,7 +26,7 @@ pub struct OneDriveProvider {
     download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
-crate::impl_provider_builder!(OneDriveProvider, OneDriveProviderBuilder, OAuthCredentials);
+crate::impl_provider_builder!(OneDriveProvider, OneDriveProviderBuilder, OAuthCredentials, relative);
 
 impl OneDriveProvider {
 
@@ -101,11 +101,6 @@ impl OneDriveProvider {
         self.token_manager.get_access_token().await
     }
 
-    /// Formats the remote path, incorporating the optional destination folder prefix.
-    ///
-    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
-    }
 }
 
 #[async_trait]

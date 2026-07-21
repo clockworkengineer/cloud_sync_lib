@@ -24,7 +24,7 @@ pub struct AzureBlobProvider {
     api_url: String,
 }
 
-crate::impl_provider_builder!(AzureBlobProvider, AzureBlobProviderBuilder, AzureBlobCredentials);
+crate::impl_provider_builder!(AzureBlobProvider, AzureBlobProviderBuilder, AzureBlobCredentials, relative);
 
 impl AzureBlobProvider {
 
@@ -54,9 +54,6 @@ impl AzureBlobProvider {
         self
     }
 
-    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
-    }
 
     /// Signs an Azure REST request using Shared Key authorization.
     fn sign_request(

@@ -24,18 +24,16 @@ This document outlines the multi-phase DRY (Don't Repeat Yourself) refactoring r
 3. **Centralize Storage Backend Factory:** Implemented `cloud_sync_lib::create_backend` factory function and integrated it into backup runner (`commit 2211772`).
 4. **Standardize Async File Upload Buffer Streams:** Extracted `copy_buffered` helper function and replaced manual copy loops in SFTP provider (`commit 9fc87a6`).
 
+### Phase 4 [COMPLETED]
+1. **Unify HTTP Request Authorization Signing:** Defined `apply_bearer_auth` helper in `providers::utils` and refactored all HTTP providers to sign requests uniformly (`commit 437c0da`).
+2. **Consolidate Parent & Filename Extraction:** Extracted `get_parent_and_filename` helper to `cloud_sync_core::path` and refactored Box provider and sync engine (`commit 6dad969`).
+
 ---
 
-## Phase 4 Refactor Plan
+## Phase 5 Refactor Plan
 
-### 1. Unify HTTP Request Authorization Signing
-- **Problem:** Many HTTP storage providers (`dropbox.rs`, `google_drive.rs`, `onedrive.rs`, `box_provider.rs`) repeat similar code to request/apply OAuth Access Tokens or custom authorization headers to their outgoing HTTP request builders.
+### 1. Macroize Remote Path Formatting (`format_path`)
+- **Problem:** Ten storage provider implementations (`webdav.rs`, `s3.rs`, `pcloud.rs`, `onedrive.rs`, `nextcloud.rs`, `ipfs.rs`, `gcs.rs`, `dropbox.rs`, `b2.rs`, `azure_blob.rs`) define duplicate private `format_path` helper methods to resolve `remote_path` with their respective `destination_folder` config setting, duplicating ~150 lines of boilerplate across files.
 - **Refactor Plan:**
-  1. Define a centralized helper `apply_auth_header(req: reqwest::RequestBuilder, token: &str) -> reqwest::RequestBuilder` in `providers::utils`.
-  2. Refactor OAuth providers to use this helper for signing requests uniformly.
-
-### 2. Consolidate Directory/Parent Path Retrieval
-- **Problem:** Multiple providers and test binaries duplicate logic to parse parent folder paths from a given file path string or determine the file name (e.g. `path.parent().map(...).unwrap_or("")`).
-- **Refactor Plan:**
-  1. Extract a common helper `get_parent_and_filename(path: &str) -> (String, String)` in `cloud_sync_core::path`.
-  2. Refactor sync engines and backends to consume this helper.
+  1. Extend `impl_provider_builder!` macro in `crates/cloud_sync_lib/src/providers/utils.rs` to optionally accept path formatting behavior (`absolute` or `relative`) and generate the `format_path` helper block dynamically.
+  2. Refactor all 10 providers to delegate `format_path` generation to the expanded macro.

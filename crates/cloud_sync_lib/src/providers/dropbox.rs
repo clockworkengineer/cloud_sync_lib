@@ -28,7 +28,7 @@ pub struct DropboxProvider {
     download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
-crate::impl_provider_builder!(DropboxProvider, DropboxProviderBuilder, OAuthCredentials);
+crate::impl_provider_builder!(DropboxProvider, DropboxProviderBuilder, OAuthCredentials, absolute);
 
 impl DropboxProvider {
 
@@ -106,11 +106,6 @@ impl DropboxProvider {
         self.token_manager.get_access_token().await
     }
 
-    /// Formats the remote path, incorporating the optional destination folder prefix.
-    ///
-    fn format_path<'a>(&self, path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_absolute_path(path, self.credentials.common.destination_folder.as_deref())
-    }
 }
 
 #[async_trait]

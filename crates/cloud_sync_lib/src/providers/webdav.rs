@@ -25,7 +25,7 @@ pub struct WebDAVProvider {
     download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
-crate::impl_provider_builder!(WebDAVProvider, WebDAVProviderBuilder, WebDAVCredentials);
+crate::impl_provider_builder!(WebDAVProvider, WebDAVProviderBuilder, WebDAVCredentials, absolute);
 
 impl WebDAVProvider {
 
@@ -72,9 +72,6 @@ impl WebDAVProvider {
         self
     }
 
-    fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-        crate::providers::utils::format_absolute_path(remote_path, self.credentials.common.destination_folder.as_deref())
-    }
 
     /// Ensures that parent directories exist on the WebDAV server for a given remote path.
     ///
