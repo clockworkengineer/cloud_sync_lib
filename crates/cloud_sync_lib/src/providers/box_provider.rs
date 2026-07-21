@@ -68,8 +68,17 @@ impl BoxProvider {
 
     /// Creates a new `BoxProvider` using the provided OAuth credentials.
     pub fn new(credentials: OAuthCredentials) -> Self {
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `BoxProvider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: OAuthCredentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
         Self {
-            client: super::utils::build_http_client(),
+            client: super::utils::build_http_client(timeout, custom_headers),
             credentials,
             auth_url: "https://api.box.com/oauth2/token".to_string(),
             api_url: "https://api.box.com/2.0".to_string(),
@@ -487,6 +496,6 @@ impl BoxProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> BoxProvider {
-        BoxProvider::new(self.credentials)
+        BoxProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

@@ -58,6 +58,15 @@ impl IPFSProvider {
 
     /// Creates a new `IPFSProvider` using the provided credentials.
     pub fn new(credentials: IPFSCredentials) -> Self {
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `IPFSProvider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: IPFSCredentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
         let api_url = if let Some(ref ep) = credentials.endpoint {
             ep.trim_end_matches('/').to_string()
         } else {
@@ -71,7 +80,7 @@ impl IPFSProvider {
         };
 
         Self {
-            client: super::utils::build_http_client(),
+            client: super::utils::build_http_client(timeout, custom_headers),
             credentials,
             api_url,
             gateway_url,
@@ -283,6 +292,6 @@ impl IPFSProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> IPFSProvider {
-        IPFSProvider::new(self.credentials)
+        IPFSProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

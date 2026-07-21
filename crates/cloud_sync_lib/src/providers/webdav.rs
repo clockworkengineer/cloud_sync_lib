@@ -31,18 +31,20 @@ impl WebDAVProvider {
         WebDAVProviderBuilder::new(credentials)
     }
 
-    /// Creates a new `WebDAVProvider` using the provided WebDAV credentials.
-    ///
-    /// # Arguments
-    /// * `credentials` - WebDAV credentials and server configuration.
-    ///
-    /// # Returns
-    /// A new instance of `WebDAVProvider`.
     pub fn new(credentials: WebDAVCredentials) -> Self {
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `WebDAVProvider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: WebDAVCredentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
         let upload_limiter = credentials.common.max_upload_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         let download_limiter = credentials.common.max_download_rate.map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024));
         Self {
-            client: super::utils::build_http_client(),
+            client: super::utils::build_http_client(timeout, custom_headers),
             url: credentials.url.clone(),
             credentials,
             upload_limiter,
@@ -388,6 +390,6 @@ impl WebDAVProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> WebDAVProvider {
-        WebDAVProvider::new(self.credentials)
+        WebDAVProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

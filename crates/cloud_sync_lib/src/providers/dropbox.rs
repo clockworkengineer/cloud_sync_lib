@@ -42,7 +42,16 @@ impl DropboxProvider {
     /// # Returns
     /// A new instance of `DropboxProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
-        let client = super::utils::build_http_client();
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `DropboxProvider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: OAuthCredentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
+        let client = super::utils::build_http_client(timeout, custom_headers);
         let auth_url = "https://api.dropbox.com/oauth2/token".to_string();
         let token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::new(
             client.clone(),
@@ -381,6 +390,6 @@ impl DropboxProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> DropboxProvider {
-        DropboxProvider::new(self.credentials)
+        DropboxProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

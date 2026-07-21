@@ -13,6 +13,8 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 /// Storage provider client for MEGA.nz.
 pub struct MegaProvider {
     credentials: MegaCredentials,
+    timeout: Option<std::time::Duration>,
+    custom_headers: Option<reqwest::header::HeaderMap>,
 }
 
 impl MegaProvider {
@@ -23,7 +25,16 @@ impl MegaProvider {
 
     /// Creates a new `MegaProvider` using the provided credentials.
     pub fn new(credentials: MegaCredentials) -> Self {
-        Self { credentials }
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `MegaProvider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: MegaCredentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
+        Self { credentials, timeout, custom_headers }
     }
 
     /// Helper to resolve a path to a MEGA Node by traversing the account hierarchy.
@@ -125,6 +136,9 @@ impl StorageBackend for MegaProvider {
         let local_path = local_path.to_path_buf();
         let remote_path = remote_path.to_string();
 
+        let timeout = self.timeout;
+        let custom_headers = self.custom_headers.clone();
+
         tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -133,7 +147,7 @@ impl StorageBackend for MegaProvider {
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
-                    .build(super::utils::build_http_client())
+                    .build(super::utils::build_http_client(timeout, custom_headers))
                     .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 client.login(&email, &password, None).await
@@ -189,6 +203,9 @@ impl StorageBackend for MegaProvider {
         let local_path = local_path.to_path_buf();
         let remote_path = remote_path.to_string();
 
+        let timeout = self.timeout;
+        let custom_headers = self.custom_headers.clone();
+
         tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -197,7 +214,7 @@ impl StorageBackend for MegaProvider {
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
-                    .build(super::utils::build_http_client())
+                    .build(super::utils::build_http_client(timeout, custom_headers))
                     .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 client.login(&email, &password, None).await
@@ -227,6 +244,9 @@ impl StorageBackend for MegaProvider {
         let dest_folder = self.credentials.common.destination_folder.clone();
         let remote_path = remote_path.to_string();
 
+        let timeout = self.timeout;
+        let custom_headers = self.custom_headers.clone();
+
         tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -235,7 +255,7 @@ impl StorageBackend for MegaProvider {
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
-                    .build(super::utils::build_http_client())
+                    .build(super::utils::build_http_client(timeout, custom_headers))
                     .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 client.login(&email, &password, None).await
@@ -257,6 +277,9 @@ impl StorageBackend for MegaProvider {
         let dest_folder = self.credentials.common.destination_folder.clone();
         let remote_path = remote_path.to_string();
 
+        let timeout = self.timeout;
+        let custom_headers = self.custom_headers.clone();
+
         tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -265,7 +288,7 @@ impl StorageBackend for MegaProvider {
 
             rt.block_on(async {
                 let mut client = mega::Client::builder()
-                    .build(super::utils::build_http_client())
+                    .build(super::utils::build_http_client(timeout, custom_headers))
                     .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
                 client.login(&email, &password, None).await
@@ -340,6 +363,6 @@ impl MegaProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> MegaProvider {
-        MegaProvider::new(self.credentials)
+        MegaProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

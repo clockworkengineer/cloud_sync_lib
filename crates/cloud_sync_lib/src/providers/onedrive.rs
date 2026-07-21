@@ -40,7 +40,16 @@ impl OneDriveProvider {
     /// # Returns
     /// A new instance of `OneDriveProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
-        let client = super::utils::build_http_client();
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `OneDriveProvider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: OAuthCredentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
+        let client = super::utils::build_http_client(timeout, custom_headers);
         let auth_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token".to_string();
         let token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::new(
             client.clone(),
@@ -325,6 +334,6 @@ impl OneDriveProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> OneDriveProvider {
-        OneDriveProvider::new(self.credentials)
+        OneDriveProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

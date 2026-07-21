@@ -32,6 +32,15 @@ impl AzureBlobProvider {
 
     /// Creates a new `AzureBlobProvider` using the provided credentials.
     pub fn new(credentials: AzureBlobCredentials) -> Self {
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `AzureBlobProvider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: AzureBlobCredentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
         let api_url = if let Some(ref ep) = credentials.endpoint {
             ep.trim_end_matches('/').to_string()
         } else {
@@ -39,7 +48,7 @@ impl AzureBlobProvider {
         };
 
         Self {
-            client: super::utils::build_http_client(),
+            client: super::utils::build_http_client(timeout, custom_headers),
             credentials,
             api_url,
         }
@@ -405,6 +414,6 @@ impl AzureBlobProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> AzureBlobProvider {
-        AzureBlobProvider::new(self.credentials)
+        AzureBlobProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

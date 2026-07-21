@@ -161,13 +161,18 @@ pub async fn translate_http_error(res: reqwest::Response, provider_name: &str, a
 
 pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path};
 
-/// Centralized helper to build a standard reqwest::Client with proper pooling and timeout settings.
-pub fn build_http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(600))
-        .pool_max_idle_per_host(10)
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+/// Centralized helper to build a standard reqwest::Client with proper pooling, timeout, and custom header settings.
+pub fn build_http_client(
+    timeout: Option<std::time::Duration>,
+    custom_headers: Option<reqwest::header::HeaderMap>,
+) -> reqwest::Client {
+    let mut builder = reqwest::Client::builder()
+        .timeout(timeout.unwrap_or(std::time::Duration::from_secs(600)))
+        .pool_max_idle_per_host(10);
+    if let Some(headers) = custom_headers {
+        builder = builder.default_headers(headers);
+    }
+    builder.build().unwrap_or_else(|_| reqwest::Client::new())
 }
 
 /// Creates a rate-limited reqwest::Body from a local file and returns the body along with its size.

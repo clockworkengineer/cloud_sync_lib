@@ -34,15 +34,17 @@ impl GoogleDriveProvider {
         GoogleDriveProviderBuilder::new(credentials)
     }
 
-    /// Creates a new `GoogleDriveProvider` using the provided OAuth credentials.
-    ///
-    /// # Arguments
-    /// * `credentials` - OAuth credentials and sync configuration.
-    ///
-    /// # Returns
-    /// A new instance of `GoogleDriveProvider`.
     pub fn new(credentials: OAuthCredentials) -> Self {
-        let client = super::utils::build_http_client();
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `GoogleDriveProvider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: OAuthCredentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
+        let client = super::utils::build_http_client(timeout, custom_headers);
         let auth_url = "https://oauth2.googleapis.com/token".to_string();
         let token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::new(
             client.clone(),
@@ -437,6 +439,6 @@ impl GoogleDriveProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> GoogleDriveProvider {
-        GoogleDriveProvider::new(self.credentials)
+        GoogleDriveProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

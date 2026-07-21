@@ -133,8 +133,17 @@ impl B2Provider {
 
     /// Creates a new `B2Provider` using the provided credentials.
     pub fn new(credentials: B2Credentials) -> Self {
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `B2Provider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: B2Credentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
         Self {
-            client: super::utils::build_http_client(),
+            client: super::utils::build_http_client(timeout, custom_headers),
             credentials,
             auth_cache: Mutex::new(None),
             bucket_id_cache: Mutex::new(None),
@@ -449,6 +458,6 @@ impl B2ProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> B2Provider {
-        B2Provider::new(self.credentials)
+        B2Provider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

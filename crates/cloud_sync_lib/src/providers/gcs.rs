@@ -59,6 +59,15 @@ impl GCSProvider {
 
     /// Creates a new `GCSProvider` using the provided credentials.
     pub fn new(credentials: GCSCredentials) -> Self {
+        Self::with_client_options(credentials, None, None)
+    }
+
+    /// Creates a new `GCSProvider` with custom HTTP client options.
+    pub fn with_client_options(
+        credentials: GCSCredentials,
+        timeout: Option<std::time::Duration>,
+        custom_headers: Option<reqwest::header::HeaderMap>,
+    ) -> Self {
         let api_url = if let Some(ref ep) = credentials.endpoint {
             ep.trim_end_matches('/').to_string()
         } else {
@@ -66,7 +75,7 @@ impl GCSProvider {
         };
 
         Self {
-            client: super::utils::build_http_client(),
+            client: super::utils::build_http_client(timeout, custom_headers),
             credentials,
             api_url,
         }
@@ -308,6 +317,6 @@ impl GCSProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> GCSProvider {
-        GCSProvider::new(self.credentials)
+        GCSProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
     }
 }

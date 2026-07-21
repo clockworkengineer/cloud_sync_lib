@@ -13,3 +13,4 @@ watched_folder/.sync_state.json
 /cloud_sync_tauri/icons/128x128.png
 
 backup_config.toml
+crates/cloud_sync_tauri/binaries/cloud_sync_daemon-x86_64-pc-windows-msvc.exe
