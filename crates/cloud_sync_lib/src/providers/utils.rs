@@ -159,6 +159,28 @@ impl OAuthTokenManager {
     }
 }
 
+/// Unified helper to map an HTTP status code to `StorageError`.
+pub fn translate_status_code_error(status_code: u16, provider_name: &str, action: &str, detail: Option<&str>) -> StorageError {
+    let msg = match detail {
+        Some(d) if !d.trim().is_empty() => d.to_string(),
+        _ => format!("HTTP status {}", status_code),
+    };
+
+    match status_code {
+        429 => StorageError::RateLimit {
+            message: format!("Rate limit exceeded on {}: {}", provider_name, msg),
+            retry_after: None,
+        },
+        404 => StorageError::NotFound(format!("Resource not found on {}: {}", provider_name, msg)),
+        401 | 403 => StorageError::AuthenticationExpired(format!("Authentication expired or forbidden on {}: {}", provider_name, msg)),
+        409 => StorageError::Conflict(format!("Conflict on {}: {}", provider_name, msg)),
+        _ => StorageError::Provider {
+            message: format!("Failed to {} on {}: {}", action, provider_name, msg),
+            status: Some(status_code),
+        },
+    }
+}
+
 /// Unified helper to parse error response from the provider REST API and map it to `StorageError`.
 ///
 /// # Arguments
@@ -189,23 +211,13 @@ pub async fn translate_http_error(res: reqwest::Response, provider_name: &str, a
         body
     };
 
-    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        StorageError::RateLimit {
-            message: format!("Rate limit exceeded on {}: {}", provider_name, detail),
-            retry_after,
-        }
-    } else if status == reqwest::StatusCode::NOT_FOUND {
-        StorageError::NotFound(format!("Resource not found on {}: {}", provider_name, detail))
-    } else if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        StorageError::AuthenticationExpired(format!("Authentication expired or forbidden on {}: {}", provider_name, detail))
-    } else if status == reqwest::StatusCode::CONFLICT {
-        StorageError::Conflict(format!("Conflict on {}: {}", provider_name, detail))
-    } else {
-        StorageError::Provider {
-            message: format!("Failed to {} on {}: {}", action, provider_name, detail),
-            status: Some(status.as_u16()),
+    let mut err = translate_status_code_error(status.as_u16(), provider_name, action, Some(&detail));
+    if let StorageError::RateLimit { retry_after: ref mut ra, .. } = err {
+        if ra.is_none() {
+            *ra = retry_after;
         }
     }
+    err
 }
 
 pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path, strip_destination_prefix, url_encode, url_encode_path};

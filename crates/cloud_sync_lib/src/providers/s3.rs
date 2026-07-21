@@ -112,7 +112,7 @@ impl StorageBackend for S3Provider {
         // HTTP status 200 or 201 indicates success
         let status_code = res.status_code();
         if status_code != 200 && status_code != 201 {
-            return Err(StorageError::Provider { message: format!("S3 upload returned status code: {}", status_code), status: None });
+            return Err(crate::providers::utils::translate_status_code_error(status_code, "S3", "upload", None));
         }
 
         Ok(())
@@ -126,7 +126,7 @@ impl StorageBackend for S3Provider {
 
         let status_code = res.status_code();
         if status_code != 200 {
-            return Err(StorageError::Provider { message: format!("S3 download returned status code: {}", status_code), status: None });
+            return Err(crate::providers::utils::translate_status_code_error(status_code, "S3", "download", None));
         }
 
         if let Some(parent) = local_path.parent() {
@@ -147,7 +147,7 @@ impl StorageBackend for S3Provider {
         let status_code = res.status_code();
         // 204 No Content or 200 OK are typical success status codes
         if status_code != 200 && status_code != 204 {
-            return Err(StorageError::Provider { message: format!("S3 delete returned status code: {}", status_code), status: None });
+            return Err(crate::providers::utils::translate_status_code_error(status_code, "S3", "delete", None));
         }
 
         Ok(())
