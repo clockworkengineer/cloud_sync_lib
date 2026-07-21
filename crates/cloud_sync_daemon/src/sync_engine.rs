@@ -72,9 +72,10 @@ async fn get_local_mtime(path: &Path) -> Option<SystemTime> {
 }
 
 async fn get_remote_file_info(backend: &dyn StorageBackend, rel_path: &str) -> Option<FileInfo> {
-    let path = Path::new(rel_path);
-    let parent = path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-    let file_name = path.file_name()?.to_string_lossy();
+    let (parent, file_name) = cloud_sync_lib::path::get_parent_and_filename(rel_path);
+    if file_name.is_empty() {
+        return None;
+    }
 
     let items = backend.list(&parent).await.ok()?;
     for item in items {

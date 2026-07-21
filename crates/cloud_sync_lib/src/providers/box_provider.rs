@@ -216,14 +216,13 @@ impl BoxProvider {
 
     /// Resolves the parent folder ID and the filename for a given remote path.
     async fn resolve_parent_and_name(&self, token: &str, remote_path: &str) -> Result<(String, String), StorageError> {
-        let path = Path::new(remote_path);
-        let parent_path = path.parent().and_then(|p| p.to_str()).unwrap_or("");
-        let file_name = path.file_name().and_then(|s| s.to_str()).ok_or_else(|| {
-            StorageError::Provider { message: "Invalid file name".to_string(), status: None }
-        })?;
+        let (parent_path, file_name) = super::utils::get_parent_and_filename(remote_path);
+        if file_name.is_empty() {
+            return Err(StorageError::Provider { message: "Invalid file name".to_string(), status: None });
+        }
 
-        let (parent_id, _) = self.resolve_path(token, parent_path, true).await?;
-        Ok((parent_id, file_name.to_string()))
+        let (parent_id, _) = self.resolve_path(token, &parent_path, true).await?;
+        Ok((parent_id, file_name))
     }
 }
 

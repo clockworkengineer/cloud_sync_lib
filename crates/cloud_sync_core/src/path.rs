@@ -73,6 +73,16 @@ pub fn strip_destination_prefix(item_path: &std::path::Path, destination_folder:
     item_path.to_path_buf()
 }
 
+/// Extracts parent directory path and file name from a given path string.
+/// If no parent directory exists, returns an empty string for the parent.
+#[cfg(feature = "std")]
+pub fn get_parent_and_filename(path_str: &str) -> (String, String) {
+    let path = std::path::Path::new(path_str);
+    let parent = path.parent().and_then(|p| p.to_str()).unwrap_or("").to_string();
+    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    (parent, file_name)
+}
+
 /// URL encodes a string according to RFC 3986 unreserved characters (A-Z, a-z, 0-9, -, _, ., ~).
 pub fn url_encode(input: &str) -> String {
     let mut encoded = String::new();
