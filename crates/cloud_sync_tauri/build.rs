@@ -77,10 +77,9 @@ fn main() {
         let file_bytes = std::fs::read(&app_icon_path).expect("failed to read app_icon.png file");
         let img = image::load_from_memory(&file_bytes).expect("failed to decode app_icon.png image data");
         
-        // Save 128x128.png
-
         let resized_128 = img.resize_exact(128, 128, image::imageops::FilterType::Lanczos3);
-        resized_128.save(&icon_128_path).expect("failed to save 128x128.png");
+        let rgba_128 = resized_128.to_rgba8();
+        rgba_128.save(&icon_128_path).expect("failed to save 128x128.png");
 
         // Save icon.ico (containing standard sizes)
         let mut icon_dir = ico::IconDir::new(ico::ResourceType::Icon);
