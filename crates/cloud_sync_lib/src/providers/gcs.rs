@@ -123,7 +123,7 @@ impl StorageBackend for GCSProvider {
                 .body(file_content);
 
             if let Some(tok) = &token {
-                req = req.bearer_auth(tok);
+                req = super::utils::apply_bearer_auth(req, tok);
             }
 
             let res = req.send().await?;
@@ -149,7 +149,7 @@ impl StorageBackend for GCSProvider {
 
             let mut req = self.client.get(&download_url);
             if let Some(tok) = &token {
-                req = req.bearer_auth(tok);
+                req = super::utils::apply_bearer_auth(req, tok);
             }
 
             let res = req.send().await?;
@@ -180,7 +180,7 @@ impl StorageBackend for GCSProvider {
 
             let mut req = self.client.delete(&delete_url);
             if let Some(tok) = &token {
-                req = req.bearer_auth(tok);
+                req = super::utils::apply_bearer_auth(req, tok);
             }
 
             let res = req.send().await?;
@@ -217,7 +217,7 @@ impl StorageBackend for GCSProvider {
 
             let mut req = self.client.get(&list_url);
             if let Some(tok) = &token {
-                req = req.bearer_auth(tok);
+                req = super::utils::apply_bearer_auth(req, tok);
             }
 
             let res = req.send().await?;

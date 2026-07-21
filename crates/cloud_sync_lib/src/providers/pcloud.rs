@@ -105,8 +105,7 @@ impl StorageBackend for PCloudProvider {
             let form = reqwest::multipart::Form::new()
                 .part("file", reqwest::multipart::Part::bytes(file_content).file_name(file_name));
 
-            let res = self.client.post(&upload_url)
-                .bearer_auth(&self.credentials.access_token)
+            let res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &self.credentials.access_token)
                 .query(&[("path", &parent_dir)])
                 .multipart(form)
                 .send()
@@ -125,8 +124,7 @@ impl StorageBackend for PCloudProvider {
             let clean_path = self.format_path(remote_path);
             let link_url = format!("{}/getfilelink", self.api_url);
 
-            let res = self.client.get(&link_url)
-                .bearer_auth(&self.credentials.access_token)
+            let res = super::utils::apply_bearer_auth(self.client.get(&link_url), &self.credentials.access_token)
                 .query(&[("path", &clean_path)])
                 .send()
                 .await?;
@@ -160,8 +158,7 @@ impl StorageBackend for PCloudProvider {
             let clean_path = self.format_path(remote_path);
             let delete_url = format!("{}/deletefile", self.api_url);
 
-            let res = self.client.get(&delete_url)
-                .bearer_auth(&self.credentials.access_token)
+            let res = super::utils::apply_bearer_auth(self.client.get(&delete_url), &self.credentials.access_token)
                 .query(&[("path", &clean_path)])
                 .send()
                 .await?;
@@ -179,8 +176,7 @@ impl StorageBackend for PCloudProvider {
             let clean_path = self.format_path(remote_path);
             let list_url = format!("{}/listfolder", self.api_url);
 
-            let res = self.client.get(&list_url)
-                .bearer_auth(&self.credentials.access_token)
+            let res = super::utils::apply_bearer_auth(self.client.get(&list_url), &self.credentials.access_token)
                 .query(&[("path", &clean_path)])
                 .send()
                 .await?;

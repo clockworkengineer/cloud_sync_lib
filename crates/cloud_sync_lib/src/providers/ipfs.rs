@@ -87,8 +87,7 @@ impl IPFSProvider {
     /// Helper to query the Pinata PinList to find the CID (IpfsHash) for a given remote filename.
     async fn resolve_cid(&self, remote_path: &str) -> Result<String, StorageError> {
         let query_url = format!("{}/data/pinList", self.api_url);
-        let res = self.client.get(&query_url)
-            .bearer_auth(&self.credentials.jwt_token)
+        let res = super::utils::apply_bearer_auth(self.client.get(&query_url), &self.credentials.jwt_token)
             .query(&[
                 ("status", "pinned"),
                 ("metadata[name]", remote_path),
@@ -138,8 +137,7 @@ impl StorageBackend for IPFSProvider {
                 .part("file", reqwest::multipart::Part::bytes(file_content).file_name(file_name))
                 .text("pinataMetadata", metadata_json);
 
-            let res = self.client.post(&upload_url)
-                .bearer_auth(&self.credentials.jwt_token)
+            let res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &self.credentials.jwt_token)
                 .multipart(form)
                 .send()
                 .await?;
@@ -185,8 +183,7 @@ impl StorageBackend for IPFSProvider {
             let cid = self.resolve_cid(&clean_path).await?;
 
             let unpin_url = format!("{}/pinning/unpin/{}", self.api_url, cid);
-            let res = self.client.delete(&unpin_url)
-                .bearer_auth(&self.credentials.jwt_token)
+            let res = super::utils::apply_bearer_auth(self.client.delete(&unpin_url), &self.credentials.jwt_token)
                 .send()
                 .await?;
 
@@ -203,8 +200,7 @@ impl StorageBackend for IPFSProvider {
             let clean_path = self.format_path(remote_path);
             let list_url = format!("{}/data/pinList", self.api_url);
 
-            let mut req = self.client.get(&list_url)
-                .bearer_auth(&self.credentials.jwt_token)
+            let mut req = super::utils::apply_bearer_auth(self.client.get(&list_url), &self.credentials.jwt_token)
                 .query(&[("status", "pinned")]);
 
             if !clean_path.is_empty() {

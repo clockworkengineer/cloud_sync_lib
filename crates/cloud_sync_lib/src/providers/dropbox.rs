@@ -159,8 +159,7 @@ impl StorageBackend for DropboxProvider {
             }
 
             let upload_url = format!("{}/upload", self.content_url);
-            let res = self.client.post(&upload_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &token)
                 .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
                 .header("Content-Type", "application/octet-stream")
                 .header("Content-Length", size.to_string())
@@ -186,8 +185,7 @@ impl StorageBackend for DropboxProvider {
             });
 
             let download_url = format!("{}/download", self.content_url);
-            let res = self.client.post(&download_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.post(&download_url), &token)
                 .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
                 .header("Content-Type", "")
                 .send()
@@ -212,8 +210,7 @@ impl StorageBackend for DropboxProvider {
             });
 
             let delete_url = format!("{}/delete_v2", self.api_url);
-            let res = self.client.post(&delete_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.post(&delete_url), &token)
                 .json(&body)
                 .send()
                 .await?;
@@ -241,8 +238,7 @@ impl StorageBackend for DropboxProvider {
             });
 
             let create_url = format!("{}/create_folder_v2", self.api_url);
-            let res = self.client.post(&create_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.post(&create_url), &token)
                 .json(&body)
                 .send()
                 .await?;
@@ -274,8 +270,7 @@ impl StorageBackend for DropboxProvider {
                         "cursor": cur
                     });
                     let continue_url = format!("{}/list_folder/continue", self.api_url);
-                    self.client.post(&continue_url)
-                        .bearer_auth(&token)
+                    super::utils::apply_bearer_auth(self.client.post(&continue_url), &token)
                         .json(&body)
                         .send()
                         .await?
@@ -287,8 +282,7 @@ impl StorageBackend for DropboxProvider {
                         "recursive": false
                     });
                     let list_url = format!("{}/list_folder", self.api_url);
-                    self.client.post(&list_url)
-                        .bearer_auth(&token)
+                    super::utils::apply_bearer_auth(self.client.post(&list_url), &token)
                         .json(&body)
                         .send()
                         .await?

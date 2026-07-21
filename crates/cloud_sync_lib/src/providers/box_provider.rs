@@ -166,8 +166,7 @@ impl BoxProvider {
 
             // List current folder
             let url = format!("{}/folders/{}/items", self.api_url, current_id);
-            let res = self.client.get(&url)
-                .bearer_auth(token)
+            let res = super::utils::apply_bearer_auth(self.client.get(&url), token)
                 .send()
                 .await?;
 
@@ -193,8 +192,7 @@ impl BoxProvider {
                             "name": segment,
                             "parent": { "id": current_id }
                         });
-                        let create_res = self.client.post(&create_url)
-                            .bearer_auth(token)
+                        let create_res = super::utils::apply_bearer_auth(self.client.post(&create_url), token)
                             .json(&body)
                             .send()
                             .await?;
@@ -245,8 +243,7 @@ impl StorageBackend for BoxProvider {
             }
 
             let url = format!("{}/folders/{}/items?fields=id,type,name,size,content_modified_at,sha1", self.api_url, folder_id);
-            let res = self.client.get(&url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.get(&url), &token)
                 .send()
                 .await?;
 
@@ -301,8 +298,7 @@ impl StorageBackend for BoxProvider {
 
             // Check if file already exists in parent folder
             let url = format!("{}/folders/{}/items", self.api_url, parent_id);
-            let res = self.client.get(&url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.get(&url), &token)
                 .send()
                 .await?;
 
@@ -325,8 +321,7 @@ impl StorageBackend for BoxProvider {
                     let upload_url = format!("{}/files/{}/content", self.upload_url, file.id);
                     let form = reqwest::multipart::Form::new().part("file", file_part);
 
-                    let upload_res = self.client.post(&upload_url)
-                        .bearer_auth(&token)
+                    let upload_res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &token)
                         .multipart(form)
                         .send()
                         .await?;
@@ -348,8 +343,7 @@ impl StorageBackend for BoxProvider {
                         .text("attributes", attributes)
                         .part("file", file_part);
 
-                    let upload_res = self.client.post(&upload_url)
-                        .bearer_auth(&token)
+                    let upload_res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &token)
                         .multipart(form)
                         .send()
                         .await?;
@@ -374,8 +368,7 @@ impl StorageBackend for BoxProvider {
             }
 
             let url = format!("{}/files/{}/content", self.api_url, file_id);
-            let res = self.client.get(&url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.get(&url), &token)
                 .send()
                 .await?;
 
@@ -400,8 +393,7 @@ impl StorageBackend for BoxProvider {
                 format!("{}/files/{}", self.api_url, item_id)
             };
 
-            let res = self.client.delete(&url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.delete(&url), &token)
                 .send()
                 .await?;
 

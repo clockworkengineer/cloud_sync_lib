@@ -124,8 +124,7 @@ impl StorageBackend for OneDriveProvider {
             let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
             let upload_url = format!("{}/me/drive/root:/{}:/content", self.api_url, clean_path);
-            let res = self.client.put(&upload_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.put(&upload_url), &token)
                 .header("Content-Type", "application/octet-stream")
                 .header("Content-Length", size.to_string())
                 .body(body)
@@ -146,8 +145,7 @@ impl StorageBackend for OneDriveProvider {
             let clean_path = self.format_path(remote_path);
 
             let download_url = format!("{}/me/drive/root:/{}:/content", self.api_url, clean_path);
-            let res = self.client.get(&download_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.get(&download_url), &token)
                 .send()
                 .await?;
 
@@ -166,8 +164,7 @@ impl StorageBackend for OneDriveProvider {
             let clean_path = self.format_path(remote_path);
 
             let delete_url = format!("{}/me/drive/root:/{}", self.api_url, clean_path);
-            let res = self.client.delete(&delete_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.delete(&delete_url), &token)
                 .send()
                 .await?;
 
@@ -208,8 +205,7 @@ impl StorageBackend for OneDriveProvider {
                 "@microsoft.graph.conflictBehavior": "fail"
             });
 
-            let res = self.client.post(&create_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.post(&create_url), &token)
                 .json(&body)
                 .send()
                 .await?;
@@ -243,8 +239,7 @@ impl StorageBackend for OneDriveProvider {
 
             let mut items = Vec::new();
             loop {
-                let res = self.client.get(&list_url)
-                    .bearer_auth(&token)
+                let res = super::utils::apply_bearer_auth(self.client.get(&list_url), &token)
                     .send()
                     .await?
                     .json::<serde_json::Value>()

@@ -121,8 +121,7 @@ impl GoogleDriveProvider {
             parent_id
         );
 
-        let res = self.client.get(&self.api_url)
-            .bearer_auth(token)
+        let res = super::utils::apply_bearer_auth(self.client.get(&self.api_url), token)
             .query(&[("q", &query), ("fields", &"files(id)".to_string())])
             .send()
             .await?
@@ -141,8 +140,7 @@ impl GoogleDriveProvider {
             "mimeType": "application/vnd.google-apps.folder"
         });
 
-        let create_res = self.client.post(&self.api_url)
-            .bearer_auth(token)
+        let create_res = super::utils::apply_bearer_auth(self.client.post(&self.api_url), token)
             .json(&body)
             .send()
             .await?
@@ -195,8 +193,7 @@ impl GoogleDriveProvider {
                     parent_id
                 );
 
-                let res = self.client.get(&self.api_url)
-                    .bearer_auth(token)
+                let res = super::utils::apply_bearer_auth(self.client.get(&self.api_url), token)
                     .query(&[("q", &query), ("fields", &"files(id)".to_string())])
                     .send()
                     .await?
@@ -216,8 +213,7 @@ impl GoogleDriveProvider {
                     "mimeType": "application/octet-stream"
                 });
 
-                let create_res = self.client.post(&self.api_url)
-                    .bearer_auth(token)
+                let create_res = super::utils::apply_bearer_auth(self.client.post(&self.api_url), token)
                     .json(&body)
                     .send()
                     .await?
@@ -250,8 +246,7 @@ impl StorageBackend for GoogleDriveProvider {
             let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
             
             let upload_url = format!("{}/{}?uploadType=media", self.upload_url, file_id);
-            let res = self.client.patch(&upload_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.patch(&upload_url), &token)
                 .header("Content-Type", "application/octet-stream")
                 .header("Content-Length", size.to_string())
                 .body(body)
@@ -272,8 +267,7 @@ impl StorageBackend for GoogleDriveProvider {
             let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
             let download_url = format!("{}/{}?alt=media", self.api_url, file_id);
-            let res = self.client.get(&download_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.get(&download_url), &token)
                 .send()
                 .await?;
 
@@ -292,8 +286,7 @@ impl StorageBackend for GoogleDriveProvider {
             let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
 
             let delete_url = format!("{}/{}", self.api_url, file_id);
-            let res = self.client.delete(&delete_url)
-                .bearer_auth(&token)
+            let res = super::utils::apply_bearer_auth(self.client.delete(&delete_url), &token)
                 .send()
                 .await?;
 
@@ -327,8 +320,7 @@ impl StorageBackend for GoogleDriveProvider {
             let mut next_page_token: Option<String> = None;
 
             loop {
-                let req = self.client.get(&self.api_url)
-                    .bearer_auth(&token);
+                let req = super::utils::apply_bearer_auth(self.client.get(&self.api_url), &token);
                 
                 let fields = "nextPageToken, files(id, name, size, mimeType, modifiedTime, md5Checksum)".to_string();
                 let mut query_params = vec![

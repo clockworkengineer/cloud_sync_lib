@@ -235,6 +235,11 @@ pub fn copy_buffered<R: std::io::Read, W: std::io::Write>(mut reader: R, mut wri
     Ok(total_copied)
 }
 
+/// Helper to apply Bearer token authorization to an outgoing HTTP request.
+pub fn apply_bearer_auth(req: reqwest::RequestBuilder, token: &str) -> reqwest::RequestBuilder {
+    req.bearer_auth(token)
+}
+
 pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path, strip_destination_prefix, url_encode, url_encode_path};
 
 /// Generates standard `builder()`, `new()`, `timeout()`, and `custom_headers()` methods for a provider and its builder.
