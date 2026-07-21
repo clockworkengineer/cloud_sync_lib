@@ -73,6 +73,38 @@ pub fn strip_destination_prefix(item_path: &std::path::Path, destination_folder:
     item_path.to_path_buf()
 }
 
+/// URL encodes a string according to RFC 3986 unreserved characters (A-Z, a-z, 0-9, -, _, ., ~).
+pub fn url_encode(input: &str) -> String {
+    let mut encoded = String::new();
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    encoded
+}
+
+/// URL encodes a path string, preserving unreserved characters and directory slashes `/`.
+pub fn url_encode_path(input: &str) -> String {
+    let mut encoded = String::new();
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    encoded
+}
+
 #[cfg(feature = "std")]
 pub fn get_permissions(permissions: &std::fs::Permissions) -> Option<u32> {
     #[cfg(unix)]

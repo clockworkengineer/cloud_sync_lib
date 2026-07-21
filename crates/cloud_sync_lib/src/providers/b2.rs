@@ -110,20 +110,7 @@ pub struct B2Provider {
     bucket_id_cache: Mutex<Option<String>>,
 }
 
-fn url_encode(input: &str) -> String {
-    let mut encoded = String::new();
-    for byte in input.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
-                encoded.push(byte as char);
-            }
-            _ => {
-                encoded.push_str(&format!("%{:02X}", byte));
-            }
-        }
-    }
-    encoded
-}
+use super::utils::url_encode_path as url_encode;
 
 crate::impl_provider_builder!(B2Provider, B2ProviderBuilder, B2Credentials);
 

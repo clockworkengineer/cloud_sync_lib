@@ -208,7 +208,7 @@ pub async fn translate_http_error(res: reqwest::Response, provider_name: &str, a
     }
 }
 
-pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path, strip_destination_prefix};
+pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path, strip_destination_prefix, url_encode, url_encode_path};
 
 /// Generates standard `builder()`, `new()`, `timeout()`, and `custom_headers()` methods for a provider and its builder.
 #[macro_export]
