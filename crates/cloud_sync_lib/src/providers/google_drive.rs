@@ -29,6 +29,7 @@ pub struct GoogleDriveProvider {
 }
 
 crate::impl_provider_builder!(GoogleDriveProvider, GoogleDriveProviderBuilder, OAuthCredentials);
+crate::impl_oauth_token_helper!(GoogleDriveProvider);
 
 impl GoogleDriveProvider {
     /// Creates a new `GoogleDriveProvider` with custom HTTP client options.
@@ -97,13 +98,6 @@ impl GoogleDriveProvider {
         self
     }
 
-    /// Helper to retrieve a valid OAuth access token, refreshing it if necessary.
-    ///
-    /// # Returns
-    /// The access token string, or a `StorageError` if authorization fails.
-    async fn get_access_token(&self) -> Result<String, StorageError> {
-        self.token_manager.get_access_token().await
-    }
 
     /// Retrieves or creates a Google Drive folder ID for a folder of the given name under `parent_id`.
     ///

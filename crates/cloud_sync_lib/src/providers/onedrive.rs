@@ -27,6 +27,7 @@ pub struct OneDriveProvider {
 }
 
 crate::impl_provider_builder!(OneDriveProvider, OneDriveProviderBuilder, OAuthCredentials, relative);
+crate::impl_oauth_token_helper!(OneDriveProvider);
 
 impl OneDriveProvider {
 
@@ -93,13 +94,7 @@ impl OneDriveProvider {
         self
     }
 
-    /// Helper to retrieve a valid OAuth access token, refreshing it if necessary.
-    ///
-    /// # Returns
-    /// The access token string, or a `StorageError` if authorization fails.
-    async fn get_access_token(&self) -> Result<String, StorageError> {
-        self.token_manager.get_access_token().await
-    }
+
 
 }
 

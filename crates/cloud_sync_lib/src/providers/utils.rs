@@ -290,6 +290,18 @@ macro_rules! impl_provider_builder {
     };
 }
 
+/// Helper macro to generate get_access_token delegate for OAuth providers.
+#[macro_export]
+macro_rules! impl_oauth_token_helper {
+    ($provider:ident) => {
+        impl $provider {
+            async fn get_access_token(&self) -> Result<String, StorageError> {
+                self.token_manager.get_access_token().await
+            }
+        }
+    };
+}
+
 /// Centralized helper to build a standard reqwest::Client with proper pooling, timeout, and custom header settings.
 pub fn build_http_client(
     timeout: Option<std::time::Duration>,

@@ -43,6 +43,7 @@ struct BoxFolderItems {
 }
 
 crate::impl_provider_builder!(BoxProvider, BoxProviderBuilder, OAuthCredentials);
+crate::impl_oauth_token_helper!(BoxProvider);
 
 impl BoxProvider {
 
@@ -122,10 +123,6 @@ impl BoxProvider {
         }
     }
 
-    /// Helper to retrieve a valid OAuth access token, refreshing it if necessary.
-    async fn get_access_token(&self) -> Result<String, StorageError> {
-        self.token_manager.get_access_token().await
-    }
 
     /// Resolves the full path to Box item (ID and type) by traversing from the root folder ("0").
     ///

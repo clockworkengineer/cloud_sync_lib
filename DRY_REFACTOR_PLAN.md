@@ -28,12 +28,15 @@ This document outlines the multi-phase DRY (Don't Repeat Yourself) refactoring r
 1. **Unify HTTP Request Authorization Signing:** Defined `apply_bearer_auth` helper in `providers::utils` and refactored all HTTP providers to sign requests uniformly (`commit 437c0da`).
 2. **Consolidate Parent & Filename Extraction:** Extracted `get_parent_and_filename` helper to `cloud_sync_core::path` and refactored Box provider and sync engine (`commit 6dad969`).
 
+### Phase 5 [COMPLETED]
+1. **Macroize Remote Path Formatting (`format_path`):** Extended `impl_provider_builder!` to auto-generate `format_path` for absolute/relative paths and refactored 10 providers (`commit 85e2834`).
+
 ---
 
-## Phase 5 Refactor Plan
+## Phase 6 Refactor Plan
 
-### 1. Macroize Remote Path Formatting (`format_path`)
-- **Problem:** Ten storage provider implementations (`webdav.rs`, `s3.rs`, `pcloud.rs`, `onedrive.rs`, `nextcloud.rs`, `ipfs.rs`, `gcs.rs`, `dropbox.rs`, `b2.rs`, `azure_blob.rs`) define duplicate private `format_path` helper methods to resolve `remote_path` with their respective `destination_folder` config setting, duplicating ~150 lines of boilerplate across files.
+### 1. Macroize OAuth Token Retrieval Delegation (`get_access_token`)
+- **Problem:** Several OAuth-based HTTP storage providers (`google_drive.rs`, `dropbox.rs`, `onedrive.rs`, `box_provider.rs`) repeat the identical boilerplate delegate helper `get_access_token` to call their inner `OAuthTokenManager`.
 - **Refactor Plan:**
-  1. Extend `impl_provider_builder!` macro in `crates/cloud_sync_lib/src/providers/utils.rs` to optionally accept path formatting behavior (`absolute` or `relative`) and generate the `format_path` helper block dynamically.
-  2. Refactor all 10 providers to delegate `format_path` generation to the expanded macro.
+  1. Define a helper macro `impl_oauth_token_helper!(Provider)` or extend `impl_provider_builder!` in `crates/cloud_sync_lib/src/providers/utils.rs` to generate this delegate block automatically.
+  2. Refactor all 4 OAuth providers to use this macro block.
