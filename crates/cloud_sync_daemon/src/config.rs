@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::info;
-use cloud_sync_lib::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, ProviderConfig};
+use cloud_sync_lib::ProviderConfig;
 
 pub const DEFAULT_CONFIG_FILE: &str = "config.toml";
 pub const DEFAULT_WATCH_DIR: &str = "./watched_folder";
@@ -40,20 +40,8 @@ pub struct AppConfig {
     pub b2_root: Option<PathBuf>,
     pub pcloud_root: Option<PathBuf>,
     pub ipfs_root: Option<PathBuf>,
-    pub google_credentials: Option<OAuthCredentials>,
-    pub dropbox_credentials: Option<OAuthCredentials>,
-    pub onedrive_credentials: Option<OAuthCredentials>,
-    pub webdav_credentials: Option<WebDAVCredentials>,
-    pub s3_credentials: Option<S3Credentials>,
-    pub sftp_credentials: Option<SFTPCredentials>,
-    pub nextcloud_credentials: Option<NextcloudCredentials>,
-    pub box_credentials: Option<OAuthCredentials>,
-    pub mega_credentials: Option<MegaCredentials>,
-    pub azure_blob_credentials: Option<AzureBlobCredentials>,
-    pub gcs_credentials: Option<GCSCredentials>,
-    pub b2_credentials: Option<B2Credentials>,
-    pub pcloud_credentials: Option<PCloudCredentials>,
-    pub ipfs_credentials: Option<IPFSCredentials>,
+    #[serde(flatten)]
+    pub credentials: cloud_sync_lib::ProviderCredentialsConfig,
     pub exclude: Option<Vec<String>>,
     pub max_upload_rate: Option<u64>,
     pub max_download_rate: Option<u64>,
@@ -64,6 +52,13 @@ pub struct AppConfig {
     pub dry_run: Option<bool>,
     pub bandwidth_schedule: Option<Vec<BandwidthSchedule>>,
     pub error_recovery: Option<ErrorRecoveryConfig>,
+}
+
+impl std::ops::Deref for AppConfig {
+    type Target = cloud_sync_lib::ProviderCredentialsConfig;
+    fn deref(&self) -> &Self::Target {
+        &self.credentials
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -99,20 +94,7 @@ impl Default for AppConfig {
             b2_root: Some(PathBuf::from(DEFAULT_B2_ROOT)),
             pcloud_root: Some(PathBuf::from(DEFAULT_PCLOUD_ROOT)),
             ipfs_root: Some(PathBuf::from(DEFAULT_IPFS_ROOT)),
-            google_credentials: None,
-            dropbox_credentials: None,
-            onedrive_credentials: None,
-            webdav_credentials: None,
-            s3_credentials: None,
-            sftp_credentials: None,
-            nextcloud_credentials: None,
-            box_credentials: None,
-            mega_credentials: None,
-            azure_blob_credentials: None,
-            gcs_credentials: None,
-            b2_credentials: None,
-            pcloud_credentials: None,
-            ipfs_credentials: None,
+            credentials: Default::default(),
             exclude: None,
             max_upload_rate: None,
             max_download_rate: None,
@@ -157,6 +139,7 @@ pub fn is_provider_enabled<C: ProviderConfig>(credentials: &Option<C>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cloud_sync_lib::OAuthCredentials;
 
     /// Tests that `is_provider_enabled` helper correctly returns true/false based on OAuth credentials status.
     #[test]

@@ -8,6 +8,9 @@
 
 pub mod providers;
 pub mod rate_limit;
+pub mod config;
+
+pub use config::{ProviderRootsConfig, ProviderCredentialsConfig};
 
 pub use cloud_sync_core::traits;
 pub use cloud_sync_core::state;

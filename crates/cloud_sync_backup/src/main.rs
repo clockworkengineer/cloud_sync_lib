@@ -19,49 +19,49 @@ fn build_backend(provider_name: &str, custom_path: Option<&str>, config: &Backup
                 #[cfg(feature = "google_drive")]
                 "google_drive" | "google drive" => {
                     let creds = config.google_credentials.clone().ok_or("Google credentials not configured")?;
-                    let root = config.google_drive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/google_drive"));
+                    let root = config.roots.google_drive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/google_drive"));
                     (BackendCredentials::GoogleDrive(creds), root)
                 }
                 #[cfg(feature = "dropbox")]
                 "dropbox" => {
                     let creds = config.dropbox_credentials.clone().ok_or("Dropbox credentials not configured")?;
-                    let root = config.dropbox_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/dropbox"));
+                    let root = config.roots.dropbox_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/dropbox"));
                     (BackendCredentials::Dropbox(creds), root)
                 }
                 #[cfg(feature = "onedrive")]
                 "onedrive" => {
                     let creds = config.onedrive_credentials.clone().ok_or("OneDrive credentials not configured")?;
-                    let root = config.onedrive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/onedrive"));
+                    let root = config.roots.onedrive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/onedrive"));
                     (BackendCredentials::OneDrive(creds), root)
                 }
                 #[cfg(feature = "webdav")]
                 "webdav" => {
                     let creds = config.webdav_credentials.clone().ok_or("WebDAV credentials not configured")?;
-                    let root = config.webdav_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/webdav"));
+                    let root = config.roots.webdav_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/webdav"));
                     (BackendCredentials::WebDAV(creds), root)
                 }
                 #[cfg(feature = "s3")]
                 "s3" => {
                     let creds = config.s3_credentials.clone().ok_or("S3 credentials not configured")?;
-                    let root = config.s3_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/s3"));
+                    let root = config.roots.s3_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/s3"));
                     (BackendCredentials::S3(creds), root)
                 }
                 #[cfg(feature = "sftp")]
                 "sftp" => {
                     let creds = config.sftp_credentials.clone().ok_or("SFTP credentials not configured")?;
-                    let root = config.sftp_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/sftp"));
+                    let root = config.roots.sftp_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/sftp"));
                     (BackendCredentials::SFTP(creds), root)
                 }
                 #[cfg(feature = "nextcloud")]
                 "nextcloud" => {
                     let creds = config.nextcloud_credentials.clone().ok_or("Nextcloud credentials not configured")?;
-                    let root = config.nextcloud_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/nextcloud"));
+                    let root = config.roots.nextcloud_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/nextcloud"));
                     (BackendCredentials::Nextcloud(creds), root)
                 }
                 #[cfg(feature = "mega")]
                 "mega" => {
                     let creds = config.mega_credentials.clone().ok_or("MEGA credentials not configured")?;
-                    let root = config.mega_root.clone().unwrap_or_else(|| PathBuf::from("mega_backup"));
+                    let root = config.roots.mega_root.clone().unwrap_or_else(|| PathBuf::from("mega_backup"));
                     (BackendCredentials::Mega(creds), root)
                 }
                 _ => return Err(format!("Unsupported backup provider or disabled feature: {}", provider_name).into()),
