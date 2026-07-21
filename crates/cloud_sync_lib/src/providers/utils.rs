@@ -26,6 +26,19 @@ pub async fn refresh_oauth2_token(
     refresh_token: &str,
     provider_name: &str,
 ) -> Result<String, StorageError> {
+    let (access_token, _, _) = refresh_oauth2_token_details(client, auth_url, client_id, client_secret, refresh_token, provider_name).await?;
+    Ok(access_token)
+}
+
+/// Refreshes OAuth2 access token and extracts updated refresh token and expires_in if returned.
+pub async fn refresh_oauth2_token_details(
+    client: &reqwest::Client,
+    auth_url: &str,
+    client_id: &str,
+    client_secret: &str,
+    refresh_token: &str,
+    provider_name: &str,
+) -> Result<(String, Option<String>, Option<u64>), StorageError> {
     let params = [
         ("client_id", client_id),
         ("client_secret", client_secret),
@@ -36,16 +49,25 @@ pub async fn refresh_oauth2_token(
     let res = client.post(auth_url)
         .form(&params)
         .send()
-        .await?
-        .json::<serde_json::Value>()
         .await?;
 
-    let token = res["access_token"].as_str().ok_or_else(|| {
-        StorageError::Authentication(format!("Failed to retrieve {} access token: {:?}", provider_name, res))
-    })?;
+    if !res.status().is_success() {
+        return Err(translate_http_error(res, provider_name, "refresh_oauth2_token").await);
+    }
 
-    Ok(token.to_string())
+    let json: serde_json::Value = res.json().await?;
+
+    let access_token = json["access_token"].as_str().ok_or_else(|| {
+        StorageError::Authentication(format!("Failed to retrieve {} access token: {:?}", provider_name, json))
+    })?.to_string();
+
+    let new_refresh_token = json["refresh_token"].as_str().map(|s| s.to_string());
+    let expires_in = json["expires_in"].as_u64();
+
+    Ok((access_token, new_refresh_token, expires_in))
 }
+
+pub type TokenRefreshCallback = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
 /// Thread-safe manager to cache and refresh OAuth2 tokens automatically.
 pub struct OAuthTokenManager {
@@ -53,9 +75,10 @@ pub struct OAuthTokenManager {
     token_url: String,
     client_id: String,
     client_secret: String,
-    refresh_token: String,
+    refresh_token: tokio::sync::RwLock<String>,
     provider_name: String,
     cache: tokio::sync::RwLock<Option<(String, std::time::Instant)>>,
+    on_refresh: Option<TokenRefreshCallback>,
 }
 
 impl OAuthTokenManager {
@@ -67,14 +90,27 @@ impl OAuthTokenManager {
         refresh_token: &str,
         provider_name: &str,
     ) -> Self {
+        Self::with_callback(client, token_url, client_id, client_secret, refresh_token, provider_name, None)
+    }
+
+    pub fn with_callback(
+        client: reqwest::Client,
+        token_url: &str,
+        client_id: &str,
+        client_secret: &str,
+        refresh_token: &str,
+        provider_name: &str,
+        on_refresh: Option<TokenRefreshCallback>,
+    ) -> Self {
         Self {
             client,
             token_url: token_url.to_string(),
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
-            refresh_token: refresh_token.to_string(),
+            refresh_token: tokio::sync::RwLock::new(refresh_token.to_string()),
             provider_name: provider_name.to_string(),
             cache: tokio::sync::RwLock::new(None),
+            on_refresh,
         }
     }
 
@@ -95,16 +131,29 @@ impl OAuthTokenManager {
             }
         }
 
-        let token = refresh_oauth2_token(
+        let current_refresh_token = self.refresh_token.read().await.clone();
+
+        let (token, new_refresh_token, expires_in) = refresh_oauth2_token_details(
             &self.client,
             &self.token_url,
             &self.client_id,
             &self.client_secret,
-            &self.refresh_token,
+            &current_refresh_token,
             &self.provider_name,
         ).await?;
 
-        let expiry = std::time::Instant::now() + std::time::Duration::from_secs(3300);
+        if let Some(ref new_ref) = new_refresh_token {
+            let mut ref_guard = self.refresh_token.write().await;
+            *ref_guard = new_ref.clone();
+            if let Some(ref cb) = self.on_refresh {
+                cb(new_ref);
+            }
+        }
+
+        let ttl = expires_in.unwrap_or(3600);
+        let safety_margin = if ttl > 600 { 300 } else { ttl / 2 };
+        let expiry = std::time::Instant::now() + std::time::Duration::from_secs(ttl.saturating_sub(safety_margin));
+
         *cache = Some((token.clone(), expiry));
         Ok(token)
     }

@@ -12,29 +12,18 @@ use tokio::fs;
 use tracing::info;
 use serde::Deserialize;
 
-use std::sync::Mutex;
-use std::time::{Instant, Duration};
-
-struct CachedToken {
-    access_token: String,
-    refresh_token: String,
-    expires_at: Instant,
-}
-
 /// Storage provider client for Box REST API.
 pub struct BoxProvider {
     /// The HTTP client for making API requests.
     client: reqwest::Client,
     /// Credentials configuration (client id/secret, refresh token).
     credentials: OAuthCredentials,
-    /// The authentication/token URL.
-    auth_url: String,
     /// The base API URL.
     api_url: String,
     /// The base upload API URL.
     upload_url: String,
-    /// Token cache.
-    token_cache: Mutex<Option<CachedToken>>,
+    /// Shared OAuth token manager.
+    token_manager: std::sync::Arc<super::utils::OAuthTokenManager>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -51,13 +40,6 @@ struct BoxItem {
 #[derive(Deserialize, Debug)]
 struct BoxFolderItems {
     entries: Vec<BoxItem>,
-}
-
-#[derive(Deserialize, Debug)]
-struct BoxTokenResponse {
-    access_token: String,
-    refresh_token: String,
-    expires_in: u64,
 }
 
 impl BoxProvider {
@@ -77,27 +59,54 @@ impl BoxProvider {
         timeout: Option<std::time::Duration>,
         custom_headers: Option<reqwest::header::HeaderMap>,
     ) -> Self {
+        let client = super::utils::build_http_client(timeout, custom_headers);
+        let auth_url = "https://api.box.com/oauth2/token".to_string();
+
+        let callback: super::utils::TokenRefreshCallback = std::sync::Arc::new(|new_refresh_token: &str| {
+            Self::update_config_files(new_refresh_token);
+        });
+
+        let token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::with_callback(
+            client.clone(),
+            &auth_url,
+            &credentials.client_id,
+            &credentials.client_secret,
+            &credentials.refresh_token,
+            "Box",
+            Some(callback),
+        ));
+
         Self {
-            client: super::utils::build_http_client(timeout, custom_headers),
+            client,
             credentials,
-            auth_url: "https://api.box.com/oauth2/token".to_string(),
             api_url: "https://api.box.com/2.0".to_string(),
             upload_url: "https://upload.box.com/api/2.0".to_string(),
-            token_cache: Mutex::new(None),
+            token_manager,
         }
     }
 
     /// Configures custom endpoints, useful for mocking during tests.
     #[cfg(test)]
     pub fn with_endpoints(mut self, auth_url: String, api_url: String, upload_url: String) -> Self {
-        self.auth_url = auth_url;
+        let callback: super::utils::TokenRefreshCallback = std::sync::Arc::new(|new_refresh_token: &str| {
+            Self::update_config_files(new_refresh_token);
+        });
+        self.token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::with_callback(
+            self.client.clone(),
+            &auth_url,
+            &self.credentials.client_id,
+            &self.credentials.client_secret,
+            &self.credentials.refresh_token,
+            "Box",
+            Some(callback),
+        ));
         self.api_url = api_url;
         self.upload_url = upload_url;
         self
     }
 
     /// Helper to update local config files when the Box refresh token rotates.
-    fn update_config_files(&self, new_refresh_token: &str) {
+    fn update_config_files(new_refresh_token: &str) {
         for filename in &["config.toml", "private_config.toml"] {
             if let Ok(content) = std::fs::read_to_string(filename) {
                 if let Some(box_idx) = content.find("[box_credentials]") {
@@ -122,54 +131,7 @@ impl BoxProvider {
 
     /// Helper to retrieve a valid OAuth access token, refreshing it if necessary.
     async fn get_access_token(&self) -> Result<String, StorageError> {
-        let (active_refresh_token, needs_refresh) = {
-            let cache = self.token_cache.lock().unwrap();
-            if let Some(ref cached) = *cache {
-                // If token is still valid for at least 60 seconds, use it
-                if cached.expires_at > Instant::now() + Duration::from_secs(60) {
-                    return Ok(cached.access_token.clone());
-                }
-                (cached.refresh_token.clone(), true)
-            } else {
-                (self.credentials.refresh_token.clone(), true)
-            }
-        };
-
-        if !needs_refresh {
-            // Unreachable but satisfies Rust
-            return Err(StorageError::Authentication("Token fetch logic error".to_string()));
-        }
-
-        // Perform OAuth refresh
-        let params = [
-            ("client_id", self.credentials.client_id.as_str()),
-            ("client_secret", self.credentials.client_secret.as_str()),
-            ("refresh_token", active_refresh_token.as_str()),
-            ("grant_type", "refresh_token"),
-        ];
-
-        let res = self.client.post(&self.auth_url)
-            .form(&params)
-            .send()
-            .await?;
-
-        if !res.status().is_success() {
-            return Err(translate_http_error(res, self.name(), "refresh_token").await);
-        }
-
-        let token_resp = res.json::<BoxTokenResponse>().await?;
-        
-        // Update local configs with the rotated refresh token
-        self.update_config_files(&token_resp.refresh_token);
-
-        let mut cache = self.token_cache.lock().unwrap();
-        *cache = Some(CachedToken {
-            access_token: token_resp.access_token.clone(),
-            refresh_token: token_resp.refresh_token.clone(),
-            expires_at: Instant::now() + Duration::from_secs(token_resp.expires_in),
-        });
-
-        Ok(token_resp.access_token)
+        self.token_manager.get_access_token().await
     }
 
     /// Resolves the full path to Box item (ID and type) by traversing from the root folder ("0").
