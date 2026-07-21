@@ -1,73 +1,119 @@
-# DRY Refactoring Plan: CloudSync Library
+# DRY Refactor Plan for Cloud Sync Library
 
-This document outlines the concrete plan to reduce duplication (adhering to the **Don't Repeat Yourself** principle) across the various components of the CloudSync workspace.
-
----
-
-## 1. Identified Areas of Duplication
-
-### A. OAuth Token Retrieval & Cache Management
-- **Status**: Duplicate logic in `google_drive.rs`, `dropbox.rs`, `onedrive.rs`, `box_provider.rs`, etc.
-- **Details**: Each provider defines a `token_cache: Mutex<Option<(String, Instant)>>` and duplicates the workflow of:
-  1. Reading cached tokens.
-  2. Checking token lifetime/expiry.
-  3. Making a POST refresh request to the OAuth endpoint.
-  4. Updating the local token cache.
-
-### B. Storage HTTP Response Error Parsing (`parse_response_error`)
-- **Status**: Every HTTP-based provider duplicates a `parse_response_error` function.
-- **Details**: `parse_response_error` matches HTTP status codes (e.g. 401, 403, 404, 429) to core `StorageError` variants and reads response bodies. This exists across S3, GCS, Azure Blob, Dropbox, Box, Google Drive, OneDrive, WebDAV, etc.
-
-### C. Provider Construction and Fallback Logic
-- **Status**: Duplicate backend builders in `cloud_sync_backup` (`build_backend`) and the daemon backend resolver.
-- **Details**: Both packages repeat construction of real backends wrapped in `SimulatedFallback`.
+This plan outlines concrete refactoring steps to reduce code duplication and improve maintainability across the `cloud_sync_lib` crates.
 
 ---
 
-## 2. Refactoring Proposal
+## 1. Implement `ProviderConfig` on `BackendCredentials`
 
-### Step 1: Centralized OAuth Token Manager
-Introduce an `OAuthTokenManager` helper structure inside `crates/cloud_sync_lib/src/providers/utils.rs` or as a standalone module:
+### The Problem
+In [crates/cloud_sync_lib/src/providers/mod.rs](file:///c:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/providers/mod.rs), the `BackendCredentials` enum manually matches on all 14 variants for helper methods such as `sync_mode()` and `selective_sync()`. Furthermore, inside `BackendRegistry::build_wrapped()`, matching blocks are duplicated for:
+- `sync_mode` (approx. 30 lines)
+- `max_upload_rate` (approx. 30 lines)
+- `max_download_rate` (approx. 30 lines)
+- `encryption_password` (approx. 30 lines)
+
+This leads to ~150 lines of redundant pattern matching boilerplate.
+
+### Refactor Plan
+1. Implement the `ProviderConfig` trait directly on `BackendCredentials` in [crates/cloud_sync_lib/src/providers/mod.rs](file:///c:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/providers/mod.rs):
+   ```rust
+   impl ProviderConfig for BackendCredentials {
+       fn common_settings(&self) -> &CommonProviderSettings {
+           match self {
+               #[cfg(feature = "google_drive")]
+               BackendCredentials::GoogleDrive(c) => c.common_settings(),
+               #[cfg(feature = "dropbox")]
+               BackendCredentials::Dropbox(c) => c.common_settings(),
+               #[cfg(feature = "onedrive")]
+               BackendCredentials::OneDrive(c) => c.common_settings(),
+               #[cfg(feature = "webdav")]
+               BackendCredentials::WebDAV(c) => c.common_settings(),
+               #[cfg(feature = "s3")]
+               BackendCredentials::S3(c) => c.common_settings(),
+               #[cfg(feature = "sftp")]
+               BackendCredentials::SFTP(c) => c.common_settings(),
+               #[cfg(feature = "nextcloud")]
+               BackendCredentials::Nextcloud(c) => c.common_settings(),
+               #[cfg(feature = "box")]
+               BackendCredentials::Box(c) => c.common_settings(),
+               #[cfg(feature = "mega")]
+               BackendCredentials::Mega(c) => c.common_settings(),
+               #[cfg(feature = "azure_blob")]
+               BackendCredentials::AzureBlob(c) => c.common_settings(),
+               #[cfg(feature = "gcs")]
+               BackendCredentials::GCS(c) => c.common_settings(),
+               #[cfg(feature = "b2")]
+               BackendCredentials::B2(c) => c.common_settings(),
+               #[cfg(feature = "pcloud")]
+               BackendCredentials::PCloud(c) => c.common_settings(),
+               #[cfg(feature = "ipfs")]
+               BackendCredentials::IPFS(c) => c.common_settings(),
+           }
+       }
+   }
+   ```
+2. Remove the manual implementations of `sync_mode` and `selective_sync` on `BackendCredentials`, as they will be automatically inherited via the `ProviderConfig` trait.
+3. Clean up `BackendRegistry::build_wrapped()` to call the trait methods directly:
+   ```rust
+   let sync_mode = creds.sync_mode();
+   let max_upload_rate = creds.max_upload_rate();
+   let max_download_rate = creds.max_download_rate();
+   let encryption_password = creds.encryption_password();
+   ```
+
+---
+
+## 2. Eliminate or Utilize Builder Boilerplate
+
+### The Problem
+All 14 provider builders (e.g. `GoogleDriveProviderBuilder`, `DropboxProviderBuilder`, etc.) define `timeout` and `custom_headers` fields:
 ```rust
-pub struct OAuthTokenManager {
-    client: reqwest::Client,
-    token_url: String,
-    client_id: String,
-    client_secret: String,
-    refresh_token: String,
-    cache: tokio::sync::RwLock<Option<(String, std::time::Instant)>>,
+pub struct GoogleDriveProviderBuilder {
+    pub credentials: OAuthCredentials,
+    pub timeout: Option<std::time::Duration>,
+    pub custom_headers: Option<reqwest::header::HeaderMap>,
 }
-
-impl OAuthTokenManager {
-    pub fn new(token_url: &str, client_id: &str, client_secret: &str, refresh_token: &str) -> Self;
-    pub async fn get_access_token(&self) -> Result<String, StorageError>;
-}
 ```
-All OAuth providers will store an `Arc<OAuthTokenManager>` instead of individual credentials and cached tokens.
+However, in all `.build(self)` methods, these parameters are entirely discarded. The HTTP client is built using a global helper `super::utils::build_http_client()`, which ignores the builder configurations.
 
-### Step 2: Unify HTTP Error Translation
-Create a generic `translate_http_error` function in `crates/cloud_sync_lib/src/providers/utils.rs`:
-```rust
-pub async fn translate_http_error(
-    res: reqwest::Response, 
-    provider_name: &str, 
-    operation: &str
-) -> StorageError;
-```
-This handles text/JSON body extraction and maps error statuses to unified `StorageError` codes (e.g., `Authentication`, `RateLimited`, `NotFound`, etc.).
-
-### Step 3: Centralize Backend Registry & Builder
-Expose a unified backend builder inside `cloud_sync_lib` (e.g. `BackendRegistry`) so both `cloud_sync_backup` and `cloud_sync_daemon` call:
-```rust
-pub fn create_backend(
-    provider_name: &str,
-    config: &ProviderConfig
-) -> Result<Arc<dyn StorageBackend>, Box<dyn std::error::Error>>;
-```
-This avoids duplicating compile flags (`#[cfg(feature = "...")]`) and matching patterns across multiple crates.
+### Refactor Plan
+- **Option A (Simplify/Clean up):** If custom timeouts and headers are not required, remove these fields and their setter methods (`timeout()`, `custom_headers()`) from all 14 builders to reduce code footprint.
+- **Option B (Unify/Implement):** Modify `build_http_client` inside [crates/cloud_sync_lib/src/providers/utils.rs](file:///c:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/providers/utils.rs) to accept optional `Duration` and `HeaderMap`, and pass them from the builders:
+  ```rust
+  pub fn build_http_client(
+      timeout: Option<std::time::Duration>,
+      headers: Option<reqwest::header::HeaderMap>,
+  ) -> reqwest::Client {
+      let mut builder = reqwest::Client::builder()
+          .timeout(timeout.unwrap_or(std::time::Duration::from_secs(600)))
+          .pool_max_idle_per_host(10);
+      if let Some(h) = headers {
+          builder = builder.default_headers(h);
+      }
+      builder.build().unwrap_or_else(|_| reqwest::Client::new())
+  }
+  ```
+  Then, update all provider `new` functions and builders to consume and pass these options.
 
 ---
 
-## 3. Impact Assessment
-- **Lines of Code (LoC) Reduced**: ~400-600 lines of boilerplate removed.
-- **Maintenance**: Adding new OAuth-based storage backends will require significantly less code since token refreshing and error mapping will be handled automatically.
+## 3. Unify Box OAuth Token Refresh Logic
+
+### The Problem
+[crates/cloud_sync_lib/src/providers/box_provider.rs](file:///c:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/providers/box_provider.rs) contains its own duplicate token refresh mechanism and state caching (`CachedToken`, `get_access_token()`). While it does have a specific requirement to update the local configuration files upon refresh (due to Box's token rotation policy), the cache state management and HTTP refresh request can still be delegated or integrated.
+
+### Refactor Plan
+1. Modify `OAuthTokenManager` in [crates/cloud_sync_lib/src/providers/utils.rs](file:///c:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/providers/utils.rs) to support an optional callback hook or event listener when a new token is retrieved.
+2. Refactor `BoxProvider` to use `OAuthTokenManager` to manage the underlying HTTP refresh and caching, subscribing to the rotation event to safely execute config updates on the local disk.
+
+---
+
+## 4. Standardize Rate Limiting Configuration
+
+### The Problem
+Only a subset of providers (Google Drive, Dropbox, OneDrive, WebDAV, Local Simulation) have `with_limiters()` implemented on their structs. More importantly, when constructing storage backends through `BackendRegistry::build_wrapped()`, the backend rate limiters are never initialized; only the wrapping `LocalSimulation` is configured with rate limiters.
+
+### Refactor Plan
+1. Move the rate-limiting token bucket generation out of individual provider constructors.
+2. Standardize rate-limiting support by applying rate limiting uniformly at the wrapper layer (e.g., inside `SimulatedFallback` or a generic `RateLimitingWrapper`), rather than having redundant logic across some but not all backend implementations.

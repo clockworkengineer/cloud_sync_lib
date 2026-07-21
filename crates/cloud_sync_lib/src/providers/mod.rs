@@ -399,73 +399,49 @@ pub enum BackendCredentials {
 }
 
 #[allow(unreachable_patterns)]
-impl BackendCredentials {
-    pub fn sync_mode(&self) -> SyncMode {
+impl ProviderConfig for BackendCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
         match self {
             #[cfg(feature = "google_drive")]
-            BackendCredentials::GoogleDrive(c) => c.sync_mode(),
+            BackendCredentials::GoogleDrive(c) => c.common_settings(),
             #[cfg(feature = "dropbox")]
-            BackendCredentials::Dropbox(c) => c.sync_mode(),
+            BackendCredentials::Dropbox(c) => c.common_settings(),
             #[cfg(feature = "onedrive")]
-            BackendCredentials::OneDrive(c) => c.sync_mode(),
+            BackendCredentials::OneDrive(c) => c.common_settings(),
             #[cfg(feature = "webdav")]
-            BackendCredentials::WebDAV(c) => c.sync_mode(),
+            BackendCredentials::WebDAV(c) => c.common_settings(),
             #[cfg(feature = "s3")]
-            BackendCredentials::S3(c) => c.sync_mode(),
+            BackendCredentials::S3(c) => c.common_settings(),
             #[cfg(feature = "sftp")]
-            BackendCredentials::SFTP(c) => c.sync_mode(),
+            BackendCredentials::SFTP(c) => c.common_settings(),
             #[cfg(feature = "nextcloud")]
-            BackendCredentials::Nextcloud(c) => c.sync_mode(),
+            BackendCredentials::Nextcloud(c) => c.common_settings(),
             #[cfg(feature = "box")]
-            BackendCredentials::Box(c) => c.sync_mode(),
+            BackendCredentials::Box(c) => c.common_settings(),
             #[cfg(feature = "mega")]
-            BackendCredentials::Mega(c) => c.sync_mode(),
+            BackendCredentials::Mega(c) => c.common_settings(),
             #[cfg(feature = "azure_blob")]
-            BackendCredentials::AzureBlob(c) => c.sync_mode(),
+            BackendCredentials::AzureBlob(c) => c.common_settings(),
             #[cfg(feature = "gcs")]
-            BackendCredentials::GCS(c) => c.sync_mode(),
+            BackendCredentials::GCS(c) => c.common_settings(),
             #[cfg(feature = "b2")]
-            BackendCredentials::B2(c) => c.sync_mode(),
+            BackendCredentials::B2(c) => c.common_settings(),
             #[cfg(feature = "pcloud")]
-            BackendCredentials::PCloud(c) => c.sync_mode(),
+            BackendCredentials::PCloud(c) => c.common_settings(),
             #[cfg(feature = "ipfs")]
-            BackendCredentials::IPFS(c) => c.sync_mode(),
+            BackendCredentials::IPFS(c) => c.common_settings(),
             _ => unreachable!(),
         }
     }
+}
+
+impl BackendCredentials {
+    pub fn sync_mode(&self) -> SyncMode {
+        ProviderConfig::sync_mode(self)
+    }
 
     pub fn selective_sync(&self) -> Option<Vec<String>> {
-        match self {
-            #[cfg(feature = "google_drive")]
-            BackendCredentials::GoogleDrive(c) => c.selective_sync(),
-            #[cfg(feature = "dropbox")]
-            BackendCredentials::Dropbox(c) => c.selective_sync(),
-            #[cfg(feature = "onedrive")]
-            BackendCredentials::OneDrive(c) => c.selective_sync(),
-            #[cfg(feature = "webdav")]
-            BackendCredentials::WebDAV(c) => c.selective_sync(),
-            #[cfg(feature = "s3")]
-            BackendCredentials::S3(c) => c.selective_sync(),
-            #[cfg(feature = "sftp")]
-            BackendCredentials::SFTP(c) => c.selective_sync(),
-            #[cfg(feature = "nextcloud")]
-            BackendCredentials::Nextcloud(c) => c.selective_sync(),
-            #[cfg(feature = "box")]
-            BackendCredentials::Box(c) => c.selective_sync(),
-            #[cfg(feature = "mega")]
-            BackendCredentials::Mega(c) => c.selective_sync(),
-            #[cfg(feature = "azure_blob")]
-            BackendCredentials::AzureBlob(c) => c.selective_sync(),
-            #[cfg(feature = "gcs")]
-            BackendCredentials::GCS(c) => c.selective_sync(),
-            #[cfg(feature = "b2")]
-            BackendCredentials::B2(c) => c.selective_sync(),
-            #[cfg(feature = "pcloud")]
-            BackendCredentials::PCloud(c) => c.selective_sync(),
-            #[cfg(feature = "ipfs")]
-            BackendCredentials::IPFS(c) => c.selective_sync(),
-            _ => unreachable!(),
-        }
+        ProviderConfig::selective_sync(self)
     }
 }
 
@@ -547,133 +523,10 @@ impl BackendRegistry {
             _ => unreachable!(),
         };
 
-        let sync_mode = match &creds {
-            #[cfg(feature = "google_drive")]
-            BackendCredentials::GoogleDrive(c) => c.sync_mode(),
-            #[cfg(feature = "dropbox")]
-            BackendCredentials::Dropbox(c) => c.sync_mode(),
-            #[cfg(feature = "onedrive")]
-            BackendCredentials::OneDrive(c) => c.sync_mode(),
-            #[cfg(feature = "webdav")]
-            BackendCredentials::WebDAV(c) => c.sync_mode(),
-            #[cfg(feature = "s3")]
-            BackendCredentials::S3(c) => c.sync_mode(),
-            #[cfg(feature = "sftp")]
-            BackendCredentials::SFTP(c) => c.sync_mode(),
-            #[cfg(feature = "nextcloud")]
-            BackendCredentials::Nextcloud(c) => c.sync_mode(),
-            #[cfg(feature = "box")]
-            BackendCredentials::Box(c) => c.sync_mode(),
-            #[cfg(feature = "mega")]
-            BackendCredentials::Mega(c) => c.sync_mode(),
-            #[cfg(feature = "azure_blob")]
-            BackendCredentials::AzureBlob(c) => c.sync_mode(),
-            #[cfg(feature = "gcs")]
-            BackendCredentials::GCS(c) => c.sync_mode(),
-            #[cfg(feature = "b2")]
-            BackendCredentials::B2(c) => c.sync_mode(),
-            #[cfg(feature = "pcloud")]
-            BackendCredentials::PCloud(c) => c.sync_mode(),
-            #[cfg(feature = "ipfs")]
-            BackendCredentials::IPFS(c) => c.sync_mode(),
-            _ => unreachable!(),
-        };
-
-        let max_upload_rate = match &creds {
-            #[cfg(feature = "google_drive")]
-            BackendCredentials::GoogleDrive(c) => c.max_upload_rate(),
-            #[cfg(feature = "dropbox")]
-            BackendCredentials::Dropbox(c) => c.max_upload_rate(),
-            #[cfg(feature = "onedrive")]
-            BackendCredentials::OneDrive(c) => c.max_upload_rate(),
-            #[cfg(feature = "webdav")]
-            BackendCredentials::WebDAV(c) => c.max_upload_rate(),
-            #[cfg(feature = "s3")]
-            BackendCredentials::S3(c) => c.max_upload_rate(),
-            #[cfg(feature = "sftp")]
-            BackendCredentials::SFTP(c) => c.max_upload_rate(),
-            #[cfg(feature = "nextcloud")]
-            BackendCredentials::Nextcloud(c) => c.max_upload_rate(),
-            #[cfg(feature = "box")]
-            BackendCredentials::Box(c) => c.max_upload_rate(),
-            #[cfg(feature = "mega")]
-            BackendCredentials::Mega(c) => c.max_upload_rate(),
-            #[cfg(feature = "azure_blob")]
-            BackendCredentials::AzureBlob(c) => c.max_upload_rate(),
-            #[cfg(feature = "gcs")]
-            BackendCredentials::GCS(c) => c.max_upload_rate(),
-            #[cfg(feature = "b2")]
-            BackendCredentials::B2(c) => c.max_upload_rate(),
-            #[cfg(feature = "pcloud")]
-            BackendCredentials::PCloud(c) => c.max_upload_rate(),
-            #[cfg(feature = "ipfs")]
-            BackendCredentials::IPFS(c) => c.max_upload_rate(),
-            _ => unreachable!(),
-        };
-
-        let max_download_rate = match &creds {
-            #[cfg(feature = "google_drive")]
-            BackendCredentials::GoogleDrive(c) => c.max_download_rate(),
-            #[cfg(feature = "dropbox")]
-            BackendCredentials::Dropbox(c) => c.max_download_rate(),
-            #[cfg(feature = "onedrive")]
-            BackendCredentials::OneDrive(c) => c.max_download_rate(),
-            #[cfg(feature = "webdav")]
-            BackendCredentials::WebDAV(c) => c.max_download_rate(),
-            #[cfg(feature = "s3")]
-            BackendCredentials::S3(c) => c.max_download_rate(),
-            #[cfg(feature = "sftp")]
-            BackendCredentials::SFTP(c) => c.max_download_rate(),
-            #[cfg(feature = "nextcloud")]
-            BackendCredentials::Nextcloud(c) => c.max_download_rate(),
-            #[cfg(feature = "box")]
-            BackendCredentials::Box(c) => c.max_download_rate(),
-            #[cfg(feature = "mega")]
-            BackendCredentials::Mega(c) => c.max_download_rate(),
-            #[cfg(feature = "azure_blob")]
-            BackendCredentials::AzureBlob(c) => c.max_download_rate(),
-            #[cfg(feature = "gcs")]
-            BackendCredentials::GCS(c) => c.max_download_rate(),
-            #[cfg(feature = "b2")]
-            BackendCredentials::B2(c) => c.max_download_rate(),
-            #[cfg(feature = "pcloud")]
-            BackendCredentials::PCloud(c) => c.max_download_rate(),
-            #[cfg(feature = "ipfs")]
-            BackendCredentials::IPFS(c) => c.max_download_rate(),
-            _ => unreachable!(),
-        };
-
-        let encryption_password = match &creds {
-            #[cfg(feature = "google_drive")]
-            BackendCredentials::GoogleDrive(c) => c.encryption_password(),
-            #[cfg(feature = "dropbox")]
-            BackendCredentials::Dropbox(c) => c.encryption_password(),
-            #[cfg(feature = "onedrive")]
-            BackendCredentials::OneDrive(c) => c.encryption_password(),
-            #[cfg(feature = "webdav")]
-            BackendCredentials::WebDAV(c) => c.encryption_password(),
-            #[cfg(feature = "s3")]
-            BackendCredentials::S3(c) => c.encryption_password(),
-            #[cfg(feature = "sftp")]
-            BackendCredentials::SFTP(c) => c.encryption_password(),
-            #[cfg(feature = "nextcloud")]
-            BackendCredentials::Nextcloud(c) => c.encryption_password(),
-            #[cfg(feature = "box")]
-            BackendCredentials::Box(c) => c.encryption_password(),
-            #[cfg(feature = "mega")]
-            BackendCredentials::Mega(c) => c.encryption_password(),
-            #[cfg(feature = "azure_blob")]
-            BackendCredentials::AzureBlob(c) => c.encryption_password(),
-            #[cfg(feature = "gcs")]
-            BackendCredentials::GCS(c) => c.encryption_password(),
-            #[cfg(feature = "b2")]
-            BackendCredentials::B2(c) => c.encryption_password(),
-            #[cfg(feature = "pcloud")]
-            BackendCredentials::PCloud(c) => c.encryption_password(),
-            #[cfg(feature = "ipfs")]
-            BackendCredentials::IPFS(c) => c.encryption_password(),
-            _ => unreachable!(),
-        };
+        let sync_mode = creds.sync_mode();
+        let max_upload_rate = creds.max_upload_rate();
+        let max_download_rate = creds.max_download_rate();
+        let encryption_password = creds.encryption_password();
 
         let upload_limiter = max_upload_rate
             .map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024))
