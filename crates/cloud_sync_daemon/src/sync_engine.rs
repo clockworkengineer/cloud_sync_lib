@@ -189,8 +189,26 @@ async fn sync_single_file(
     state_opt: Option<FileState>,
     conflict_policy: cloud_sync_lib::ConflictPolicy,
     dry_run: bool,
-) -> Result<Vec<(String, FileState)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Vec<(String, FileState)>, bool), Box<dyn std::error::Error + Send + Sync>> {
     let mut updates = Vec::new();
+    let mut copied = false;
+
+    macro_rules! upload_file {
+        ($b:expr, $lp:expr, $rp:expr) => {{
+            let res = verified_upload($b, $lp, $rp).await?;
+            copied = true;
+            res
+        }};
+    }
+
+    macro_rules! download_file {
+        ($b:expr, $rp:expr, $lp:expr, $rc:expr, $p:expr) => {{
+            let res = verified_download($b, $rp, $lp, $rc, $p).await?;
+            copied = true;
+            res
+        }};
+    }
+
     let local_file_path = watch_dir.join(&rel_path);
     let current_permissions = local_opt.as_ref().and_then(|l| l.permissions)
         .or_else(|| remote_opt.as_ref().and_then(|r| r.permissions))
@@ -227,7 +245,7 @@ async fn sync_single_file(
 
                         info!("Uploading conflict copy '{}' to remote", conflict_rel_path);
                         let conflict_remote_checksum = if !dry_run {
-                            verified_upload(backend.as_ref(), &conflict_local_path, &conflict_rel_path).await?
+                            upload_file!(backend.as_ref(), &conflict_local_path, &conflict_rel_path)
                         } else {
                             info!("[DRY-RUN] Would upload local file {:?} to remote path '{}'", conflict_local_path, conflict_rel_path);
                             None
@@ -254,7 +272,7 @@ async fn sync_single_file(
 
                         info!("Downloading remote file '{}' to original local path", rel_path);
                         let local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
+                            download_file!(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions)
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                             None
@@ -280,7 +298,7 @@ async fn sync_single_file(
 
                         info!("Conflict Policy (RenameRemote): Downloading remote conflict copy '{}' to {:?}", conflict_rel_path, conflict_local_path);
                         let conflict_local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &conflict_local_path, remote.checksum.as_deref(), remote.permissions).await?
+                            download_file!(backend.as_ref(), &rel_path, &conflict_local_path, remote.checksum.as_deref(), remote.permissions)
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, conflict_local_path);
                             None
@@ -302,7 +320,7 @@ async fn sync_single_file(
 
                         info!("Uploading local file '{}' to remote original path", rel_path);
                         let remote_checksum = if !dry_run {
-                            verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                            upload_file!(backend.as_ref(), &local_file_path, &rel_path)
                         } else {
                             info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                             None
@@ -325,7 +343,7 @@ async fn sync_single_file(
                     cloud_sync_lib::ConflictPolicy::KeepLocal => {
                         info!("Conflict Policy (KeepLocal): Overwriting remote file '{}' with local changes", rel_path);
                         let remote_checksum = if !dry_run {
-                            verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                            upload_file!(backend.as_ref(), &local_file_path, &rel_path)
                         } else {
                             info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                             None
@@ -348,7 +366,7 @@ async fn sync_single_file(
                     cloud_sync_lib::ConflictPolicy::KeepRemote => {
                         info!("Conflict Policy (KeepRemote): Overwriting local file '{:?}' with remote changes", local_file_path);
                         let local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
+                            download_file!(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions)
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                             None
@@ -374,7 +392,7 @@ async fn sync_single_file(
                         if local_time >= remote_time {
                             info!("Conflict Policy (KeepNewer): Local is newer or equal ({:?} >= {:?}). Choosing KeepLocal.", local_time, remote_time);
                             let remote_checksum = if !dry_run {
-                                verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                                upload_file!(backend.as_ref(), &local_file_path, &rel_path)
                             } else {
                                 info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                                 None
@@ -396,7 +414,7 @@ async fn sync_single_file(
                         } else {
                             info!("Conflict Policy (KeepNewer): Remote is newer ({:?} < {:?}). Choosing KeepRemote.", local_time, remote_time);
                             let local_checksum = if !dry_run {
-                                verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
+                                download_file!(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions)
                             } else {
                                 info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                                 None
@@ -421,7 +439,7 @@ async fn sync_single_file(
             } else if local_changed {
                 info!("Bidirectional: uploading local modification '{}' to remote", rel_path);
                 let remote_checksum = if !dry_run {
-                    verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                    upload_file!(backend.as_ref(), &local_file_path, &rel_path)
                 } else {
                     info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                     None
@@ -443,7 +461,7 @@ async fn sync_single_file(
                 if sync_both {
                     info!("Bidirectional: downloading remote modification '{}' to local", rel_path);
                     let local_checksum = if !dry_run {
-                        verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
+                        download_file!(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions)
                     } else {
                         info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                         None
@@ -511,7 +529,7 @@ async fn sync_single_file(
 
                         info!("Uploading conflict copy '{}' to remote", conflict_rel_path);
                         let conflict_remote_checksum = if !dry_run {
-                            verified_upload(backend.as_ref(), &conflict_local_path, &conflict_rel_path).await?
+                            upload_file!(backend.as_ref(), &conflict_local_path, &conflict_rel_path)
                         } else {
                             info!("[DRY-RUN] Would upload local file {:?} to remote path '{}'", conflict_local_path, conflict_rel_path);
                             None
@@ -538,7 +556,7 @@ async fn sync_single_file(
 
                         info!("Downloading remote file '{}' to original local path", rel_path);
                         let local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
+                            download_file!(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions)
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                             None
@@ -564,7 +582,7 @@ async fn sync_single_file(
 
                         info!("Downloading remote conflict copy '{}' to {:?}", conflict_rel_path, conflict_local_path);
                         let conflict_local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &conflict_local_path, remote.checksum.as_deref(), remote.permissions).await?
+                            download_file!(backend.as_ref(), &rel_path, &conflict_local_path, remote.checksum.as_deref(), remote.permissions)
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, conflict_local_path);
                             None
@@ -586,7 +604,7 @@ async fn sync_single_file(
 
                         info!("Uploading local file '{}' to remote original path", rel_path);
                         let remote_checksum = if !dry_run {
-                            verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                            upload_file!(backend.as_ref(), &local_file_path, &rel_path)
                         } else {
                             info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                             None
@@ -609,7 +627,7 @@ async fn sync_single_file(
                     cloud_sync_lib::ConflictPolicy::KeepLocal => {
                         info!("Unidirectional/Conflict: overwriting remote file '{}' (local is source of truth)", rel_path);
                         let remote_checksum = if !dry_run {
-                            verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                            upload_file!(backend.as_ref(), &local_file_path, &rel_path)
                         } else {
                             info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                             None
@@ -631,7 +649,7 @@ async fn sync_single_file(
                     cloud_sync_lib::ConflictPolicy::KeepRemote => {
                         info!("Conflict: downloading remote file '{}' to local (KeepRemote)", rel_path);
                         let local_checksum = if !dry_run {
-                            verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
+                            download_file!(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions)
                         } else {
                             info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                             None
@@ -656,7 +674,7 @@ async fn sync_single_file(
                         if local_time >= remote_time {
                             info!("Conflict (KeepNewer): Local is newer or equal ({:?} >= {:?}). Choosing KeepLocal.", local_time, remote_time);
                             let remote_checksum = if !dry_run {
-                                verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                                upload_file!(backend.as_ref(), &local_file_path, &rel_path)
                             } else {
                                 info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                                 None
@@ -677,7 +695,7 @@ async fn sync_single_file(
                         } else {
                             info!("Conflict (KeepNewer): Remote is newer ({:?} < {:?}). Choosing KeepRemote.", local_time, remote_time);
                             let local_checksum = if !dry_run {
-                                verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
+                                download_file!(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions)
                             } else {
                                 info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                                 None
@@ -704,7 +722,7 @@ async fn sync_single_file(
         (Some(local), None, None) => {
             info!("Bidirectional: uploading new local file '{}' to remote", rel_path);
             let remote_checksum = if !dry_run {
-                verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                upload_file!(backend.as_ref(), &local_file_path, &rel_path)
             } else {
                 info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                 None
@@ -728,7 +746,7 @@ async fn sync_single_file(
             if sync_both {
                 info!("Bidirectional: downloading new remote file '{}' to local", rel_path);
                 let local_checksum = if !dry_run {
-                    verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
+                    download_file!(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions)
                 } else {
                     info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                     None
@@ -756,7 +774,7 @@ async fn sync_single_file(
             if local_changed {
                 info!("Bidirectional: re-uploading modified local file '{}' that was deleted remotely", rel_path);
                 let remote_checksum = if !dry_run {
-                    verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                    upload_file!(backend.as_ref(), &local_file_path, &rel_path)
                 } else {
                     info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                     None
@@ -785,7 +803,7 @@ async fn sync_single_file(
                 } else {
                     info!("Unidirectional: recreating remote file '{}' (deleted remotely)", rel_path);
                     let remote_checksum = if !dry_run {
-                        verified_upload(backend.as_ref(), &local_file_path, &rel_path).await?
+                        upload_file!(backend.as_ref(), &local_file_path, &rel_path)
                     } else {
                         info!("[DRY-RUN] Would upload local path {:?} to remote path '{}'", local_file_path, rel_path);
                         None
@@ -815,7 +833,7 @@ async fn sync_single_file(
                 if sync_both {
                     info!("Bidirectional: re-downloading modified remote file '{}' that was deleted locally", rel_path);
                     let local_checksum = if !dry_run {
-                        verified_download(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions).await?
+                        download_file!(backend.as_ref(), &rel_path, &local_file_path, remote.checksum.as_deref(), remote.permissions)
                     } else {
                         info!("[DRY-RUN] Would download remote path '{}' to local path {:?}", rel_path, local_file_path);
                         None
@@ -860,7 +878,7 @@ async fn sync_single_file(
         (None, None, None) => {}
     }
 
-    Ok(updates)
+    Ok((updates, copied))
 }
 
 fn is_path_selected(rel_path: &str, selective_sync: &Option<Vec<String>>) -> bool {
@@ -1209,12 +1227,16 @@ pub async fn sync_bidirectional(
 
     let total_files = tasks.len();
     let mut completed_files = 0;
+    let mut files_copied = 0;
     let mut stream = futures_util::stream::iter(tasks).buffer_unordered(max_concurrency);
 
     while let Some(join_res) = stream.next().await {
         completed_files += 1;
         let task_res = join_res?;
-        let updates = task_res.map_err(|e| e as Box<dyn std::error::Error>)?;
+        let (updates, copied) = task_res.map_err(|e| e as Box<dyn std::error::Error>)?;
+        if copied {
+            files_copied += 1;
+        }
         
         let mut last_path = String::new();
         for (path, file_state) in updates {
@@ -1244,7 +1266,12 @@ pub async fn sync_bidirectional(
         info!("[DRY-RUN] Sync execution completed. Skipping saving sync state catalog to disk.");
     }
 
-    broadcast_event("status", "Synchronization completed successfully.", Some(100.0), None);
+    let status_msg = if files_copied > 0 {
+        "Synchronization completed successfully."
+    } else {
+        "Already in sync."
+    };
+    broadcast_event("status", status_msg, Some(100.0), None);
     Ok(())
 }
 
@@ -1462,7 +1489,7 @@ mod tests {
             permissions: None,
         };
 
-        let updates = sync_single_file(
+        let (updates, _copied) = sync_single_file(
             watch_dir.path().to_path_buf(),
             "test.txt".to_string(),
             backend.clone(),
