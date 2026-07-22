@@ -73,6 +73,14 @@ impl<B: StorageBackend> StorageBackend for RateLimitingBackend<B> {
         self.inner.list(remote_path).await
     }
 
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        self.inner.create_folder(remote_path).await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.inner.rename(from, to).await
+    }
+
     async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
         self.inner.compute_local_checksum(local_path).await
     }

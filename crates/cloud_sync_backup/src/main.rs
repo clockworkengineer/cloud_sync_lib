@@ -107,8 +107,15 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
     let same_provider = source.name() == destination.name();
     let mut sync_count = 0;
 
+    let mut dest_files_lower = HashMap::new();
+    for (path, item) in &dest_files {
+        dest_files_lower.insert(path.to_lowercase(), item);
+    }
+
+
     for (rel_path, source_item) in source_files {
-        let should_copy = match dest_files.get(&rel_path) {
+        let rel_path_lower = rel_path.to_lowercase();
+        let should_copy = match dest_files_lower.get(&rel_path_lower) {
             Some(dest_item) => {
                 if let Some((last_size, last_modified, last_checksum)) = synced_history.get(&rel_path) {
                     if source_item.size == *last_size
