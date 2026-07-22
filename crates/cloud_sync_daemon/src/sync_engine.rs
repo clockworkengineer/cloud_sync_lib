@@ -914,6 +914,7 @@ pub async fn sync_bidirectional(
     selective_sync: Option<Vec<String>>,
     event_tx: Option<tokio::sync::broadcast::Sender<String>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let backend_name = backend.name().to_string();
     let broadcast_event = |event_type: &str, message: &str, progress: Option<f64>, active_file: Option<&str>| {
         if let Some(ref tx) = event_tx {
             let payload = serde_json::json!({
@@ -921,6 +922,7 @@ pub async fn sync_bidirectional(
                 "message": message,
                 "progress_percent": progress,
                 "active_file": active_file,
+                "backend_name": backend_name,
             }).to_string();
             let _ = tx.send(payload);
         }

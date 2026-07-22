@@ -268,6 +268,18 @@
             box-shadow: 0 0 6px var(--accent-rose);
         }
 
+        .backend-pill.syncing-now {
+            background: rgba(20, 184, 166, 0.15) !important;
+            border-color: rgba(20, 184, 166, 0.5) !important;
+            color: #99f6e4 !important;
+            animation: pulse-sync-pill 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse-sync-pill {
+            0%, 100% { box-shadow: 0 0 5px rgba(20, 184, 166, 0.2); }
+            50% { box-shadow: 0 0 15px rgba(20, 184, 166, 0.5); }
+        }
+
         /* Controls / Buttons Grid */
         .controls-grid {
             display: grid;
@@ -611,6 +623,7 @@
         let wasDaemonRunning = true;
         let lastConnectedState = null;
         let loggedFailedBackends = new Set();
+        let activeSyncingBackend = null;
 
         function addLogEntry(level, message) {
             const now = new Date();
@@ -750,8 +763,9 @@
                         loggedFailedBackends.delete(prov);
                     }
 
+                    const isSyncingThis = activeSyncingBackend === prov;
                     const pill = document.createElement('div');
-                    pill.className = `backend-pill ${isActive ? 'active' : ''} ${isFailed ? 'failed' : ''}`;
+                    pill.className = `backend-pill ${isActive ? 'active' : ''} ${isFailed ? 'failed' : ''} ${isSyncingThis ? 'syncing-now' : ''}`;
                     pill.innerHTML = `<span class="backend-indicator"></span> ${prov}`;
                     backendsList.appendChild(pill);
                 });
@@ -957,16 +971,25 @@
                 try {
                     const data = JSON.parse(event.data);
                     if (data.type === 'progress') {
-                        addLogEntry('info', `[Real-Time Progress] ${data.message} ${data.active_file ? `(${data.active_file})` : ''} - ${data.progress_percent ? Math.round(data.progress_percent) : 0}%`);
+                        activeSyncingBackend = data.backend_name || null;
+                        const backendPrefix = data.backend_name ? `[${data.backend_name}] ` : '';
+                        addLogEntry('info', `[Real-Time Progress] ${backendPrefix}${data.message} ${data.active_file ? `(${data.active_file})` : ''} - ${data.progress_percent ? Math.round(data.progress_percent) : 0}%`);
                         const syncText = document.getElementById('status-text');
                         if (syncText) {
-                            syncText.textContent = `Syncing: ${Math.round(data.progress_percent)}%`;
+                            syncText.textContent = `Syncing${data.backend_name ? ` [${data.backend_name}]` : ''}: ${Math.round(data.progress_percent)}%`;
                         }
                     } else if (data.type === 'status') {
-                        addLogEntry('info', `[Status Update] ${data.message}`);
+                        if (data.message === "Starting synchronization...") {
+                            activeSyncingBackend = data.backend_name || null;
+                        } else {
+                            activeSyncingBackend = null;
+                        }
+                        const backendPrefix = data.backend_name ? `[${data.backend_name}] ` : '';
+                        addLogEntry('info', `[Status Update] ${backendPrefix}${data.message}`);
                         pollStatus();
                     } else if (data.type === 'error') {
-                        addLogEntry('error', `[Daemon Error] ${data.message}`);
+                        const backendPrefix = data.backend_name ? `[${data.backend_name}] ` : '';
+                        addLogEntry('error', `[Daemon Error] ${backendPrefix}${data.message}`);
                     }
                 } catch (e) {
                     console.error('Error parsing SSE event:', e);
