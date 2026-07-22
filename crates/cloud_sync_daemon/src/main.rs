@@ -238,13 +238,40 @@ pub fn build_backends(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .init();
+    let raw_args: Vec<String> = std::env::args().collect();
+    let mut log_file_path = None;
+    let mut args = Vec::new();
+    if !raw_args.is_empty() {
+        args.push(raw_args[0].clone());
+    }
+    let mut i = 1;
+    while i < raw_args.len() {
+        if (raw_args[i] == "--log-file" || raw_args[i] == "--log") && i + 1 < raw_args.len() {
+            log_file_path = Some(raw_args[i + 1].clone());
+            i += 2;
+        } else if raw_args[i].ends_with(".log") {
+            log_file_path = Some(raw_args[i].clone());
+            i += 1;
+        } else {
+            args.push(raw_args[i].clone());
+            i += 1;
+        }
+    }
 
-    let args: Vec<String> = std::env::args().collect();
+    // Initialize logging
+    if let Some(path) = log_file_path {
+        let file = std::fs::File::create(path)?;
+        tracing_subscriber::registry()
+            .with(fmt::layer().with_writer(move || file.try_clone().unwrap()))
+            .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(fmt::layer())
+            .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+            .init();
+    }
+
     let mut config_file = DEFAULT_CONFIG_FILE.to_string();
     let mut ui_addr = None;
     let mut clear_remote = None;

@@ -191,9 +191,35 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    let raw_args: Vec<String> = std::env::args().collect();
+    let mut log_file_path = None;
+    let mut args = Vec::new();
+    if !raw_args.is_empty() {
+        args.push(raw_args[0].clone());
+    }
+    let mut i = 1;
+    while i < raw_args.len() {
+        if (raw_args[i] == "--log-file" || raw_args[i] == "--log") && i + 1 < raw_args.len() {
+            log_file_path = Some(raw_args[i + 1].clone());
+            i += 2;
+        } else if raw_args[i].ends_with(".log") {
+            log_file_path = Some(raw_args[i].clone());
+            i += 1;
+        } else {
+            args.push(raw_args[i].clone());
+            i += 1;
+        }
+    }
 
-    let args: Vec<String> = std::env::args().collect();
+    if let Some(path) = log_file_path {
+        let file = std::fs::File::create(path)?;
+        tracing_subscriber::fmt()
+            .with_writer(move || file.try_clone().unwrap())
+            .init();
+    } else {
+        tracing_subscriber::fmt::init();
+    }
+
     let config_file = if args.len() > 1 {
         &args[1]
     } else {
