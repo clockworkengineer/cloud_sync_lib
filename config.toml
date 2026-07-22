@@ -75,7 +75,7 @@ sync_mode = "one-way"
 [box_credentials]
 client_id = "your_box_client_id"
 client_secret = "your_box_client_secret"
-refresh_token = "your_box_refresh_token"
+refresh_token = "jmpK9L2ZJQcEhaY2e7e5Dt3ZusN6EGJH9e4f1NEqeY1nYeEZ4l7Zdg7Hpu877Rvd"
 destination_folder = "MySyncFolder"   # Optional: Folder name in Box root
 enabled = true
 sync_mode = "one-way"
@@ -89,7 +89,7 @@ sync_mode = "one-way"             # Options: "two-way", "one-way", "one-way-no-d
 
 [azure_blob_credentials]
 account_name = "devstoreaccount1"
-account_key = "Eby8vdM0gThJrgY4RbrYGZUXmin47115CuvNytYiG8pxUXSBn9126Ek85GBv39i1EdjK71S1Yu08dBQ1g=="
+account_key = ""
 container = "sync-container"
 # endpoint = "http://127.0.0.1:10000/devstoreaccount1" # Optional local Azurite emulator
 destination_folder = "MySyncFolder" # Optional
