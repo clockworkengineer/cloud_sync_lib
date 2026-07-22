@@ -736,7 +736,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(e) => error!("Watcher error: {:?}", e),
                 }
             }
-            _ = shutdown_rx.recv() => {
+            Some(_) = shutdown_rx.recv() => {
                 info!("Shutdown command received. Stopping daemon gracefully...");
                 break;
             }
