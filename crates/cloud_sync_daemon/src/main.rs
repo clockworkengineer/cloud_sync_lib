@@ -108,131 +108,159 @@ pub fn build_backends(
     let mut backends: Vec<ActiveBackend> = Vec::new();
 
     #[cfg(feature = "google_drive")]
-    try_add_backend(
-        &mut backends,
-        config.google_credentials.clone().map(BackendCredentials::GoogleDrive),
-        config.google_drive_root.clone(),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.google_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.google_credentials.clone().map(BackendCredentials::GoogleDrive),
+            config.google_drive_root.clone(),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "dropbox")]
-    try_add_backend(
-        &mut backends,
-        config.dropbox_credentials.clone().map(BackendCredentials::Dropbox),
-        config.dropbox_root.clone(),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.dropbox_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.dropbox_credentials.clone().map(BackendCredentials::Dropbox),
+            config.dropbox_root.clone(),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "onedrive")]
-    try_add_backend(
-        &mut backends,
-        config.onedrive_credentials.clone().map(BackendCredentials::OneDrive),
-        config.onedrive_root.clone(),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.onedrive_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.onedrive_credentials.clone().map(BackendCredentials::OneDrive),
+            config.onedrive_root.clone(),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "webdav")]
-    try_add_backend(
-        &mut backends,
-        config.webdav_credentials.clone().map(BackendCredentials::WebDAV),
-        config.webdav_root.clone(),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.webdav_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.webdav_credentials.clone().map(BackendCredentials::WebDAV),
+            config.webdav_root.clone(),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "s3")]
-    try_add_backend(
-        &mut backends,
-        config.s3_credentials.clone().map(BackendCredentials::S3),
-        config.s3_root.clone(),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.s3_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.s3_credentials.clone().map(BackendCredentials::S3),
+            config.s3_root.clone(),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "sftp")]
-    try_add_backend(
-        &mut backends,
-        config.sftp_credentials.clone().map(BackendCredentials::SFTP),
-        config.sftp_root.clone(),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.sftp_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.sftp_credentials.clone().map(BackendCredentials::SFTP),
+            config.sftp_root.clone(),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "nextcloud")]
-    try_add_backend(
-        &mut backends,
-        config.nextcloud_credentials.clone().map(BackendCredentials::Nextcloud),
-        config.nextcloud_root.clone(),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.nextcloud_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.nextcloud_credentials.clone().map(BackendCredentials::Nextcloud),
+            config.nextcloud_root.clone(),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "box")]
-    try_add_backend(
-        &mut backends,
-        config.box_credentials.clone().map(BackendCredentials::Box),
-        config.box_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_BOX_ROOT)),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.box_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.box_credentials.clone().map(BackendCredentials::Box),
+            config.box_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_BOX_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "mega")]
-    try_add_backend(
-        &mut backends,
-        config.mega_credentials.clone().map(BackendCredentials::Mega),
-        config.mega_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_MEGA_ROOT)),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.mega_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.mega_credentials.clone().map(BackendCredentials::Mega),
+            config.mega_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_MEGA_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "azure_blob")]
-    try_add_backend(
-        &mut backends,
-        config.azure_blob_credentials.clone().map(BackendCredentials::AzureBlob),
-        config.azure_blob_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_AZURE_BLOB_ROOT)),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.azure_blob_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.azure_blob_credentials.clone().map(BackendCredentials::AzureBlob),
+            config.azure_blob_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_AZURE_BLOB_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "gcs")]
-    try_add_backend(
-        &mut backends,
-        config.gcs_credentials.clone().map(BackendCredentials::GCS),
-        config.gcs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_GCS_ROOT)),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.gcs_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.gcs_credentials.clone().map(BackendCredentials::GCS),
+            config.gcs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_GCS_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "b2")]
-    try_add_backend(
-        &mut backends,
-        config.b2_credentials.clone().map(BackendCredentials::B2),
-        config.b2_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_B2_ROOT)),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.b2_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.b2_credentials.clone().map(BackendCredentials::B2),
+            config.b2_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_B2_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "pcloud")]
-    try_add_backend(
-        &mut backends,
-        config.pcloud_credentials.clone().map(BackendCredentials::PCloud),
-        config.pcloud_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_PCLOUD_ROOT)),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.pcloud_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.pcloud_credentials.clone().map(BackendCredentials::PCloud),
+            config.pcloud_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_PCLOUD_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     #[cfg(feature = "ipfs")]
-    try_add_backend(
-        &mut backends,
-        config.ipfs_credentials.clone().map(BackendCredentials::IPFS),
-        config.ipfs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_IPFS_ROOT)),
-        upload_limiter.clone(),
-        download_limiter.clone(),
-    );
-
+    if is_provider_enabled(&config.ipfs_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.ipfs_credentials.clone().map(BackendCredentials::IPFS),
+            config.ipfs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_IPFS_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+ 
     backends
 }
 
