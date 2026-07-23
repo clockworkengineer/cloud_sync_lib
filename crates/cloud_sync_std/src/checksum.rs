@@ -110,3 +110,38 @@ pub async fn compute_sha1(path: &Path) -> io::Result<String> {
     .await
     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_checksums() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("hello.txt");
+        let mut file = File::create(&file_path).unwrap();
+        file.write_all(b"hello").unwrap();
+        drop(file);
+
+        // Test MD5
+        let md5_val = compute_md5(&file_path).await.unwrap();
+        assert_eq!(md5_val, "5d41402abc4b2a76b9719d911017c592");
+
+        // Test SHA-256
+        let sha256_val = compute_sha256(&file_path).await.unwrap();
+        assert_eq!(sha256_val, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+
+        // Test SHA-1
+        let sha1_val = compute_sha1(&file_path).await.unwrap();
+        assert_eq!(sha1_val, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
+
+        // Test Dropbox hash
+        let dbx_val = compute_dropbox_hash(&file_path).await.unwrap();
+        let block_hash = ring::digest::digest(&ring::digest::SHA256, b"hello");
+        let expected_dbx = hex_encode(ring::digest::digest(&ring::digest::SHA256, block_hash.as_ref()).as_ref());
+        assert_eq!(dbx_val, expected_dbx);
+    }
+}
