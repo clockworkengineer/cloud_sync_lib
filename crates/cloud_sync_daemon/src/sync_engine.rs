@@ -937,21 +937,37 @@ pub async fn sync_bidirectional(
     let mut sync_state = SyncState::load(state_file_path).await.unwrap_or_default();
 
     // 2. Scan directories
-    let mut local_files = HashMap::new();
+    let mut scanned_items = Vec::new();
     let mut scanner = crate::watcher::DirectoryScanner::new(watch_dir, gitignore);
     while let Some((rel_path, item)) = scanner.next().await? {
-        let checksum = if item.is_dir {
-            None
-        } else {
-            backend.compute_local_checksum(&item.path).await.ok().flatten()
-        };
-        local_files.insert(rel_path, FileInfo {
-            permissions: item.permissions,
-            size: item.size,
-            modified: item.modified,
-            is_dir: item.is_dir,
-            checksum,
-        });
+        scanned_items.push((rel_path, item));
+    }
+
+    use futures_util::stream::StreamExt;
+    let mut local_files = HashMap::with_capacity(scanned_items.len());
+    let backend_clone = backend.clone();
+    let mut stream = futures_util::stream::iter(scanned_items)
+        .map(move |(rel_path, item)| {
+            let backend = backend_clone.clone();
+            async move {
+                let checksum = if item.is_dir {
+                    None
+                } else {
+                    backend.compute_local_checksum(&item.path).await.ok().flatten()
+                };
+                (rel_path, FileInfo {
+                    permissions: item.permissions,
+                    size: item.size,
+                    modified: item.modified,
+                    is_dir: item.is_dir,
+                    checksum,
+                })
+            }
+        })
+        .buffer_unordered(max_concurrency);
+
+    while let Some((rel_path, file_info)) = stream.next().await {
+        local_files.insert(rel_path, file_info);
     }
     let remote_files = scan_remote_dir(backend.as_ref(), gitignore).await?;
 
@@ -1201,7 +1217,6 @@ pub async fn sync_bidirectional(
     }
 
     // Phase 2: Files (Concurrent)
-    use futures_util::stream::StreamExt;
     let file_paths: Vec<String> = file_paths.into_iter().filter(|path| !resolved_moves.contains(path)).collect();
     let sync_state_files = sync_state.files.clone();
     let tasks = file_paths.into_iter().map(move |rel_path| {
