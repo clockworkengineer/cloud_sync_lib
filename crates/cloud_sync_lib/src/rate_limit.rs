@@ -330,4 +330,37 @@ mod tests {
         // It should take at least 1 second to copy 10KB at 5KB/s (the second 5KB chunk is throttled)
         assert!(elapsed.as_secs_f64() >= 0.5, "elapsed was: {:?}", elapsed);
     }
+
+    #[tokio::test]
+    async fn test_token_bucket_set_rate() {
+        let bucket = TokenBucket::new(1000);
+        assert_eq!(bucket.rate(), 1000);
+        bucket.set_rate(2000);
+        assert_eq!(bucket.rate(), 2000);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limited_reader() {
+        use tokio::io::AsyncReadExt;
+        let data = vec![0u8; 100];
+        let cursor = std::io::Cursor::new(data);
+        let limiter = TokenBucket::new(50);
+        let mut reader = RateLimitedReader::new(cursor, Some(limiter));
+        
+        let mut buf = vec![0u8; 100];
+        let bytes_read = reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(bytes_read, 100);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limited_stream() {
+        use futures_util::StreamExt;
+        let bytes = Bytes::from("hello world");
+        let source_stream = futures_util::stream::iter(vec![Ok::<Bytes, std::io::Error>(bytes)]);
+        let limiter = TokenBucket::new(5);
+        let mut limited_stream = RateLimitedStream::new(source_stream, Some(limiter));
+
+        let res = limited_stream.next().await.unwrap().unwrap();
+        assert_eq!(res.as_ref(), b"hello world");
+    }
 }
