@@ -123,3 +123,117 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+    use tempfile::tempdir;
+    use std::sync::Arc;
+
+    struct MockBackend {
+        should_fail_auth: Arc<Mutex<bool>>,
+        should_fail_other: Arc<Mutex<bool>>,
+    }
+
+    #[async_trait]
+    impl StorageBackend for MockBackend {
+        fn name(&self) -> &str {
+            "Mock"
+        }
+
+        async fn upload(&self, _local_path: &Path, _remote_path: &str) -> Result<(), StorageError> {
+            if *self.should_fail_auth.lock().unwrap() {
+                return Err(StorageError::Authentication("Mock auth error".to_string()));
+            }
+            if *self.should_fail_other.lock().unwrap() {
+                return Err(StorageError::NotFound("Not found".to_string()));
+            }
+            Ok(())
+        }
+
+        async fn download(&self, _remote_path: &str, _local_path: &Path) -> Result<(), StorageError> {
+            if *self.should_fail_auth.lock().unwrap() {
+                return Err(StorageError::AuthenticationExpired("Mock expired error".to_string()));
+            }
+            if *self.should_fail_other.lock().unwrap() {
+                return Err(StorageError::NotFound("Not found".to_string()));
+            }
+            Ok(())
+        }
+
+        async fn delete(&self, _remote_path: &str) -> Result<(), StorageError> {
+            if *self.should_fail_auth.lock().unwrap() {
+                return Err(StorageError::Authentication("Mock auth error".to_string()));
+            }
+            if *self.should_fail_other.lock().unwrap() {
+                return Err(StorageError::NotFound("Not found".to_string()));
+            }
+            Ok(())
+        }
+
+        async fn list(&self, _remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+            if *self.should_fail_auth.lock().unwrap() {
+                return Err(StorageError::Authentication("Mock auth error".to_string()));
+            }
+            if *self.should_fail_other.lock().unwrap() {
+                return Err(StorageError::NotFound("Not found".to_string()));
+            }
+            Ok(vec![])
+        }
+
+        async fn create_folder(&self, _remote_path: &str) -> Result<(), StorageError> {
+            if *self.should_fail_auth.lock().unwrap() {
+                return Err(StorageError::Authentication("Mock auth error".to_string()));
+            }
+            if *self.should_fail_other.lock().unwrap() {
+                return Err(StorageError::NotFound("Not found".to_string()));
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_simulated_fallback_routing() {
+        let temp_dir = tempdir().unwrap();
+        let local_sim = LocalSimulation::new(temp_dir.path().to_path_buf(), "MockLocal".to_string());
+        
+        let should_fail_auth = Arc::new(Mutex::new(false));
+        let should_fail_other = Arc::new(Mutex::new(false));
+        let mock = MockBackend {
+            should_fail_auth: should_fail_auth.clone(),
+            should_fail_other: should_fail_other.clone(),
+        };
+
+        let fallback = SimulatedFallback::new(Some(mock), local_sim, "FallbackTest", crate::providers::SyncMode::TwoWay);
+        assert_eq!(fallback.name(), "FallbackTest");
+
+        let local_file = temp_dir.path().join("test.txt");
+        std::fs::write(&local_file, "hello").unwrap();
+
+        // 1. Successful routing to inner
+        fallback.upload(&local_file, "remote.txt").await.unwrap();
+        fallback.download("remote.txt", &local_file).await.unwrap();
+        fallback.create_folder("folder").await.unwrap();
+        let list = fallback.list("").await.unwrap();
+        assert!(list.is_empty());
+        fallback.delete("remote.txt").await.unwrap();
+
+        // 2. Authentication failure fallback routing to local_sim
+        *should_fail_auth.lock().unwrap() = true;
+        fallback.upload(&local_file, "remote.txt").await.unwrap();
+        fallback.download("remote.txt", &local_file).await.unwrap();
+        fallback.create_folder("folder").await.unwrap();
+        fallback.list("").await.unwrap();
+        fallback.delete("remote.txt").await.unwrap();
+
+        // 3. Other errors propagated without fallback
+        *should_fail_auth.lock().unwrap() = false;
+        *should_fail_other.lock().unwrap() = true;
+        assert!(fallback.upload(&local_file, "remote.txt").await.is_err());
+        assert!(fallback.download("remote.txt", &local_file).await.is_err());
+        assert!(fallback.create_folder("folder").await.is_err());
+        assert!(fallback.list("").await.is_err());
+        assert!(fallback.delete("remote.txt").await.is_err());
+    }
+}
