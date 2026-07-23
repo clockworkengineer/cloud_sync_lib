@@ -484,14 +484,14 @@ impl BackendRegistry {
     }
 
     /// Dynamically instantiates a fully wrapped provider (with fallback/encryption/limiters) using its config credentials.
-    #[allow(unreachable_patterns)]
+    #[allow(unreachable_patterns, unreachable_code)]
     pub fn build_wrapped(
         creds: BackendCredentials,
         sim_root: std::path::PathBuf,
         global_upload_limiter: Option<crate::rate_limit::TokenBucket>,
         global_download_limiter: Option<crate::rate_limit::TokenBucket>,
     ) -> Arc<dyn StorageBackend> {
-        let provider_name = match &creds {
+        let provider_name: &str = match &creds {
             #[cfg(feature = "google_drive")]
             BackendCredentials::GoogleDrive(_) => "Google Drive",
             #[cfg(feature = "dropbox")]
