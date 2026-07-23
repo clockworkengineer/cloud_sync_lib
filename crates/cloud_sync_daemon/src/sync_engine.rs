@@ -1217,14 +1217,20 @@ pub async fn sync_bidirectional(
     }
 
     // Phase 2: Files (Concurrent)
-    let file_paths: Vec<String> = file_paths.into_iter().filter(|path| !resolved_moves.contains(path)).collect();
-    let sync_state_files = sync_state.files.clone();
-    let tasks = file_paths.into_iter().map(move |rel_path| {
+    let file_tasks_info: Vec<(String, Option<FileInfo>, Option<FileInfo>, Option<FileState>)> = file_paths
+        .into_iter()
+        .filter(|path| !resolved_moves.contains(path))
+        .map(|path| {
+            let local_opt = local_files.get(&path).cloned();
+            let remote_opt = remote_files.get(&path).cloned();
+            let state_opt = sync_state.files.get(&path).cloned();
+            (path, local_opt, remote_opt, state_opt)
+        })
+        .collect();
+
+    let tasks = file_tasks_info.into_iter().map(|(rel_path, local_opt, remote_opt, state_opt)| {
         let watch_dir = watch_dir.to_path_buf();
         let backend = backend.clone();
-        let local_opt = local_files.get(&rel_path).cloned();
-        let remote_opt = remote_files.get(&rel_path).cloned();
-        let state_opt = sync_state_files.get(&rel_path).cloned();
 
         tokio::spawn(async move {
             sync_single_file(
@@ -1274,6 +1280,8 @@ pub async fn sync_bidirectional(
             if last_path.is_empty() { None } else { Some(&last_path) }
         );
     }
+
+
 
     // 4. Save catalog state
     if !dry_run {
