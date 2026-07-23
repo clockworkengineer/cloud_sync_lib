@@ -4,15 +4,15 @@ version = "0.1.0"
 edition = "2021"
 [dependencies]
 cloud_sync_lib = { path = "../cloud_sync_lib", default-features = false }
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 filetime = "0.2"
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
-tracing = "0.1"
+serde = { workspace = true, features = ["derive"] }
+toml = { workspace = true }
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-async-trait = "0.1"
-ignore = "0.4"
-futures-util = "0.3"
+async-trait = { workspace = true }
+ignore = { workspace = true }
+futures-util = { workspace = true }
 
 [features]
 default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"]
@@ -32,4 +32,4 @@ pcloud = ["cloud_sync_lib/pcloud"]
 ipfs = ["cloud_sync_lib/ipfs"]
 
 [dev-dependencies]
-tempfile = "3.8"
+tempfile = { workspace = true }
