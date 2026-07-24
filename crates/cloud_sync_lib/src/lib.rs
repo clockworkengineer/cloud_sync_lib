@@ -67,6 +67,7 @@ mod tests {
     use std::io::Write;
     use tempfile::tempdir;
 
+    #[allow(dead_code)]
     async fn mount_oauth_mock(server: &wiremock::MockServer, token_val: &str) {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, ResponseTemplate};
@@ -80,6 +81,7 @@ mod tests {
     }
 
     /// Generic runner for SimulatedFallback flow test across different providers
+    #[allow(dead_code)]
     async fn run_simulated_flow_test<B>(provider_name: &str)
     where
         B: StorageBackend + 'static,

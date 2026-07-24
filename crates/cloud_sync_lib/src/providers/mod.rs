@@ -484,7 +484,7 @@ impl BackendRegistry {
     }
 
     /// Dynamically instantiates a fully wrapped provider (with fallback/encryption/limiters) using its config credentials.
-    #[allow(unreachable_patterns, unreachable_code)]
+    #[allow(unreachable_patterns, unreachable_code, unused_variables)]
     pub fn build_wrapped(
         creds: BackendCredentials,
         sim_root: std::path::PathBuf,
