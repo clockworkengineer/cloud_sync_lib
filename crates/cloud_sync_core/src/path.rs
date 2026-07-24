@@ -131,3 +131,77 @@ pub fn get_permissions(permissions: &std::fs::Permissions) -> Option<u32> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_remote_path() {
+        assert_eq!(normalize_remote_path("foo\\bar"), "foo/bar");
+        assert_eq!(normalize_remote_path("foo/bar"), "foo/bar");
+    }
+
+    #[test]
+    fn test_format_relative_path() {
+        assert_eq!(format_relative_path("foo/bar", None), "foo/bar");
+        assert_eq!(format_relative_path("/foo/bar", None), "foo/bar");
+        assert_eq!(format_relative_path("foo\\bar", None), "foo/bar");
+        assert_eq!(format_relative_path("foo/bar", Some("dest")), "dest/foo/bar");
+        assert_eq!(format_relative_path("", Some("dest")), "dest");
+    }
+
+    #[test]
+    fn test_format_absolute_path() {
+        assert_eq!(format_absolute_path("foo/bar", None), "/foo/bar");
+        assert_eq!(format_absolute_path("/foo/bar", None), "/foo/bar");
+        assert_eq!(format_absolute_path("foo/bar", Some("dest")), "/dest/foo/bar");
+        assert_eq!(format_absolute_path("", Some("dest")), "/dest");
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_strip_destination_prefix() {
+        use std::path::Path;
+        let p = Path::new("dest/foo/bar.txt");
+        assert_eq!(strip_destination_prefix(p, Some("dest")), Path::new("foo/bar.txt"));
+        assert_eq!(strip_destination_prefix(p, None), p);
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_get_parent_and_filename() {
+        let (parent, filename) = get_parent_and_filename("foo/bar/baz.txt");
+        assert_eq!(parent, "foo/bar");
+        assert_eq!(filename, "baz.txt");
+
+        let (parent, filename) = get_parent_and_filename("baz.txt");
+        assert_eq!(parent, "");
+        assert_eq!(filename, "baz.txt");
+    }
+
+    #[test]
+    fn test_url_encode() {
+        assert_eq!(url_encode("hello world"), "hello%20world");
+        assert_eq!(url_encode("foo/bar"), "foo%2Fbar");
+        assert_eq!(url_encode("abc-123_.~"), "abc-123_.~");
+    }
+
+    #[test]
+    fn test_url_encode_path() {
+        assert_eq!(url_encode_path("hello world/foo"), "hello%20world/foo");
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_get_permissions() {
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("perm.txt");
+        std::fs::write(&file_path, "test").unwrap();
+        let metadata = std::fs::metadata(file_path).unwrap();
+        let perms = metadata.permissions();
+        let mode = get_permissions(&perms);
+        assert!(mode.is_some());
+    }
+}
