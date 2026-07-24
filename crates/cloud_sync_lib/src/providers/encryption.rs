@@ -227,4 +227,31 @@ mod tests {
         let decrypted_content = fs::read(&downloaded_file).await.unwrap();
         assert_eq!(decrypted_content, content);
     }
+
+    #[tokio::test]
+    async fn test_encrypted_backend_edge_cases() {
+        let temp_dir = tempdir().unwrap();
+        let remote_root = temp_dir.path().join("remote");
+        fs::create_dir_all(&remote_root).await.unwrap();
+
+        let local_sim = LocalSimulation::new(remote_root.clone(), "MockRemote".to_string());
+        let enc_backend = EncryptedBackend::new(local_sim, "supersecretpassword");
+
+        // Test delete and create_folder delegation
+        enc_backend.create_folder("new_dir").await.unwrap();
+        assert!(remote_root.join("new_dir").exists());
+
+        // Create a file that is too short
+        let short_file = remote_root.join("short.txt");
+        fs::write(&short_file, b"too_short").await.unwrap();
+
+        let local_dest = temp_dir.path().join("dest.txt");
+        let res = enc_backend.download("short.txt", &local_dest).await;
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("too short"));
+
+        // Test delete delegation
+        enc_backend.delete("short.txt").await.unwrap();
+        assert!(!short_file.exists());
+    }
 }
