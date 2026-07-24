@@ -220,3 +220,107 @@ pub enum ConflictPolicy {
     KeepLocal,
     KeepRemote,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::sync::Arc;
+    use alloc::string::ToString;
+    use alloc::vec;
+
+    struct DummyBackend;
+
+    #[async_trait::async_trait]
+    impl StorageBackend for DummyBackend {
+        fn name(&self) -> &str {
+            "dummy"
+        }
+        #[cfg(feature = "std")]
+        async fn upload(&self, _local_path: &Path, _remote_path: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        #[cfg(feature = "std")]
+        async fn download(&self, _remote_path: &str, _local_path: &Path) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn delete(&self, _remote_path: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn list(&self, _remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+            Ok(vec![])
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sync_policy() {
+        let policy_two_way = SyncPolicy::new(SyncMode::TwoWay);
+        assert!(policy_two_way.sync_deletions());
+        assert!(policy_two_way.sync_both());
+
+        let policy_one_way = SyncPolicy::new(SyncMode::OneWay);
+        assert!(policy_one_way.sync_deletions());
+        assert!(!policy_one_way.sync_both());
+
+        let policy_no_del = SyncPolicy::new(SyncMode::OneWayNoDeletions);
+        assert!(!policy_no_del.sync_deletions());
+        assert!(!policy_no_del.sync_both());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "std")]
+    async fn test_backend_delegations() {
+        let boxed: Box<dyn StorageBackend> = Box::new(DummyBackend);
+        assert_eq!(boxed.name(), "dummy");
+        boxed.upload(Path::new("local"), "remote").await.unwrap();
+        boxed.download("remote", Path::new("local")).await.unwrap();
+        boxed.delete("remote").await.unwrap();
+        assert!(boxed.list("").await.unwrap().is_empty());
+        boxed.create_folder("folder").await.unwrap();
+        assert!(boxed.rename("from", "to").await.is_err());
+        assert!(boxed.compute_local_checksum(Path::new("local")).await.unwrap().is_none());
+
+        let arc: Arc<dyn StorageBackend> = Arc::new(DummyBackend);
+        assert_eq!(arc.name(), "dummy");
+        arc.upload(Path::new("local"), "remote").await.unwrap();
+        arc.download("remote", Path::new("local")).await.unwrap();
+        arc.delete("remote").await.unwrap();
+        assert!(arc.list("").await.unwrap().is_empty());
+        arc.create_folder("folder").await.unwrap();
+        assert!(arc.rename("from", "to").await.is_err());
+        assert!(arc.compute_local_checksum(Path::new("local")).await.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_storage_error_display() {
+        let err = StorageError::Authentication("failed".to_string());
+        assert!(err.to_string().contains("Authentication failed"));
+
+        let err = StorageError::NotFound("lost".to_string());
+        assert!(err.to_string().contains("Resource not found"));
+
+        let err = StorageError::RateLimit {
+            message: "slow down".to_string(),
+            #[cfg(feature = "std")]
+            retry_after: None,
+        };
+        assert!(err.to_string().contains("Rate limit exceeded"));
+
+        let err = StorageError::Provider { message: "fail".to_string(), status: Some(500) };
+        assert!(err.to_string().contains("status: Some(500)"));
+
+        let err = StorageError::AuthenticationExpired("expired".to_string());
+        assert!(err.to_string().contains("Authentication expired"));
+
+        let err = StorageError::Conflict("conflict".to_string());
+        assert!(err.to_string().contains("Conflict"));
+
+        let err = StorageError::ConnectionFailed("disconnect".to_string());
+        assert!(err.to_string().contains("Connection failed"));
+
+        #[cfg(feature = "std")]
+        {
+            let io_err = StorageError::from(std::io::Error::new(std::io::ErrorKind::Other, "iofail"));
+            assert!(io_err.to_string().contains("I/O error occurred"));
+        }
+    }
+}
