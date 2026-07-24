@@ -363,4 +363,39 @@ mod tests {
         let res = limited_stream.next().await.unwrap().unwrap();
         assert_eq!(res.as_ref(), b"hello world");
     }
+
+    #[tokio::test]
+    async fn test_rate_limiting_backend_delegations() {
+        let temp_dir = tempdir().unwrap();
+        let local_root = temp_dir.path().join("local");
+        let remote_root = temp_dir.path().join("remote");
+        std::fs::create_dir_all(&local_root).unwrap();
+        std::fs::create_dir_all(&remote_root).unwrap();
+
+        let local_sim = crate::providers::local_sim::LocalSimulation::new(remote_root.clone(), "MockRemote".to_string());
+        
+        let upload_limiter = TokenBucket::new(1000);
+        let download_limiter = TokenBucket::new(1000);
+        let backend = RateLimitingBackend::new(local_sim, Some(upload_limiter), Some(download_limiter));
+        
+        assert_eq!(backend.name(), "MockRemote");
+
+        let local_file = local_root.join("test.txt");
+        std::fs::write(&local_file, "data").unwrap();
+
+        backend.upload(&local_file, "remote.txt").await.unwrap();
+
+        let download_dest = local_root.join("dest.txt");
+        backend.download("remote.txt", &download_dest).await.unwrap();
+
+        backend.create_folder("new_dir").await.unwrap();
+        let list = backend.list("").await.unwrap();
+        assert_eq!(list.len(), 2);
+
+        backend.rename("remote.txt", "moved.txt").await.unwrap();
+        let checksum = backend.compute_local_checksum(&local_file).await.unwrap();
+        assert!(checksum.is_some());
+
+        backend.delete("moved.txt").await.unwrap();
+    }
 }
