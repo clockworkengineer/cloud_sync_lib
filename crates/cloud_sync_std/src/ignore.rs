@@ -63,4 +63,19 @@ mod tests {
         let gitignore = SyncIgnore::empty();
         assert!(!gitignore.is_ignored(Path::new("error.log"), false));
     }
+
+    #[test]
+    fn test_sync_ignore_invalid_patterns() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let watch_path = temp_dir.path();
+        
+        std::fs::create_dir(watch_path.join(".syncignore")).unwrap();
+
+        let gitignore = SyncIgnore::new(
+            watch_path,
+            &["**/[a-".to_string()],
+        );
+
+        assert!(!gitignore.is_ignored(watch_path.join("test.txt"), false));
+    }
 }
