@@ -308,6 +308,10 @@ mod tests {
         assert!(delay.is_some());
         let delay_dur = delay.unwrap();
         assert!(delay_dur.as_secs_f64() > 0.0);
+
+        // Test rate of 0 (unthrottled)
+        let unthrottled_bucket = TokenBucket::new(0);
+        assert!(unthrottled_bucket.consume(100000).is_none());
     }
 
     #[tokio::test]
@@ -342,26 +346,56 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limited_reader() {
         use tokio::io::AsyncReadExt;
-        let data = vec![0u8; 100];
+        let data = vec![0u8; 150];
         let cursor = std::io::Cursor::new(data);
         let limiter = TokenBucket::new(50);
         let mut reader = RateLimitedReader::new(cursor, Some(limiter));
         
-        let mut buf = vec![0u8; 100];
-        let bytes_read = reader.read_exact(&mut buf).await.unwrap();
-        assert_eq!(bytes_read, 100);
+        let mut buf1 = vec![0u8; 50];
+        let mut buf2 = vec![0u8; 50];
+        let mut buf3 = vec![0u8; 50];
+        let bytes_read1 = reader.read_exact(&mut buf1).await.unwrap();
+        assert_eq!(bytes_read1, 50);
+        let bytes_read2 = reader.read_exact(&mut buf2).await.unwrap();
+        assert_eq!(bytes_read2, 50);
+        let bytes_read3 = reader.read_exact(&mut buf3).await.unwrap();
+        assert_eq!(bytes_read3, 50);
+
+        // Test reader with None limiter
+        let data_none = vec![0u8; 100];
+        let cursor_none = std::io::Cursor::new(data_none);
+        let mut reader_none = RateLimitedReader::new(cursor_none, None);
+        let mut buf_none = vec![0u8; 100];
+        assert_eq!(reader_none.read_exact(&mut buf_none).await.unwrap(), 100);
     }
 
     #[tokio::test]
     async fn test_rate_limited_stream() {
         use futures_util::StreamExt;
-        let bytes = Bytes::from("hello world");
-        let source_stream = futures_util::stream::iter(vec![Ok::<Bytes, std::io::Error>(bytes)]);
+        let bytes1 = Bytes::from("hello");
+        let bytes2 = Bytes::from("world");
+        let bytes3 = Bytes::from("extra");
+        let source_stream = futures_util::stream::iter(vec![
+            Ok::<Bytes, std::io::Error>(bytes1),
+            Ok::<Bytes, std::io::Error>(bytes2),
+            Ok::<Bytes, std::io::Error>(bytes3),
+        ]);
         let limiter = TokenBucket::new(5);
         let mut limited_stream = RateLimitedStream::new(source_stream, Some(limiter));
 
-        let res = limited_stream.next().await.unwrap().unwrap();
-        assert_eq!(res.as_ref(), b"hello world");
+        let res1 = limited_stream.next().await.unwrap().unwrap();
+        assert_eq!(res1.as_ref(), b"hello");
+        let res2 = limited_stream.next().await.unwrap().unwrap();
+        assert_eq!(res2.as_ref(), b"world");
+        let res3 = limited_stream.next().await.unwrap().unwrap();
+        assert_eq!(res3.as_ref(), b"extra");
+
+        // Test stream with None limiter
+        let bytes_none = Bytes::from("hello world");
+        let source_stream_none = futures_util::stream::iter(vec![Ok::<Bytes, std::io::Error>(bytes_none)]);
+        let mut limited_stream_none = RateLimitedStream::new(source_stream_none, None);
+        let res_none = limited_stream_none.next().await.unwrap().unwrap();
+        assert_eq!(res_none.as_ref(), b"hello world");
     }
 
     #[tokio::test]
@@ -381,7 +415,8 @@ mod tests {
         assert_eq!(backend.name(), "MockRemote");
 
         let local_file = local_root.join("test.txt");
-        std::fs::write(&local_file, "data").unwrap();
+        let data_2k = vec![0u8; 2000];
+        std::fs::write(&local_file, data_2k).unwrap();
 
         backend.upload(&local_file, "remote.txt").await.unwrap();
 

@@ -201,6 +201,7 @@ mod tests {
 
         let local_sim = LocalSimulation::new(remote_root.clone(), "MockRemote".to_string());
         let enc_backend = EncryptedBackend::new(local_sim, "supersecretpassword");
+        assert_eq!(enc_backend.name(), "Encrypted(MockRemote)");
 
         // 1. Upload a file
         let local_file = local_root.join("test.txt");
