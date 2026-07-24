@@ -1219,6 +1219,7 @@ dependencies = [
  "cloud_sync_std",
  "filetime",
  "futures-util",
+ "http 0.2.12",
  "httpdate",
  "ignore",
  "md5",

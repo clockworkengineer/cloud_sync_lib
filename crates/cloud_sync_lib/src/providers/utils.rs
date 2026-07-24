@@ -478,6 +478,8 @@ mod tests {
     use crate::StorageError;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use tempfile::tempdir;
+    use http;
 
     #[tokio::test]
     async fn test_execute_with_retry_success() {
@@ -597,6 +599,118 @@ mod tests {
         assert_eq!(result.unwrap(), "success");
         // It should have slept for at least 1 second due to the Retry-After: 1 header
         assert!(elapsed.as_millis() >= 950, "Should respect Retry-After delay, took {:?}", elapsed);
+    }
+
+    #[tokio::test]
+    async fn test_translate_status_code_error() {
+        assert!(matches!(translate_status_code_error(429, "P", "A", None), StorageError::RateLimit { .. }));
+        assert!(matches!(translate_status_code_error(404, "P", "A", None), StorageError::NotFound(_)));
+        assert!(matches!(translate_status_code_error(401, "P", "A", None), StorageError::AuthenticationExpired(_)));
+        assert!(matches!(translate_status_code_error(409, "P", "A", None), StorageError::Conflict(_)));
+        assert!(matches!(translate_status_code_error(500, "P", "A", None), StorageError::Provider { status: Some(500), .. }));
+    }
+
+    #[test]
+    fn test_copy_buffered() {
+        let src = b"hello world buffer copy";
+        let mut dest = Vec::new();
+        let bytes = copy_buffered(&src[..], &mut dest).unwrap();
+        assert_eq!(bytes, src.len() as u64);
+        assert_eq!(dest, src);
+    }
+
+    #[test]
+    fn test_apply_bearer_auth() {
+        let client = reqwest::Client::new();
+        let builder = client.get("http://localhost");
+        let _builder = apply_bearer_auth(builder, "token123");
+    }
+
+    #[test]
+    fn test_build_http_client() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static("test-agent"));
+        let _client = build_http_client(Some(std::time::Duration::from_secs(5)), Some(headers));
+    }
+
+    #[tokio::test]
+    async fn test_retry_config_global() {
+        let original = get_global_retry_config();
+        let custom = RetryConfig {
+            max_attempts: 12,
+            initial_delay: std::time::Duration::from_millis(10),
+            multiplier: 1.5,
+        };
+        set_global_retry_config(custom);
+        let current = get_global_retry_config();
+        assert_eq!(current.max_attempts, 12);
+        assert_eq!(current.multiplier, 1.5);
+        set_global_retry_config(original);
+    }
+
+    #[tokio::test]
+    async fn test_oauth_token_manager() {
+        use wiremock::matchers::{method, path, body_string_contains};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+
+        let response_body = r#"{"access_token":"new_access_token_123","refresh_token":"new_refresh_token_456","expires_in":3600}"#;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("refresh_token=old_refresh"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(response_body))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let callback_called = Arc::new(AtomicUsize::new(0));
+        let callback_called_clone = callback_called.clone();
+        
+        let on_refresh = Arc::new(move |new_token: &str| {
+            assert_eq!(new_token, "new_refresh_token_456");
+            callback_called_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let manager = OAuthTokenManager::with_callback(
+            client,
+            &format!("{}/token", server.uri()),
+            "client_id",
+            "client_secret",
+            "old_refresh",
+            "MockProvider",
+            Some(on_refresh),
+        );
+
+        let token = manager.get_access_token().await.unwrap();
+        assert_eq!(token, "new_access_token_123");
+        assert_eq!(callback_called.load(Ordering::SeqCst), 1);
+
+        let token_cached = manager.get_access_token().await.unwrap();
+        assert_eq!(token_cached, "new_access_token_123");
+        assert_eq!(callback_called.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_rate_limited_upload_download_bodies() {
+        use bytes::Bytes;
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("upload.txt");
+        std::fs::write(&file_path, "hello rate limited upload body").unwrap();
+
+        let limiter = crate::rate_limit::TokenBucket::new(100);
+        let (_body, size) = get_upload_body(&file_path, Some(limiter.clone())).await.unwrap();
+        assert_eq!(size, 30);
+
+        let res = reqwest::Response::from(
+            http::Response::builder()
+                .status(200)
+                .body(Bytes::from("hello rate limited download body"))
+                .unwrap()
+        );
+        let download_path = temp_dir.path().join("download.txt");
+        download_rate_limited(res, &download_path, Some(limiter)).await.unwrap();
+        assert_eq!(std::fs::read_to_string(download_path).unwrap(), "hello rate limited download body");
     }
 }
 
