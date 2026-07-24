@@ -19,3 +19,5 @@ std = ["serde/std", "hashbrown/default", "dep:reqwest", "dep:serde_json", "dep:t
 
 [dev-dependencies]
 tempfile = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

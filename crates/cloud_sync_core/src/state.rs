@@ -24,13 +24,10 @@ pub struct FileState {
     pub remote_modified: u64,
 
     /// Whether this entry represents a directory rather than a file.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_dir: Option<bool>,
     /// Optional checksum of the file.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<alloc::string::String>,
     /// Optional file permissions (Unix mode bits).
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub permissions: Option<u32>,
 }
 
@@ -89,5 +86,79 @@ impl SyncState {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
         tokio::fs::write(path, data).await?;
         Ok(())
+     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_from_bytes() {
+        let mut state = SyncState::default();
+        let file_state = FileState {
+            size: 1024,
+            #[cfg(feature = "std")]
+            local_modified: std::time::SystemTime::now(),
+            #[cfg(not(feature = "std"))]
+            local_modified: 0,
+            #[cfg(feature = "std")]
+            remote_modified: std::time::SystemTime::now(),
+            #[cfg(not(feature = "std"))]
+            remote_modified: 0,
+            is_dir: Some(false),
+            checksum: Some("abc".to_string()),
+            permissions: Some(0o644),
+        };
+        state.files.insert("file.txt".to_string(), file_state);
+
+        let bytes = state.to_bytes().unwrap();
+        let decoded = SyncState::from_bytes(&bytes).unwrap();
+        assert_eq!(state, decoded);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "std")]
+    async fn test_load_save_state() {
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.bin");
+
+        // 1. Loading non-existent file
+        let state = SyncState::load(&path).await.unwrap();
+        assert_eq!(state, SyncState::default());
+
+        // 2. Save new state
+        let mut new_state = SyncState::default();
+        let file_state = FileState {
+            size: 200,
+            local_modified: std::time::SystemTime::now(),
+            remote_modified: std::time::SystemTime::now(),
+            is_dir: None,
+            checksum: None,
+            permissions: None,
+        };
+        new_state.files.insert("doc.pdf".to_string(), file_state);
+        new_state.save(&path).await.unwrap();
+
+        // 3. Load it back
+        // 3. Load it back
+        let loaded = SyncState::load(&path).await.unwrap();
+        assert_eq!(loaded, new_state);
+
+        // 4. Save identical state (should match fast-path early return)
+        new_state.save(&path).await.unwrap();
+
+        // 5. Load JSON fallback
+        let json_path = dir.path().join("state.json");
+        let json_str = serde_json::to_string(&new_state).unwrap();
+        tokio::fs::write(&json_path, json_str).await.unwrap();
+        let loaded_json = SyncState::load(&json_path).await.unwrap();
+        assert_eq!(loaded_json, new_state);
+
+        // 6. Invalid data loading error
+        let bad_path = dir.path().join("bad.txt");
+        tokio::fs::write(&bad_path, "invalid data content").await.unwrap();
+        assert!(SyncState::load(&bad_path).await.is_err());
     }
 }
