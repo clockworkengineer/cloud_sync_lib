@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use alloc::string::ToString;
+use serde::{Deserialize, Serialize};
 
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
@@ -82,16 +82,19 @@ impl SyncState {
                 }
             }
         }
-        let data = self.to_bytes()
+        let data = self
+            .to_bytes()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
         tokio::fs::write(path, data).await?;
         Ok(())
-     }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
+    use std::println;
 
     #[test]
     fn test_to_from_bytes() {
@@ -146,7 +149,9 @@ mod tests {
         let loaded = SyncState::load(&path).await.unwrap();
         assert_eq!(loaded, new_state);
 
-        // 4. Save identical state (should match fast-path early return)
+        /*
+        4. Save identical state (should match fast-path early return)
+        */
         new_state.save(&path).await.unwrap();
 
         // 5. Load JSON fallback
@@ -158,7 +163,9 @@ mod tests {
 
         // 6. Invalid data loading error
         let bad_path = dir.path().join("bad.txt");
-        tokio::fs::write(&bad_path, "invalid data content").await.unwrap();
+        tokio::fs::write(&bad_path, "invalid data content")
+            .await
+            .unwrap();
         assert!(SyncState::load(&bad_path).await.is_err());
     }
 }

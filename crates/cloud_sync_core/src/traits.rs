@@ -323,4 +323,12 @@ mod tests {
             assert!(io_err.to_string().contains("I/O error occurred"));
         }
     }
+
+    #[tokio::test]
+    #[cfg(feature = "std")]
+    async fn test_reqwest_error_conversion() {
+        let err = reqwest::get("http://[::1]:0").await.unwrap_err();
+        let storage_err = StorageError::from(err);
+        assert!(storage_err.to_string().contains("HTTP client error"));
+    }
 }

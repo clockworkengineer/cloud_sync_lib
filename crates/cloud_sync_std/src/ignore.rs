@@ -73,7 +73,7 @@ mod tests {
 
         let gitignore = SyncIgnore::new(
             watch_path,
-            &["**/[a-".to_string()],
+            &["\\".to_string()],
         );
 
         assert!(!gitignore.is_ignored(watch_path.join("test.txt"), false));
