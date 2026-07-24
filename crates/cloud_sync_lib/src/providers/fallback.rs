@@ -236,4 +236,27 @@ mod tests {
         assert!(fallback.list("").await.is_err());
         assert!(fallback.delete("remote.txt").await.is_err());
     }
+
+    #[tokio::test]
+    async fn test_simulated_fallback_no_inner() {
+        let temp_dir = tempdir().unwrap();
+        let local_sim = LocalSimulation::new(temp_dir.path().to_path_buf(), "MockLocal".to_string());
+
+        let fallback: SimulatedFallback<MockBackend> = SimulatedFallback::new(
+            None,
+            local_sim,
+            "FallbackTestNoInner",
+            crate::providers::SyncMode::TwoWay,
+        );
+
+        let local_file = temp_dir.path().join("test.txt");
+        std::fs::write(&local_file, "hello").unwrap();
+
+        fallback.upload(&local_file, "remote.txt").await.unwrap();
+        fallback.download("remote.txt", &local_file).await.unwrap();
+        fallback.create_folder("folder").await.unwrap();
+        let list = fallback.list("").await.unwrap();
+        assert_eq!(list.len(), 3);
+        fallback.delete("remote.txt").await.unwrap();
+    }
 }

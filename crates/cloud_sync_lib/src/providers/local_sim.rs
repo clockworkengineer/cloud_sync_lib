@@ -229,3 +229,52 @@ impl StorageBackend for LocalSimulation {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_local_sim_errors_and_edge_cases() {
+        let temp_dir = tempdir().unwrap();
+        let sim = LocalSimulation::new(temp_dir.path().to_path_buf(), "MockLocal".to_string())
+            .with_limiters(None, None);
+
+        // 1. Download non-existent file
+        let download_dest = temp_dir.path().join("download_dest.txt");
+        let res = sim.download("missing.txt", &download_dest).await;
+        assert!(matches!(res, Err(StorageError::NotFound(_))));
+
+        // 2. Delete non-existent file
+        let res = sim.delete("missing.txt").await;
+        assert!(matches!(res, Err(StorageError::NotFound(_))));
+
+        // 3. Delete directory
+        let dir_to_delete = temp_dir.path().join("dir_to_del");
+        std::fs::create_dir(&dir_to_delete).unwrap();
+        std::fs::write(dir_to_delete.join("file.txt"), "data").unwrap();
+        sim.delete("dir_to_del").await.unwrap();
+        assert!(!dir_to_delete.exists());
+
+        // 4. Rename non-existent file
+        let res = sim.rename("missing.txt", "new.txt").await;
+        assert!(matches!(res, Err(StorageError::NotFound(_))));
+
+        // 5. Rename with non-existent destination parent dir
+        let src_file = temp_dir.path().join("src.txt");
+        std::fs::write(&src_file, "data").unwrap();
+        sim.upload(&src_file, "src.txt").await.unwrap();
+        sim.rename("src.txt", "new_parent/dest.txt").await.unwrap();
+        assert!(temp_dir.path().join("new_parent/dest.txt").exists());
+
+        // 6. List non-existent directory
+        let res = sim.list("missing_dir").await;
+        assert!(matches!(res, Err(StorageError::NotFound(_))));
+
+        // 7. compute_local_checksum
+        let dest_file = temp_dir.path().join("new_parent/dest.txt");
+        let checksum = sim.compute_local_checksum(&dest_file).await.unwrap();
+        assert!(checksum.is_some());
+    }
+}
+
