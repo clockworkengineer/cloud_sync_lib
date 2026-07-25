@@ -16,6 +16,7 @@ ignore = { workspace = true }
 futures-util = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
 serde_json = { workspace = true }
+tracing-appender = { workspace = true }
 
 [features]
 default = []

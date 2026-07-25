@@ -211,10 +211,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let mut _log_guard = None;
     if let Some(path) = log_file_path {
-        let file = std::fs::File::create(path)?;
+        let path = std::path::PathBuf::from(path);
+        let directory = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let file_name = path.file_name().unwrap_or_else(|| std::ffi::OsStr::new("backup.log")).to_string_lossy().to_string();
+        let file_appender = tracing_appender::rolling::daily(directory, file_name);
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+        _log_guard = Some(guard);
+
         tracing_subscriber::fmt()
-            .with_writer(move || file.try_clone().unwrap())
+            .with_writer(non_blocking)
             .init();
     } else {
         tracing_subscriber::fmt::init();

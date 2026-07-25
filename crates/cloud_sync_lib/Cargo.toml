@@ -32,6 +32,7 @@ ignore = { workspace = true }
 zeroize = { version = "1.7", features = ["derive"] }
 md5 = "0.7.0"
 sha1 = "0.10.6"
+keyring = { workspace = true }
 
 
 

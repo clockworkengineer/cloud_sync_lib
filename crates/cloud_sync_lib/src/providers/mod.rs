@@ -450,7 +450,69 @@ pub struct BackendRegistry;
 
 impl BackendRegistry {
     /// Dynamically instantiates a provider using its config credentials.
-    pub fn build(creds: BackendCredentials) -> Arc<dyn StorageBackend> {
+    pub fn build(mut creds: BackendCredentials) -> Arc<dyn StorageBackend> {
+        match &mut creds {
+            #[cfg(feature = "google_drive")]
+            BackendCredentials::GoogleDrive(ref mut c) => {
+                c.client_secret = utils::get_secure_credential("google_drive", "client_secret", &c.client_secret);
+                c.refresh_token = utils::get_secure_credential("google_drive", "refresh_token", &c.refresh_token);
+            }
+            #[cfg(feature = "dropbox")]
+            BackendCredentials::Dropbox(ref mut c) => {
+                c.client_secret = utils::get_secure_credential("dropbox", "client_secret", &c.client_secret);
+                c.refresh_token = utils::get_secure_credential("dropbox", "refresh_token", &c.refresh_token);
+            }
+            #[cfg(feature = "onedrive")]
+            BackendCredentials::OneDrive(ref mut c) => {
+                c.client_secret = utils::get_secure_credential("onedrive", "client_secret", &c.client_secret);
+                c.refresh_token = utils::get_secure_credential("onedrive", "refresh_token", &c.refresh_token);
+            }
+            #[cfg(feature = "webdav")]
+            BackendCredentials::WebDAV(ref mut c) => {
+                c.password = utils::get_secure_credential("webdav", "password", &c.password);
+            }
+            #[cfg(feature = "s3")]
+            BackendCredentials::S3(ref mut c) => {
+                c.secret_access_key = utils::get_secure_credential("s3", "secret_access_key", &c.secret_access_key);
+            }
+            #[cfg(feature = "sftp")]
+            BackendCredentials::SFTP(ref mut c) => {
+                if let Some(ref mut pwd) = c.password {
+                    *pwd = utils::get_secure_credential("sftp", "password", pwd);
+                }
+            }
+            #[cfg(feature = "nextcloud")]
+            BackendCredentials::Nextcloud(ref mut c) => {
+                c.app_password = utils::get_secure_credential("nextcloud", "app_password", &c.app_password);
+            }
+            #[cfg(feature = "box")]
+            BackendCredentials::Box(ref mut c) => {
+                c.client_secret = utils::get_secure_credential("box", "client_secret", &c.client_secret);
+                c.refresh_token = utils::get_secure_credential("box", "refresh_token", &c.refresh_token);
+            }
+            #[cfg(feature = "mega")]
+            BackendCredentials::Mega(ref mut c) => {
+                c.password = utils::get_secure_credential("mega", "password", &c.password);
+            }
+            #[cfg(feature = "azure_blob")]
+            BackendCredentials::AzureBlob(ref mut c) => {
+                c.account_key = utils::get_secure_credential("azure_blob", "account_key", &c.account_key);
+            }
+            #[cfg(feature = "b2")]
+            BackendCredentials::B2(ref mut c) => {
+                c.application_key = utils::get_secure_credential("b2", "application_key", &c.application_key);
+            }
+            #[cfg(feature = "pcloud")]
+            BackendCredentials::PCloud(ref mut c) => {
+                c.access_token = utils::get_secure_credential("pcloud", "access_token", &c.access_token);
+            }
+            #[cfg(feature = "ipfs")]
+            BackendCredentials::IPFS(ref mut c) => {
+                c.jwt_token = utils::get_secure_credential("ipfs", "jwt_token", &c.jwt_token);
+            }
+            _ => {}
+        }
+
         match creds {
             #[cfg(feature = "google_drive")]
             BackendCredentials::GoogleDrive(c) => Arc::new(GoogleDriveProvider::new(c)),

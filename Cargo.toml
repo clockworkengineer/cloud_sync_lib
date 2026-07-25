@@ -21,6 +21,8 @@ tracing = "0.1"
 ignore = "0.4"
 futures-util = "0.3"
 toml = "0.8"
+tracing-appender = "0.2"
+keyring = "2.1"
 
 
 [profile.release]

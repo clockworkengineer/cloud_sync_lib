@@ -240,6 +240,18 @@ pub fn apply_bearer_auth(req: reqwest::RequestBuilder, token: &str) -> reqwest::
     req.bearer_auth(token)
 }
 
+/// Helper to securely retrieve a credential from the OS keyring, falling back to the configured TOML value if not set or placeholder.
+pub fn get_secure_credential(service: &str, key: &str, fallback: &str) -> String {
+    if fallback.is_empty() || fallback.starts_with("PLACEHOLDER_") {
+        if let Ok(entry) = keyring::Entry::new(service, key) {
+            if let Ok(secret) = entry.get_password() {
+                return secret;
+            }
+        }
+    }
+    fallback.to_string()
+}
+
 pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path, strip_destination_prefix, url_encode, url_encode_path, get_parent_and_filename};
 
 /// Generates standard `builder()`, `new()`, `timeout()`, and `custom_headers()` methods for a provider and its builder.
