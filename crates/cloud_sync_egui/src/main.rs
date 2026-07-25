@@ -78,9 +78,10 @@ impl CloudSyncApp {
     }
 
     async fn send_daemon_command(cmd: &str) -> Result<String, String> {
-        let mut stream = TcpStream::connect("127.0.0.1:8081")
+        let addr = std::env::var("CLOUDSYNC_DAEMON_ADDR").unwrap_or_else(|_| "127.0.0.1:8081".to_string());
+        let mut stream = TcpStream::connect(&addr)
             .await
-            .map_err(|e| format!("Connection error: {}", e))?;
+            .map_err(|e| format!("Connection error on {}: {}", addr, e))?;
         stream.write_all(format!("{}\n", cmd).as_bytes())
             .await
             .map_err(|e| format!("Write error: {}", e))?;
@@ -111,23 +112,46 @@ impl CloudSyncApp {
     fn start_daemon_process(&self, config_file: &str) {
         let config_file = config_file.to_string();
         self.runtime.spawn(async move {
-            #[cfg(debug_assertions)]
-            let res = std::process::Command::new("cargo")
-                .args(["run", "--bin", "cloud_sync_daemon", "--", &config_file])
-                .spawn();
-
-            #[cfg(not(debug_assertions))]
-            let res = {
-                let mut daemon_path = std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(|parent| parent.join("cloud_sync_daemon")));
-                if daemon_path.as_ref().map(|p| !p.exists()).unwrap_or(true) {
-                    daemon_path = Some(std::path::PathBuf::from("cloud_sync_daemon"));
-                }
-                std::process::Command::new(daemon_path.unwrap())
-                    .arg(&config_file)
-                    .spawn()
+            let daemon_exe_name = if cfg!(target_os = "windows") {
+                "cloud_sync_daemon.exe"
+            } else {
+                "cloud_sync_daemon"
             };
+
+            let mut daemon_bin_path = None;
+            if let Ok(current_exe) = std::env::current_exe() {
+                if let Some(parent) = current_exe.parent() {
+                    let path = parent.join(daemon_exe_name);
+                    if path.exists() {
+                        daemon_bin_path = Some(path);
+                    }
+                }
+            }
+            if daemon_bin_path.is_none() {
+                let path = std::path::Path::new(daemon_exe_name);
+                if path.exists() {
+                    daemon_bin_path = Some(path.to_path_buf());
+                }
+            }
+
+            let mut cmd = if let Some(bin_path) = daemon_bin_path {
+                let mut c = std::process::Command::new(bin_path);
+                c.arg(&config_file);
+                c
+            } else {
+                let mut c = std::process::Command::new("cargo");
+                c.args(["run", "--bin", "cloud_sync_daemon", "--", &config_file]);
+                c
+            };
+
+            if let Ok(control_addr) = std::env::var("CLOUDSYNC_DAEMON_ADDR") {
+                cmd.args(["--control-addr", &control_addr]);
+            }
+            if let Ok(ui_addr) = std::env::var("CLOUDSYNC_UI_ADDR") {
+                cmd.args(["--ui-addr", &ui_addr]);
+            }
+
+            let res = cmd.spawn();
 
             match res {
                 Ok(_) => {
