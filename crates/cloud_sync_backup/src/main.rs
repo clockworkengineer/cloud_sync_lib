@@ -220,14 +220,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing_subscriber::fmt::init();
     }
 
-    let config_file = if args.len() > 1 {
-        &args[1]
+    let resolved_config = if args.len() > 1 {
+        args[1].clone()
     } else {
-        "backup_config.toml"
+        let local_path = "backup_config.toml";
+        if std::path::Path::new(local_path).exists() {
+            local_path.to_string()
+        } else {
+            config::get_default_backup_config_path().to_string_lossy().to_string()
+        }
     };
 
-    println!("[Backup] Loading config: {}...", config_file);
-    let config = load_config(config_file).await?;
+    println!("[Backup] Loading config: {}...", resolved_config);
+    let config = load_config(&resolved_config).await?;
 
     let source = build_backend(
         &config.backup.source_provider,

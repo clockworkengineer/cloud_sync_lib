@@ -31,9 +31,50 @@ impl std::ops::Deref for BackupConfig {
     }
 }
 
+pub fn get_default_backup_config_path() -> std::path::PathBuf {
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let p = std::path::PathBuf::from(appdata).join("CloudSync");
+        let _ = std::fs::create_dir_all(&p);
+        p.join("backup_config.toml")
+    } else if let Ok(home) = std::env::var("HOME") {
+        let p = std::path::PathBuf::from(home).join(".config").join("cloud_sync");
+        let _ = std::fs::create_dir_all(&p);
+        p.join("backup_config.toml")
+    } else {
+        std::path::PathBuf::from("backup_config.toml")
+    }
+}
+
+fn expand_path(p: std::path::PathBuf) -> std::path::PathBuf {
+    let p_str = p.to_string_lossy();
+    if p_str.starts_with("~/") || p_str == "~" {
+        let home_dir = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir());
+        if p_str == "~" {
+            home_dir
+        } else {
+            home_dir.join(&p_str[2..])
+        }
+    } else {
+        p
+    }
+}
+
 pub async fn load_config(path: &str) -> Result<BackupConfig, Box<dyn std::error::Error>> {
     let config_path = Path::new(path);
     let content = tokio::fs::read_to_string(config_path).await?;
-    let config: BackupConfig = toml::from_str(&content)?;
+    let mut config: BackupConfig = toml::from_str(&content)?;
+
+    // Expand tildes in roots
+    config.roots.google_drive_root = config.roots.google_drive_root.map(expand_path);
+    config.roots.dropbox_root = config.roots.dropbox_root.map(expand_path);
+    config.roots.onedrive_root = config.roots.onedrive_root.map(expand_path);
+    config.roots.webdav_root = config.roots.webdav_root.map(expand_path);
+    config.roots.s3_root = config.roots.s3_root.map(expand_path);
+    config.roots.sftp_root = config.roots.sftp_root.map(expand_path);
+    config.roots.nextcloud_root = config.roots.nextcloud_root.map(expand_path);
+
     Ok(config)
 }
