@@ -22,6 +22,16 @@ pub const DAEMON_SPAWN_DELAY_MS: u64 = 1500;
 pub const DEFAULT_CONFIG_FILE: &str = "config.toml";
 pub const PRIVATE_CONFIG_FILE: &str = "private_config.toml";
 
+/// Returns the configured UI bind address, checking `CLOUDSYNC_UI_ADDR` env var first.
+pub fn get_ui_bind_addr() -> String {
+    std::env::var("CLOUDSYNC_UI_ADDR").unwrap_or_else(|_| UI_BIND_ADDR.to_string())
+}
+
+/// Returns the configured Daemon control socket address, checking `CLOUDSYNC_DAEMON_ADDR` env var first.
+pub fn get_daemon_control_addr() -> String {
+    std::env::var("CLOUDSYNC_DAEMON_ADDR").unwrap_or_else(|_| DAEMON_CONTROL_ADDR.to_string())
+}
+
 /// Starts the Axum HTTP UI server on the configured address.
 pub async fn start_ui_server() -> Result<(), std::io::Error> {
     let router = Router::new()
@@ -37,8 +47,9 @@ pub async fn start_ui_server() -> Result<(), std::io::Error> {
         .route("/api/clear", post(api_clear))
         .layer(CorsLayer::permissive());
 
-    let listener = tokio::net::TcpListener::bind(UI_BIND_ADDR).await?;
-    println!("Decoupled UI server is running on http://{}", UI_BIND_ADDR);
+    let bind_addr = get_ui_bind_addr();
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    println!("Decoupled UI server is running on http://{}", bind_addr);
 
     axum::serve(listener, router).await?;
     Ok(())

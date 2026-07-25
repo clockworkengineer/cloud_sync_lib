@@ -29,7 +29,7 @@ pub async fn serve_index() -> Html<&'static str> {
 /// # Returns
 /// The raw response string returned by the daemon.
 pub async fn send_daemon_cmd(cmd: &str) -> Result<String, std::io::Error> {
-    let mut stream = TcpStream::connect(DAEMON_CONTROL_ADDR).await?;
+    let mut stream = TcpStream::connect(crate::get_daemon_control_addr()).await?;
     stream.write_all(format!("{}\n", cmd).as_bytes()).await?;
     stream.flush().await?;
     
@@ -70,15 +70,48 @@ pub async fn api_start() -> impl IntoResponse {
 
     println!("Starting cloud_sync_daemon with config: {}", config_file);
 
-    // Spawn cargo run --bin cloud_sync_daemon private_config.toml as a detached background command
-    let mut cmd = tokio::process::Command::new("cargo");
-    cmd.arg("run")
-       .arg("--bin")
-       .arg("cloud_sync_daemon")
-       .arg("--")
-       .arg(config_file)
-       .arg("--ui-addr")
-       .arg(UI_BIND_ADDR)
+    let daemon_exe_name = if cfg!(target_os = "windows") {
+        "cloud_sync_daemon.exe"
+    } else {
+        "cloud_sync_daemon"
+    };
+
+    let mut daemon_bin_path = None;
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(parent) = current_exe.parent() {
+            let path = parent.join(daemon_exe_name);
+            if path.exists() {
+                daemon_bin_path = Some(path);
+            }
+        }
+    }
+    if daemon_bin_path.is_none() {
+        let path = std::path::Path::new(daemon_exe_name);
+        if path.exists() {
+            daemon_bin_path = Some(path.to_path_buf());
+        }
+    }
+
+    let mut cmd = if let Some(bin_path) = daemon_bin_path {
+        println!("Spawning daemon binary: {:?}", bin_path);
+        let mut c = tokio::process::Command::new(bin_path);
+        c.arg(config_file);
+        c
+    } else {
+        println!("Spawning daemon via cargo run");
+        let mut c = tokio::process::Command::new("cargo");
+        c.arg("run")
+         .arg("--bin")
+         .arg("cloud_sync_daemon")
+         .arg("--")
+         .arg(config_file);
+        c
+    };
+
+    cmd.arg("--ui-addr")
+       .arg(crate::get_ui_bind_addr())
+       .arg("--control-addr")
+       .arg(crate::get_daemon_control_addr())
        .stdout(Stdio::null())
        .stderr(Stdio::null())
        .stdin(Stdio::null());
@@ -210,7 +243,7 @@ where
 /// HTTP Endpoint: Exposes the Server-Sent Events stream from the daemon.
 pub async fn api_events() -> impl IntoResponse {
     let stream = constrain_stream(async_stream::try_stream! {
-        let mut tcp_stream = TcpStream::connect(DAEMON_CONTROL_ADDR).await?;
+        let mut tcp_stream = TcpStream::connect(crate::get_daemon_control_addr()).await?;
         tcp_stream.write_all(b"subscribe\n").await?;
         tcp_stream.flush().await?;
 

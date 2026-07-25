@@ -302,6 +302,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut config_file = DEFAULT_CONFIG_FILE.to_string();
     let mut ui_addr = None;
+    let mut control_addr = DAEMON_BIND_ADDR.to_string();
     let mut clear_remote = None;
     let mut single_shot = false;
     let mut pmu_hook = None;
@@ -313,6 +314,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     while i < args.len() {
         if args[i] == "--ui-addr" && i + 1 < args.len() {
             ui_addr = Some(args[i + 1].clone());
+            i += 2;
+        } else if args[i] == "--control-addr" && i + 1 < args.len() {
+            control_addr = args[i + 1].clone();
             i += 2;
         } else if args[i] == "--clear-remote" && i + 1 < args.len() {
             clear_remote = Some(args[i + 1].clone());
@@ -672,15 +676,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn TCP control command listener
     let state_clone = state.clone();
     let shutdown_tx_clone = shutdown_tx.clone();
+    let control_addr_clone = control_addr.clone();
     tokio::spawn(async move {
-        let listener = match tokio::net::TcpListener::bind(DAEMON_BIND_ADDR).await {
+        let listener = match tokio::net::TcpListener::bind(&control_addr_clone).await {
             Ok(l) => l,
             Err(e) => {
-                error!("Failed to bind TCP control socket on {}: {}", DAEMON_BIND_ADDR, e);
+                error!("Failed to bind TCP control socket on {}: {}", control_addr_clone, e);
                 return;
             }
         };
-        info!("Control command TCP socket listening on {}", DAEMON_BIND_ADDR);
+        info!("Control command TCP socket listening on {}", control_addr_clone);
 
         loop {
             tokio::select! {
