@@ -2,9 +2,12 @@
 name = "cloud_sync_egui"
 version = "0.1.0"
 edition = "2021"
+description = "Egui native client interface wrapper for Cloud Sync"
+license = "MIT"
+repository = "https://github.com/clockworkengineer/cloud_sync_lib"
 
 [dependencies]
 eframe = "0.27"
 tokio = { workspace = true, features = ["full"] }
 serde_json = { workspace = true }
-cloud_sync_ui = { path = "../cloud_sync_ui" }
+cloud_sync_ui = { path = "../cloud_sync_ui", version = "0.1.0" }

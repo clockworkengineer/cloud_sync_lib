@@ -2,11 +2,14 @@
 name = "cloud_sync_lib"
 version = "0.1.0"
 edition = "2021"
+description = "Cloud storage provider synchronization library"
+license = "MIT"
+repository = "https://github.com/clockworkengineer/cloud_sync_lib"
 
 [dependencies]
 async-trait = { workspace = true }
-cloud_sync_core = { path = "../cloud_sync_core", default-features = false, features = ["std"] }
-cloud_sync_std = { path = "../cloud_sync_std" }
+cloud_sync_core = { path = "../cloud_sync_core", version = "0.1.0", default-features = false, features = ["std"] }
+cloud_sync_std = { path = "../cloud_sync_std", version = "0.1.0" }
 tokio = { workspace = true, features = ["fs", "rt", "io-util"] }
 thiserror = "1.0"
 tracing = { workspace = true }
