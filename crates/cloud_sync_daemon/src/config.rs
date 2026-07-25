@@ -78,22 +78,30 @@ pub struct ErrorRecoveryConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
+        let home_dir = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir());
+
+        let watch_dir = home_dir.join("CloudSync");
+        let sim_dir = home_dir.join(".config").join("cloud_sync").join("simulation");
+
         Self {
-            watch_directory: PathBuf::from(DEFAULT_WATCH_DIR),
-            google_drive_root: PathBuf::from(DEFAULT_GOOGLE_DRIVE_ROOT),
-            dropbox_root: PathBuf::from(DEFAULT_DROPBOX_ROOT),
-            onedrive_root: PathBuf::from(DEFAULT_ONEDRIVE_ROOT),
-            webdav_root: PathBuf::from(DEFAULT_WEBDAV_ROOT),
-            s3_root: PathBuf::from(DEFAULT_S3_ROOT),
-            sftp_root: PathBuf::from(DEFAULT_SFTP_ROOT),
-            nextcloud_root: PathBuf::from(DEFAULT_NEXTCLOUD_ROOT),
-            box_root: Some(PathBuf::from(DEFAULT_BOX_ROOT)),
-            mega_root: Some(PathBuf::from(DEFAULT_MEGA_ROOT)),
-            azure_blob_root: Some(PathBuf::from(DEFAULT_AZURE_BLOB_ROOT)),
-            gcs_root: Some(PathBuf::from(DEFAULT_GCS_ROOT)),
-            b2_root: Some(PathBuf::from(DEFAULT_B2_ROOT)),
-            pcloud_root: Some(PathBuf::from(DEFAULT_PCLOUD_ROOT)),
-            ipfs_root: Some(PathBuf::from(DEFAULT_IPFS_ROOT)),
+            watch_directory: watch_dir,
+            google_drive_root: sim_dir.join("google_drive"),
+            dropbox_root: sim_dir.join("dropbox"),
+            onedrive_root: sim_dir.join("onedrive"),
+            webdav_root: sim_dir.join("webdav"),
+            s3_root: sim_dir.join("s3"),
+            sftp_root: sim_dir.join("sftp"),
+            nextcloud_root: sim_dir.join("nextcloud"),
+            box_root: Some(sim_dir.join("box")),
+            mega_root: Some(sim_dir.join("mega")),
+            azure_blob_root: Some(sim_dir.join("azure_blob")),
+            gcs_root: Some(sim_dir.join("gcs")),
+            b2_root: Some(sim_dir.join("b2")),
+            pcloud_root: Some(sim_dir.join("pcloud")),
+            ipfs_root: Some(sim_dir.join("ipfs")),
             credentials: Default::default(),
             exclude: None,
             max_upload_rate: None,
@@ -109,6 +117,38 @@ impl Default for AppConfig {
     }
 }
 
+/// Resolves the default configuration file location using standard user profile directories.
+pub fn get_default_config_path() -> std::path::PathBuf {
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let p = std::path::PathBuf::from(appdata).join("CloudSync");
+        let _ = std::fs::create_dir_all(&p);
+        p.join("config.toml")
+    } else if let Ok(home) = std::env::var("HOME") {
+        let p = std::path::PathBuf::from(home).join(".config").join("cloud_sync");
+        let _ = std::fs::create_dir_all(&p);
+        p.join("config.toml")
+    } else {
+        std::path::PathBuf::from(DEFAULT_CONFIG_FILE)
+    }
+}
+
+fn expand_path(p: PathBuf) -> PathBuf {
+    let p_str = p.to_string_lossy();
+    if p_str.starts_with("~/") || p_str == "~" {
+        let home_dir = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir());
+        if p_str == "~" {
+            home_dir
+        } else {
+            home_dir.join(&p_str[2..])
+        }
+    } else {
+        p
+    }
+}
+
 /// Load configuration from a TOML file. If the file doesn't exist, a default config is created and saved.
 ///
 /// # Arguments
@@ -118,17 +158,36 @@ impl Default for AppConfig {
 /// The loaded config or an error if file I/O or parsing fails.
 pub async fn load_or_create_config(path: &str) -> Result<AppConfig, Box<dyn std::error::Error>> {
     let config_path = Path::new(path);
-    if config_path.exists() {
+    let mut config = if config_path.exists() {
         let content = tokio::fs::read_to_string(config_path).await?;
-        let config: AppConfig = toml::from_str(&content)?;
-        Ok(config)
+        let parsed: AppConfig = toml::from_str(&content)?;
+        parsed
     } else {
-        let config = AppConfig::default();
-        let content = toml::to_string_pretty(&config)?;
+        let default_config = AppConfig::default();
+        let content = toml::to_string_pretty(&default_config)?;
         tokio::fs::write(config_path, content).await?;
         info!("Created default configuration file at {:?}", config_path);
-        Ok(config)
-    }
+        default_config
+    };
+
+    // Post-process to expand home directories
+    config.watch_directory = expand_path(config.watch_directory);
+    config.google_drive_root = expand_path(config.google_drive_root);
+    config.dropbox_root = expand_path(config.dropbox_root);
+    config.onedrive_root = expand_path(config.onedrive_root);
+    config.webdav_root = expand_path(config.webdav_root);
+    config.s3_root = expand_path(config.s3_root);
+    config.sftp_root = expand_path(config.sftp_root);
+    config.nextcloud_root = expand_path(config.nextcloud_root);
+    config.box_root = config.box_root.map(expand_path);
+    config.mega_root = config.mega_root.map(expand_path);
+    config.azure_blob_root = config.azure_blob_root.map(expand_path);
+    config.gcs_root = config.gcs_root.map(expand_path);
+    config.b2_root = config.b2_root.map(expand_path);
+    config.pcloud_root = config.pcloud_root.map(expand_path);
+    config.ipfs_root = config.ipfs_root.map(expand_path);
+
+    Ok(config)
 }
 
 /// Helper function to check if a provider is enabled based on its credentials config.

@@ -12,7 +12,7 @@ use std::process::Stdio;
 
 use crate::parser::parse_status;
 use crate::{
-    UI_BIND_ADDR, DAEMON_CONTROL_ADDR, DAEMON_SPAWN_DELAY_MS,
+    DAEMON_SPAWN_DELAY_MS,
     DEFAULT_CONFIG_FILE, PRIVATE_CONFIG_FILE
 };
 

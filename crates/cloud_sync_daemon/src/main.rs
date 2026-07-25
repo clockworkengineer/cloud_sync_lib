@@ -300,7 +300,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .init();
     }
 
-    let mut config_file = DEFAULT_CONFIG_FILE.to_string();
+    let mut config_file = if std::path::Path::new("private_config.toml").exists() {
+        "private_config.toml".to_string()
+    } else if std::path::Path::new("config.toml").exists() {
+        "config.toml".to_string()
+    } else {
+        config::get_default_config_path().to_string_lossy().to_string()
+    };
     let mut ui_addr = None;
     let mut control_addr = DAEMON_BIND_ADDR.to_string();
     let mut clear_remote = None;
@@ -360,6 +366,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Load configuration
+    std::env::set_var("CLOUDSYNC_CONFIG_PATH", &config_file);
     let config = load_or_create_config(&config_file).await?;
 
     // Apply error recovery configuration globally
