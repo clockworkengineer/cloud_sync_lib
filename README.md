@@ -99,3 +99,14 @@ Run unit, mock HTTP (using `wiremock`), and real integration tests:
 cargo test --all
 ```
 *Note: Real connection tests automatically detect whether valid credentials are configured and skip gracefully if they are missing or expired.*
+
+---
+
+## Support
+
+If you find this project useful, consider supporting its development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
+
+[Buy Me a Coffee](https://buymeacoffee.com/roberttizz1)
+

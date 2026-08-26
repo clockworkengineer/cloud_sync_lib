@@ -91,3 +91,14 @@ All providers support dynamic endpoint redirection for automated testing using `
 
 Check [`lib.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/lib.rs) for examples of automated mock HTTP flow tests.
 Real integration tests automatically skip gracefully when configuration is missing or tokens are expired.
+
+---
+
+## Support
+
+If you find this project useful, consider supporting its development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
+
+[Buy Me a Coffee](https://buymeacoffee.com/roberttizz1)
+

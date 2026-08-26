@@ -106,3 +106,14 @@ You can easily enable or disable individual backends inside your credentials blo
 Under the hood, the daemon uses unified helper functions (like `is_enabled` and `is_mega_enabled`) to deduplicate config verification. This prevents redundant pattern matching and config checking before initializing each provider instance.
 
 If a credentials section is omitted entirely, the daemon defaults to **Simulation Mode** for that provider, synchronizing to a folder inside the local directory.
+
+---
+
+## Support
+
+If you find this project useful, consider supporting its development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
+
+[Buy Me a Coffee](https://buymeacoffee.com/roberttizz1)
+

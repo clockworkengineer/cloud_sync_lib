@@ -53,3 +53,14 @@ cargo run -p cloud_sync_backup -- backup_config.toml
 ```
 
 If no configuration file argument is passed, it defaults to looking for `backup_config.toml` in the current directory.
+
+---
+
+## Support
+
+If you find this project useful, consider supporting its development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
+
+[Buy Me a Coffee](https://buymeacoffee.com/roberttizz1)
+
