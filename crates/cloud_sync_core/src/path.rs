@@ -3,6 +3,84 @@ use alloc::string::String;
 use alloc::string::ToString;
 use alloc::format;
 
+/// Strongly typed normalized remote relative path enforcing invariants:
+/// - Unix forward slashes `/`
+/// - No leading slashes
+/// - Traversal segments (`..`, `./`) stripped or rejected
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+pub struct NormalizedPath(String);
+
+impl NormalizedPath {
+    pub fn new(path: &str) -> Result<Self, &'static str> {
+        let normalized = path.replace('\\', "/");
+        let trimmed = normalized.trim_start_matches('/');
+        if trimmed.contains("..") || trimmed.contains("./") {
+            return Err("Unsafe path traversal sequence detected");
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+
+    pub fn new_unchecked(path: &str) -> Self {
+        let normalized = path.replace('\\', "/");
+        let trimmed = normalized.trim_start_matches('/');
+        Self(trimmed.to_string())
+    }
+
+    pub fn empty() -> Self {
+        Self(String::new())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn join(&self, child: &str) -> Self {
+        if self.0.is_empty() {
+            Self::new_unchecked(child)
+        } else {
+            let child_clean = child.replace('\\', "/");
+            let child_trimmed = child_clean.trim_matches('/');
+            Self(format!("{}/{}", self.0, child_trimmed))
+        }
+    }
+}
+
+impl core::ops::Deref for NormalizedPath {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for NormalizedPath {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl core::fmt::Display for NormalizedPath {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for NormalizedPath {
+    fn from(s: &str) -> Self {
+        Self::new_unchecked(s)
+    }
+}
+
+impl From<String> for NormalizedPath {
+    fn from(s: String) -> Self {
+        Self::new_unchecked(&s)
+    }
+}
+
 /// Guarantee standard Unix slashes `/` on remote backend path operations.
 pub fn normalize_remote_path(path: &str) -> Cow<'_, str> {
     if path.contains('\\') {
@@ -11,6 +89,7 @@ pub fn normalize_remote_path(path: &str) -> Cow<'_, str> {
         Cow::Borrowed(path)
     }
 }
+
 
 /// Formats a relative remote path, incorporating an optional destination folder prefix.
 pub fn format_relative_path<'a>(remote_path: &'a str, destination_folder: Option<&str>) -> Cow<'a, str> {

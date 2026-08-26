@@ -8,7 +8,9 @@ pub mod config;
 pub mod control;
 pub mod watcher;
 pub mod sync_engine;
+pub mod engine;
 pub mod utils;
+
 
 use cloud_sync_lib::{StorageBackend, BackendRegistry, BackendCredentials};
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};

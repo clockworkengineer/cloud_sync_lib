@@ -6,7 +6,11 @@
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+pub mod factory;
+
 pub use cloud_sync_core::SyncMode;
+pub use factory::{BackendFactory, DynamicBackendRegistry};
+
 
 /// Common configuration settings shared by all storage providers.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Zeroize, ZeroizeOnDrop)]

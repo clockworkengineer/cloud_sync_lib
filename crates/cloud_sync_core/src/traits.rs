@@ -90,9 +90,40 @@ pub struct StorageItem {
     pub permissions: Option<u32>,
 }
 
+#[cfg(feature = "std")]
+#[async_trait::async_trait]
+pub trait StorageReader: Send + Sync {
+    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError>;
+}
+
+#[cfg(feature = "std")]
+#[async_trait::async_trait]
+pub trait StorageWriter: Send + Sync {
+    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError>;
+    async fn delete(&self, remote_path: &str) -> Result<(), StorageError>;
+}
+
+#[async_trait::async_trait]
+pub trait DirectoryLister: Send + Sync {
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError>;
+}
+
+#[async_trait::async_trait]
+pub trait FolderOps: Send + Sync {
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError>;
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError>;
+}
+
+#[cfg(feature = "std")]
+#[async_trait::async_trait]
+pub trait ChecksumOps: Send + Sync {
+    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError>;
+}
+
 #[async_trait::async_trait]
 pub trait StorageBackend: Send + Sync {
     fn name(&self) -> &str;
+
 
     #[cfg(feature = "std")]
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError>;
