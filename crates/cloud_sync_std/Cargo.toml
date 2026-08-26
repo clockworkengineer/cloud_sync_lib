@@ -1,13 +1,14 @@
 [package]
 name = "cloud_sync_std"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Standard utilities and helpers for Cloud Sync"
 license = "MIT"
 repository = "https://github.com/clockworkengineer/cloud_sync_lib"
 
 [dependencies]
-cloud_sync_core = { path = "../cloud_sync_core", version = "0.1.0" }
+cloud_sync_core = { path = "../cloud_sync_core", version = "0.1.1" }
+
 ignore = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util"] }
 ring = { version = "0.17", features = ["alloc"] }
