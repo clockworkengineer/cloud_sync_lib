@@ -214,3 +214,64 @@ pub async fn handle_control_command(
         _ => "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, stop\n".to_string(),
     }
 }
+
+/// Encapsulates the TCP server socket loop for processing control protocol messages (SRP).
+pub struct DaemonControlServer {
+    bind_addr: String,
+}
+
+impl DaemonControlServer {
+    pub fn new(bind_addr: impl Into<String>) -> Self {
+        Self {
+            bind_addr: bind_addr.into(),
+        }
+    }
+
+    pub fn bind_addr(&self) -> &str {
+        &self.bind_addr
+    }
+
+    pub async fn run(
+        &self,
+        state: Arc<Mutex<DaemonState>>,
+        shutdown_tx: mpsc::Sender<()>,
+        mut shutdown_rx: mpsc::Receiver<()>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use tokio::net::TcpListener;
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let listener = TcpListener::bind(&self.bind_addr).await?;
+        info!("Daemon TCP control server listening on {}", self.bind_addr);
+
+        loop {
+            tokio::select! {
+                res = listener.accept() => {
+                    match res {
+                        Ok((socket, _addr)) => {
+                            let state_clone = state.clone();
+                            let shutdown_tx_clone = shutdown_tx.clone();
+                            tokio::spawn(async move {
+                                let (reader, mut writer) = socket.into_split();
+                                let mut buf_reader = BufReader::new(reader);
+                                let mut line = String::new();
+                                if buf_reader.read_line(&mut line).await.is_ok() {
+                                    let response = handle_control_command(line.trim(), &state_clone, &shutdown_tx_clone).await;
+                                    let _ = writer.write_all(response.as_bytes()).await;
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            error!("Error accepting TCP control connection: {}", e);
+                        }
+                    }
+                }
+                _ = shutdown_rx.recv() => {
+                    info!("TCP control server shutting down.");
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
