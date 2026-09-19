@@ -1,13 +1,15 @@
 use alloc::borrow::Cow;
+use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
-use alloc::format;
 
 /// Strongly typed normalized remote relative path enforcing invariants:
 /// - Unix forward slashes `/`
 /// - No leading slashes
 /// - Traversal segments (`..`, `./`) stripped or rejected
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct NormalizedPath(String);
 
 impl NormalizedPath {
@@ -90,9 +92,11 @@ pub fn normalize_remote_path(path: &str) -> Cow<'_, str> {
     }
 }
 
-
 /// Formats a relative remote path, incorporating an optional destination folder prefix.
-pub fn format_relative_path<'a>(remote_path: &'a str, destination_folder: Option<&str>) -> Cow<'a, str> {
+pub fn format_relative_path<'a>(
+    remote_path: &'a str,
+    destination_folder: Option<&str>,
+) -> Cow<'a, str> {
     let normalized = normalize_remote_path(remote_path);
     let has_backslash = matches!(normalized, Cow::Owned(_));
     let clean_path = normalized.trim_start_matches('/');
@@ -117,7 +121,10 @@ pub fn format_relative_path<'a>(remote_path: &'a str, destination_folder: Option
 }
 
 /// Formats an absolute remote path starting with a slash, incorporating an optional destination folder prefix.
-pub fn format_absolute_path<'a>(remote_path: &'a str, destination_folder: Option<&str>) -> Cow<'a, str> {
+pub fn format_absolute_path<'a>(
+    remote_path: &'a str,
+    destination_folder: Option<&str>,
+) -> Cow<'a, str> {
     let normalized = normalize_remote_path(remote_path);
     let clean_path = normalized.trim_start_matches('/');
     let mut full_path = String::new();
@@ -140,7 +147,10 @@ pub fn format_absolute_path<'a>(remote_path: &'a str, destination_folder: Option
 }
 
 #[cfg(feature = "std")]
-pub fn strip_destination_prefix(item_path: &std::path::Path, destination_folder: Option<&str>) -> std::path::PathBuf {
+pub fn strip_destination_prefix(
+    item_path: &std::path::Path,
+    destination_folder: Option<&str>,
+) -> std::path::PathBuf {
     if let Some(dest_folder) = destination_folder {
         let clean_dest = dest_folder.trim_matches('/');
         if !clean_dest.is_empty() {
@@ -157,8 +167,16 @@ pub fn strip_destination_prefix(item_path: &std::path::Path, destination_folder:
 #[cfg(feature = "std")]
 pub fn get_parent_and_filename(path_str: &str) -> (String, String) {
     let path = std::path::Path::new(path_str);
-    let parent = path.parent().and_then(|p| p.to_str()).unwrap_or("").to_string();
-    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    let parent = path
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .to_string();
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
     (parent, file_name)
 }
 
@@ -226,7 +244,10 @@ mod tests {
         assert_eq!(format_relative_path("foo/bar", None), "foo/bar");
         assert_eq!(format_relative_path("/foo/bar", None), "foo/bar");
         assert_eq!(format_relative_path("foo\\bar", None), "foo/bar");
-        assert_eq!(format_relative_path("foo/bar", Some("dest")), "dest/foo/bar");
+        assert_eq!(
+            format_relative_path("foo/bar", Some("dest")),
+            "dest/foo/bar"
+        );
         assert_eq!(format_relative_path("", Some("dest")), "dest");
     }
 
@@ -234,7 +255,10 @@ mod tests {
     fn test_format_absolute_path() {
         assert_eq!(format_absolute_path("foo/bar", None), "/foo/bar");
         assert_eq!(format_absolute_path("/foo/bar", None), "/foo/bar");
-        assert_eq!(format_absolute_path("foo/bar", Some("dest")), "/dest/foo/bar");
+        assert_eq!(
+            format_absolute_path("foo/bar", Some("dest")),
+            "/dest/foo/bar"
+        );
         assert_eq!(format_absolute_path("", Some("dest")), "/dest");
     }
 
@@ -243,7 +267,10 @@ mod tests {
     fn test_strip_destination_prefix() {
         use std::path::Path;
         let p = Path::new("dest/foo/bar.txt");
-        assert_eq!(strip_destination_prefix(p, Some("dest")), Path::new("foo/bar.txt"));
+        assert_eq!(
+            strip_destination_prefix(p, Some("dest")),
+            Path::new("foo/bar.txt")
+        );
         assert_eq!(strip_destination_prefix(p, None), p);
     }
 

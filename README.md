@@ -7,13 +7,16 @@ This workspace is a Rust-based tool designed to monitor a local watched folder a
 ## Workspace Structure
 
 The workspace is split into several modular components:
-1. **[`cloud_sync_lib`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/README.md)**: The core library providing backend integrations, path prefix formatting, simulated/mocked behaviors, client-side encryption, rate limiting, and the generic `StorageBackend` trait.
-2. **[`cloud_sync_daemon`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_daemon/README.md)**: The CLI daemon wrapper that watches a folder for filesystem events and coordinates synchronization across all enabled backends.
-3. **[`cloud_sync_ui`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_ui/README.md)**: A lightweight Axum-based HTTP server exposing API endpoints to monitor/control the daemon, serving an embedded web dashboard.
-4. **[`cloud_sync_tauri`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_tauri/README.md)**: A Tauri-based desktop GUI application that bundles the web UI and manages the daemon as a sidecar.
-5. **[`cloud_sync_backup`](file:///c:/Projects/cloud_sync_lib/cloud_sync_backup/README.md)**: A background daemon that periodically performs unidirectional synchronization (one-way backups) from a source storage provider to a destination storage provider.
+1. **[`cloud_sync_lib`](crates/cloud_sync_lib/README.md)**: The core library providing backend integrations, path prefix formatting, simulated/mocked behaviors, client-side encryption, rate limiting, and the generic `StorageBackend` trait.
+2. **[`cloud_sync_daemon`](crates/cloud_sync_daemon/README.md)**: The CLI daemon wrapper that watches a folder for filesystem events and coordinates synchronization across all enabled backends.
+3. **[`cloud_sync_ui`](crates/cloud_sync_ui/README.md)**: A lightweight Axum-based HTTP server exposing API endpoints to monitor/control the daemon, serving an embedded web dashboard.
+4. **[`cloud_sync_tauri`](crates/cloud_sync_tauri/README.md)**: A Tauri-based desktop GUI application that bundles the web UI and manages the daemon as a sidecar.
+5. **[`cloud_sync_backup`](crates/cloud_sync_backup/README.md)**: A background daemon that periodically performs unidirectional synchronization (one-way backups) from a source storage provider to a destination storage provider.
+6. **[`cloud_sync_egui`](crates/cloud_sync_egui)**: A native, immediate-mode GUI client using egui/eframe.
+7. **[`cloud_sync_core`](crates/cloud_sync_core)**: Minimal core data structures, error types, and storage traits usable in `no_std` environments.
+8. **[`cloud_sync_std`](crates/cloud_sync_std)**: Common standard utilities, checksum calculators, and `.syncignore` parsers.
 
-For a detailed look at component interactions, design decisions, and system diagrams, refer to the **[Workspace Architecture Guide](file:///home/robt/projects/cloud_sync_lib/docs/architecture.md)**.
+For a detailed look at component interactions, design decisions, and system diagrams, refer to the **[Workspace Architecture Guide](docs/architecture.md)**.
 
 ---
 
@@ -49,33 +52,33 @@ For a detailed look at component interactions, design decisions, and system diag
 
 1. **Create Configuration**: Copy the template configuration file to a private file:
    ```bash
-   cp config.toml private_config.toml
+   cp config.toml.example config.toml
    ```
-2. **Add Credentials**: Open `private_config.toml` and configure your API credentials and toggles:
+2. **Add Credentials**: Open `config.toml` and configure your API credentials and toggles:
    * By default, any backend without credentials falls back to a local folder simulation.
    * Toggle any backend on/off using the `enabled = true/false` parameter under its credentials block.
 3. **Follow API Setup Guides**:
-   * Refer to the [Google Drive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/google_drive_setup.md)
-   * Refer to the [Dropbox API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/dropbox_setup.md)
-   * Refer to the [OneDrive API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/onedrive_setup.md)
-   * Refer to the [Box API Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/box_setup.md)
-   * Refer to the [MEGA Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/mega_setup.md)
+   * Refer to the [Google Drive API Setup Guide](docs/setup/google_drive_setup.md)
+   * Refer to the [Dropbox API Setup Guide](docs/setup/dropbox_setup.md)
+   * Refer to the [OneDrive API Setup Guide](docs/setup/onedrive_setup.md)
+   * Refer to the [Box API Setup Guide](docs/setup/box_setup.md)
+   * Refer to the [MEGA Setup Guide](docs/setup/mega_setup.md)
+   * Refer to the [WebDAV Setup Guide](docs/setup/webdav_setup.md)
+   * Refer to the [S3 Setup Guide](docs/setup/s3_setup.md)
+   * Refer to the [SFTP Setup Guide](docs/setup/sftp_setup.md)
+   * Refer to the [Nextcloud Setup Guide](docs/setup/nextcloud_setup.md)
+   * Refer to the [Azure Blob Storage Setup Guide](docs/setup/azure_blob_storage_setup.md)
+   * Refer to the [Google Cloud Storage Setup Guide](docs/setup/google_cloud_storage_setup.md)
+   * Refer to the [Backblaze B2 Setup Guide](docs/setup/backblaze_b2_setup.md)
+   * Refer to the [pCloud Setup Guide](docs/setup/pcloud_setup.md)
+   * Refer to the [IPFS Pinning Service Setup Guide](docs/setup/ipfs_pinning_service_setup.md)
 
 4. **Automated OAuth Token Retrieval**:
-   For backends requiring OAuth 2.0 (Google Drive, Dropbox, OneDrive, Box), you can easily generate and save refresh tokens by running the provided Python helper scripts after entering your `client_id` and `client_secret` in `private_config.toml`:
+   For backends requiring OAuth 2.0 (Google Drive, Dropbox, OneDrive, Box), you can easily generate and save refresh tokens by running the provided Python helper scripts after entering your `client_id` and `client_secret` in `config.toml`:
    * **Google Drive**: `python3 scripts/get_refresh_token.py`
    * **Dropbox**: `python3 scripts/get_dropbox_token.py`
    * **OneDrive**: `python3 scripts/get_onedrive_token.py`
    * **Box**: `python3 scripts/get_box_token.py`
-   * Refer to the [WebDAV Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/webdav_setup.md)
-   * Refer to the [S3 Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/s3_setup.md)
-   * Refer to the [SFTP Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/sftp_setup.md)
-   * Refer to the [Nextcloud Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/nextcloud_setup.md)
-   * Refer to the [Azure Blob Storage Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/azure_blob_storage_setup.md)
-   * Refer to the [Google Cloud Storage Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/google_cloud_storage_setup.md)
-   * Refer to the [Backblaze B2 Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/backblaze_b2_setup.md)
-   * Refer to the [pCloud Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/pcloud_setup.md)
-   * Refer to the [IPFS Pinning Service Setup Guide](file:///home/robt/projects/cloud_sync_lib/docs/setup/ipfs_pinning_service_setup.md)
 
 ---
 
@@ -84,7 +87,7 @@ For a detailed look at component interactions, design decisions, and system diag
 ### Run the Daemon
 Start the synchronization daemon by passing the configuration path:
 ```bash
-cargo run --bin cloud_sync_daemon -- private_config.toml
+cargo run --bin cloud_sync_daemon -- config.toml
 ```
 
 ### Run the Backup Daemon
@@ -96,7 +99,7 @@ cargo run --bin cloud_sync_backup -- backup_config.toml
 ### Run Workspace Tests
 Run unit, mock HTTP (using `wiremock`), and real integration tests:
 ```bash
-cargo test --all
+cargo test --workspace --all-targets
 ```
 *Note: Real connection tests automatically detect whether valid credentials are configured and skip gracefully if they are missing or expired.*
 
@@ -109,4 +112,3 @@ If you find this project useful, consider supporting its development:
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
 
 [Buy Me a Coffee](https://buymeacoffee.com/roberttizz1)
-

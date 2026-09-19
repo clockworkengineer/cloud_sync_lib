@@ -90,8 +90,14 @@ mod tests {
         assert_eq!(parsed["paused"], false);
         assert_eq!(parsed["watch_directory"], "/watch/dir");
         assert_eq!(parsed["config_file"], "private.toml");
-        assert_eq!(parsed["active_backends"], serde_json::json!(["Google Drive", "Dropbox"]));
-        assert_eq!(parsed["failed_backends"], serde_json::json!(["Google Drive"]));
+        assert_eq!(
+            parsed["active_backends"],
+            serde_json::json!(["Google Drive", "Dropbox"])
+        );
+        assert_eq!(
+            parsed["failed_backends"],
+            serde_json::json!(["Google Drive"])
+        );
         assert_eq!(parsed["syncing"], false);
         assert_eq!(parsed["web_ui_address"], "127.0.0.1:8082");
     }

@@ -3,14 +3,13 @@
 //! Handles interaction with Nextcloud servers using the WebDAV endpoint:
 //! `/remote.php/dav/files/{username}/`
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::NextcloudCredentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::NextcloudCredentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
-
 
 /// Storage provider client for Nextcloud storage servers.
 pub struct NextcloudProvider {
@@ -22,10 +21,14 @@ pub struct NextcloudProvider {
     url: String,
 }
 
-crate::impl_provider_builder!(NextcloudProvider, NextcloudProviderBuilder, NextcloudCredentials, absolute);
+crate::impl_provider_builder!(
+    NextcloudProvider,
+    NextcloudProviderBuilder,
+    NextcloudCredentials,
+    absolute
+);
 
 impl NextcloudProvider {
-
     /// Creates a new `NextcloudProvider` with custom HTTP client options.
     pub fn with_client_options(
         credentials: NextcloudCredentials,
@@ -48,7 +51,6 @@ impl NextcloudProvider {
         self
     }
 
-
     /// Ensures that parent directories exist on the Nextcloud server.
     async fn ensure_parent_dirs(&self, remote_path: &str) -> Result<(), StorageError> {
         let parts: Vec<&str> = remote_path.split('/').filter(|s| !s.is_empty()).collect();
@@ -62,14 +64,22 @@ impl NextcloudProvider {
             current_path.push_str(part);
 
             let url = format!("{}{}", self.url, current_path);
-            let resp = self.client.request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &url)
-                .basic_auth(&self.credentials.username, Some(&self.credentials.app_password))
+            let resp = self
+                .client
+                .request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &url)
+                .basic_auth(
+                    &self.credentials.username,
+                    Some(&self.credentials.app_password),
+                )
                 .send()
                 .await?;
 
             let status = resp.status();
             if !status.is_success() && status.as_u16() != 405 {
-                return Err(StorageError::Provider { message: format!("Failed to create directory {}: {}", url, status), status: None });
+                return Err(StorageError::Provider {
+                    message: format!("Failed to create directory {}: {}", url, status),
+                    status: None,
+                });
             }
         }
 
@@ -113,25 +123,23 @@ fn parse_propfind_response(xml: &str) -> Result<Vec<(String, u64, bool)>, Storag
                     current_is_dir = true;
                 }
             }
-            Ok(xmlparser::Token::ElementEnd { end, .. }) => {
-                match end {
-                    xmlparser::ElementEnd::Close(_, local) => {
-                        active_tag.clear();
-                        let name = local.as_str();
-                        if name == "response" {
-                            if let Some(href) = current_href.take() {
-                                items.push((href, current_size, current_is_dir));
-                            }
-                            current_size = 0;
-                            current_is_dir = false;
+            Ok(xmlparser::Token::ElementEnd { end, .. }) => match end {
+                xmlparser::ElementEnd::Close(_, local) => {
+                    active_tag.clear();
+                    let name = local.as_str();
+                    if name == "response" {
+                        if let Some(href) = current_href.take() {
+                            items.push((href, current_size, current_is_dir));
                         }
+                        current_size = 0;
+                        current_is_dir = false;
                     }
-                    xmlparser::ElementEnd::Empty => {
-                        active_tag.clear();
-                    }
-                    _ => {}
                 }
-            }
+                xmlparser::ElementEnd::Empty => {
+                    active_tag.clear();
+                }
+                _ => {}
+            },
             Ok(xmlparser::Token::Text { text }) => {
                 let val = text.as_str().trim();
                 if !val.is_empty() {
@@ -142,7 +150,12 @@ fn parse_propfind_response(xml: &str) -> Result<Vec<(String, u64, bool)>, Storag
                     }
                 }
             }
-            Err(e) => return Err(StorageError::Provider { message: format!("XML parse error: {}", e), status: None }),
+            Err(e) => {
+                return Err(StorageError::Provider {
+                    message: format!("XML parse error: {}", e),
+                    status: None,
+                })
+            }
             _ => {}
         }
     }
@@ -165,8 +178,13 @@ impl StorageBackend for NextcloudProvider {
             let file_content = fs::read(local_path).await?;
 
             let upload_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
-            let res = self.client.put(&upload_url)
-                .basic_auth(&self.credentials.username, Some(&self.credentials.app_password))
+            let res = self
+                .client
+                .put(&upload_url)
+                .basic_auth(
+                    &self.credentials.username,
+                    Some(&self.credentials.app_password),
+                )
                 .header("Content-Type", "application/octet-stream")
                 .body(file_content)
                 .send()
@@ -177,7 +195,8 @@ impl StorageBackend for NextcloudProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -185,8 +204,13 @@ impl StorageBackend for NextcloudProvider {
             let clean_path = self.format_path(remote_path);
 
             let download_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
-            let res = self.client.get(&download_url)
-                .basic_auth(&self.credentials.username, Some(&self.credentials.app_password))
+            let res = self
+                .client
+                .get(&download_url)
+                .basic_auth(
+                    &self.credentials.username,
+                    Some(&self.credentials.app_password),
+                )
                 .send()
                 .await?;
 
@@ -200,7 +224,8 @@ impl StorageBackend for NextcloudProvider {
             let bytes = res.bytes().await?;
             fs::write(local_path, bytes).await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -208,8 +233,13 @@ impl StorageBackend for NextcloudProvider {
             let clean_path = self.format_path(remote_path);
 
             let delete_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
-            let res = self.client.delete(&delete_url)
-                .basic_auth(&self.credentials.username, Some(&self.credentials.app_password))
+            let res = self
+                .client
+                .delete(&delete_url)
+                .basic_auth(
+                    &self.credentials.username,
+                    Some(&self.credentials.app_password),
+                )
                 .send()
                 .await?;
 
@@ -218,7 +248,8 @@ impl StorageBackend for NextcloudProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     /// Creates a directory folder on Nextcloud using WebDAV MKCOL method.
@@ -233,15 +264,24 @@ impl StorageBackend for NextcloudProvider {
             }
 
             let create_url = format!("{}{}", self.url.trim_end_matches('/'), clean_path);
-            let res = self.client.request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &create_url)
-                .basic_auth(&self.credentials.username, Some(&self.credentials.app_password))
+            let res = self
+                .client
+                .request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &create_url)
+                .basic_auth(
+                    &self.credentials.username,
+                    Some(&self.credentials.app_password),
+                )
                 .send()
                 .await?;
 
             let status = res.status();
             if !status.is_success() {
                 let err_text = res.text().await.unwrap_or_default();
-                if status.as_u16() == 405 || status.as_u16() == 409 || err_text.contains("conflict") || err_text.contains("exists") {
+                if status.as_u16() == 405
+                    || status.as_u16() == 409
+                    || err_text.contains("conflict")
+                    || err_text.contains("exists")
+                {
                     return Ok(());
                 }
                 return Err(StorageError::Provider {
@@ -251,7 +291,8 @@ impl StorageBackend for NextcloudProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -262,8 +303,13 @@ impl StorageBackend for NextcloudProvider {
             if !list_url.ends_with('/') {
                 list_url.push('/');
             }
-            let res = self.client.request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &list_url)
-                .basic_auth(&self.credentials.username, Some(&self.credentials.app_password))
+            let res = self
+                .client
+                .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &list_url)
+                .basic_auth(
+                    &self.credentials.username,
+                    Some(&self.credentials.app_password),
+                )
                 .header("Depth", "1")
                 .send()
                 .await?;
@@ -301,17 +347,15 @@ impl StorageBackend for NextcloudProvider {
                         is_dir,
                         checksum: None,
                         permissions: None,
-                });
+                    });
                 }
             }
 
             Ok(storage_items)
-        }).await
+        })
+        .await
     }
-
 }
-
-
 
 /// Builder for [`NextcloudProvider`].
 pub struct NextcloudProviderBuilder {

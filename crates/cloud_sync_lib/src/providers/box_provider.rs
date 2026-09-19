@@ -3,14 +3,14 @@
 //! Handles interaction with the Box v2 REST API. Supports full OAuth2-based
 //! upload, download, delete, and list operations, with custom prefix path resolution.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::OAuthCredentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::OAuthCredentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
-use serde::Deserialize;
 
 /// Storage provider client for Box REST API.
 pub struct BoxProvider {
@@ -46,7 +46,6 @@ crate::impl_provider_builder!(BoxProvider, BoxProviderBuilder, OAuthCredentials)
 crate::impl_oauth_token_helper!(BoxProvider);
 
 impl BoxProvider {
-
     /// Creates a new `BoxProvider` with custom HTTP client options.
     pub fn with_client_options(
         credentials: OAuthCredentials,
@@ -56,9 +55,10 @@ impl BoxProvider {
         let client = super::utils::build_http_client(timeout, custom_headers);
         let auth_url = "https://api.box.com/oauth2/token".to_string();
 
-        let callback: super::utils::TokenRefreshCallback = std::sync::Arc::new(|new_refresh_token: &str| {
-            Self::update_config_files(new_refresh_token);
-        });
+        let callback: super::utils::TokenRefreshCallback =
+            std::sync::Arc::new(|new_refresh_token: &str| {
+                Self::update_config_files(new_refresh_token);
+            });
 
         let token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::with_callback(
             client.clone(),
@@ -82,9 +82,10 @@ impl BoxProvider {
     /// Configures custom endpoints, useful for mocking during tests.
     #[cfg(test)]
     pub fn with_endpoints(mut self, auth_url: String, api_url: String, upload_url: String) -> Self {
-        let callback: super::utils::TokenRefreshCallback = std::sync::Arc::new(|new_refresh_token: &str| {
-            Self::update_config_files(new_refresh_token);
-        });
+        let callback: super::utils::TokenRefreshCallback =
+            std::sync::Arc::new(|new_refresh_token: &str| {
+                Self::update_config_files(new_refresh_token);
+            });
         self.token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::with_callback(
             self.client.clone(),
             &auth_url,
@@ -131,12 +132,21 @@ impl BoxProvider {
         }
     }
 
-
     /// Resolves the full path to Box item (ID and type) by traversing from the root folder ("0").
     ///
     /// If `create_folders` is true, missing intermediate directories will be automatically created.
-    async fn resolve_path(&self, token: &str, path: &str, create_folders: bool) -> Result<(String, bool), StorageError> {
-        let normalized_dest_opt = self.credentials.common.destination_folder.as_ref().map(|dest| super::utils::normalize_remote_path(dest));
+    async fn resolve_path(
+        &self,
+        token: &str,
+        path: &str,
+        create_folders: bool,
+    ) -> Result<(String, bool), StorageError> {
+        let normalized_dest_opt = self
+            .credentials
+            .common
+            .destination_folder
+            .as_ref()
+            .map(|dest| super::utils::normalize_remote_path(dest));
         let normalized_path = super::utils::normalize_remote_path(path);
         let clean_path = normalized_path.trim_start_matches('/');
         let mut segments = Vec::new();
@@ -164,9 +174,13 @@ impl BoxProvider {
                 continue;
             }
             if !is_dir {
-                return Err(StorageError::Provider { message: format!(
-                    "Path resolution error: intermediate segment '{}' is not a folder", segment
-                ), status: None });
+                return Err(StorageError::Provider {
+                    message: format!(
+                        "Path resolution error: intermediate segment '{}' is not a folder",
+                        segment
+                    ),
+                    status: None,
+                });
             }
 
             // List current folder
@@ -180,7 +194,10 @@ impl BoxProvider {
             }
 
             let folder_items = res.json::<BoxFolderItems>().await?;
-            let found = folder_items.entries.into_iter().find(|item| item.name == **segment);
+            let found = folder_items
+                .entries
+                .into_iter()
+                .find(|item| item.name == **segment);
 
             match found {
                 Some(item) => {
@@ -197,20 +214,29 @@ impl BoxProvider {
                             "name": segment,
                             "parent": { "id": current_id }
                         });
-                        let create_res = super::utils::apply_bearer_auth(self.client.post(&create_url), token)
-                            .json(&body)
-                            .send()
-                            .await?;
+                        let create_res =
+                            super::utils::apply_bearer_auth(self.client.post(&create_url), token)
+                                .json(&body)
+                                .send()
+                                .await?;
 
                         if !create_res.status().is_success() {
-                            return Err(translate_http_error(create_res, self.name(), "create_folder").await);
+                            return Err(translate_http_error(
+                                create_res,
+                                self.name(),
+                                "create_folder",
+                            )
+                            .await);
                         }
 
                         let new_folder = create_res.json::<BoxItem>().await?;
                         current_id = new_folder.id;
                         is_dir = true;
                     } else {
-                        return Err(StorageError::NotFound(format!("Path segment '{}' not found", segment)));
+                        return Err(StorageError::NotFound(format!(
+                            "Path segment '{}' not found",
+                            segment
+                        )));
                     }
                 }
             }
@@ -220,10 +246,17 @@ impl BoxProvider {
     }
 
     /// Resolves the parent folder ID and the filename for a given remote path.
-    async fn resolve_parent_and_name(&self, token: &str, remote_path: &str) -> Result<(String, String), StorageError> {
+    async fn resolve_parent_and_name(
+        &self,
+        token: &str,
+        remote_path: &str,
+    ) -> Result<(String, String), StorageError> {
         let (parent_path, file_name) = super::utils::get_parent_and_filename(remote_path);
         if file_name.is_empty() {
-            return Err(StorageError::Provider { message: "Invalid file name".to_string(), status: None });
+            return Err(StorageError::Provider {
+                message: "Invalid file name".to_string(),
+                status: None,
+            });
         }
 
         let (parent_id, _) = self.resolve_path(token, &parent_path, true).await?;
@@ -243,10 +276,16 @@ impl StorageBackend for BoxProvider {
             let (folder_id, is_dir) = self.resolve_path(&token, path, false).await?;
 
             if !is_dir {
-                return Err(StorageError::Provider { message: "Target path is not a folder".to_string(), status: None });
+                return Err(StorageError::Provider {
+                    message: "Target path is not a folder".to_string(),
+                    status: None,
+                });
             }
 
-            let url = format!("{}/folders/{}/items?fields=id,type,name,size,content_modified_at,sha1", self.api_url, folder_id);
+            let url = format!(
+                "{}/folders/{}/items?fields=id,type,name,size,content_modified_at,sha1",
+                self.api_url, folder_id
+            );
             let res = super::utils::apply_bearer_auth(self.client.get(&url), &token)
                 .send()
                 .await?;
@@ -256,31 +295,43 @@ impl StorageBackend for BoxProvider {
             }
 
             let items = res.json::<BoxFolderItems>().await?;
-            let storage_items = items.entries.into_iter().map(|item| {
-                let modified = item.content_modified_at
-                    .and_then(|t| time::OffsetDateTime::parse(&t, &time::format_description::well_known::Rfc3339).ok())
-                    .map(std::time::SystemTime::from)
-                    .unwrap_or_else(std::time::SystemTime::now);
+            let storage_items = items
+                .entries
+                .into_iter()
+                .map(|item| {
+                    let modified = item
+                        .content_modified_at
+                        .and_then(|t| {
+                            time::OffsetDateTime::parse(
+                                &t,
+                                &time::format_description::well_known::Rfc3339,
+                            )
+                            .ok()
+                        })
+                        .map(std::time::SystemTime::from)
+                        .unwrap_or_else(std::time::SystemTime::now);
 
-                let name = item.name;
-                let rel_path = if path.is_empty() {
-                    name
-                } else {
-                    format!("{}/{}", path, name)
-                };
+                    let name = item.name;
+                    let rel_path = if path.is_empty() {
+                        name
+                    } else {
+                        format!("{}/{}", path, name)
+                    };
 
-                StorageItem {
-                    path: PathBuf::from(rel_path),
-                    is_dir: item.item_type == "folder",
-                    size: item.size.unwrap_or(0),
-                    modified,
-                    checksum: item.sha1,
-                    permissions: None,
-                }
-            }).collect();
+                    StorageItem {
+                        path: PathBuf::from(rel_path),
+                        is_dir: item.item_type == "folder",
+                        size: item.size.unwrap_or(0),
+                        modified,
+                        checksum: item.sha1,
+                        permissions: None,
+                    }
+                })
+                .collect();
 
             Ok(storage_items)
-        }).await
+        })
+        .await
     }
 
     /// Creates a directory folder on Box.
@@ -292,7 +343,8 @@ impl StorageBackend for BoxProvider {
             let token = self.get_access_token().await?;
             let _ = self.resolve_path(&token, remote_path, true).await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
@@ -311,27 +363,38 @@ impl StorageBackend for BoxProvider {
             }
 
             let folder_items = res.json::<BoxFolderItems>().await?;
-            let existing_file = folder_items.entries.into_iter()
+            let existing_file = folder_items
+                .entries
+                .into_iter()
                 .find(|item| item.name == file_name && item.item_type == "file");
 
             let file_bytes = fs::read(local_path).await?;
-            let file_part = reqwest::multipart::Part::bytes(file_bytes)
-                .file_name(file_name.clone());
+            let file_part =
+                reqwest::multipart::Part::bytes(file_bytes).file_name(file_name.clone());
 
             match existing_file {
                 Some(file) => {
                     // File exists: Upload new version (overwrite)
-                    info!("[Box] Real upload starting (version update) for file ID: {}", file.id);
+                    info!(
+                        "[Box] Real upload starting (version update) for file ID: {}",
+                        file.id
+                    );
                     let upload_url = format!("{}/files/{}/content", self.upload_url, file.id);
                     let form = reqwest::multipart::Form::new().part("file", file_part);
 
-                    let upload_res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &token)
-                        .multipart(form)
-                        .send()
-                        .await?;
+                    let upload_res =
+                        super::utils::apply_bearer_auth(self.client.post(&upload_url), &token)
+                            .multipart(form)
+                            .send()
+                            .await?;
 
                     if !upload_res.status().is_success() {
-                        return Err(translate_http_error(upload_res, self.name(), "upload_version").await);
+                        return Err(translate_http_error(
+                            upload_res,
+                            self.name(),
+                            "upload_version",
+                        )
+                        .await);
                     }
                 }
                 None => {
@@ -341,25 +404,30 @@ impl StorageBackend for BoxProvider {
                     let attributes = serde_json::json!({
                         "name": file_name,
                         "parent": { "id": parent_id }
-                    }).to_string();
+                    })
+                    .to_string();
 
                     let form = reqwest::multipart::Form::new()
                         .text("attributes", attributes)
                         .part("file", file_part);
 
-                    let upload_res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &token)
-                        .multipart(form)
-                        .send()
-                        .await?;
+                    let upload_res =
+                        super::utils::apply_bearer_auth(self.client.post(&upload_url), &token)
+                            .multipart(form)
+                            .send()
+                            .await?;
 
                     if !upload_res.status().is_success() {
-                        return Err(translate_http_error(upload_res, self.name(), "upload_new").await);
+                        return Err(
+                            translate_http_error(upload_res, self.name(), "upload_new").await
+                        );
                     }
                 }
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -368,7 +436,10 @@ impl StorageBackend for BoxProvider {
             let (file_id, is_dir) = self.resolve_path(&token, remote_path, false).await?;
 
             if is_dir {
-                return Err(StorageError::Provider { message: "Cannot download a directory".to_string(), status: None });
+                return Err(StorageError::Provider {
+                    message: "Cannot download a directory".to_string(),
+                    status: None,
+                });
             }
 
             let url = format!("{}/files/{}/content", self.api_url, file_id);
@@ -383,7 +454,8 @@ impl StorageBackend for BoxProvider {
             let bytes = res.bytes().await?;
             fs::write(local_path, bytes).await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -406,15 +478,17 @@ impl StorageBackend for BoxProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
-    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
         Ok(crate::checksum::compute_sha1(local_path).await.ok())
     }
 }
-
-
 
 /// Builder for [`BoxProvider`].
 pub struct BoxProviderBuilder {

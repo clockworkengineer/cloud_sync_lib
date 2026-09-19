@@ -1,29 +1,34 @@
 [package]
 name = "cloud_sync_daemon"
-version = "0.1.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Background synchronization daemon for Cloud Sync"
-license = "MIT"
-repository = "https://github.com/clockworkengineer/cloud_sync_lib"
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
-cloud_sync_lib = { path = "../cloud_sync_lib", version = "0.1.1", default-features = false }
-
+cloud_sync_lib = { path = "../cloud_sync_lib", version = "0.2.0", default-features = false }
 tokio = { workspace = true, features = ["full"] }
-notify = "6.1"
+notify = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 toml = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { workspace = true }
 async-trait = { workspace = true }
 ignore = { workspace = true }
 futures-util = { workspace = true }
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 serde_json = { workspace = true }
 tracing-appender = { workspace = true }
 
 [features]
-default = []
+default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "sftp", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"]
 google_drive = ["cloud_sync_lib/google_drive"]
 dropbox = ["cloud_sync_lib/dropbox"]
 onedrive = ["cloud_sync_lib/onedrive"]
@@ -41,4 +46,3 @@ ipfs = ["cloud_sync_lib/ipfs"]
 
 [dev-dependencies]
 tempfile = { workspace = true }
-

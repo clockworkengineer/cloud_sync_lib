@@ -1,11 +1,11 @@
 //! SFTP cloud storage provider implementation.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::SFTPCredentials;
-use std::path::Path;
-use std::net::TcpStream;
-use ssh2::{Session, Sftp};
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
+use ssh2::{Session, Sftp};
+use std::net::TcpStream;
+use std::path::Path;
 use tracing::info;
 
 /// Storage provider for SFTP storage backends.
@@ -29,12 +29,22 @@ impl SFTPProvider {
         let port = self.creds.port.unwrap_or(22);
         let addr = format!("{}:{}", self.creds.host, port);
         let tcp = TcpStream::connect(&addr)?;
-        
-        let mut sess = Session::new().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
-        sess.set_tcp_stream(tcp);
-        sess.handshake().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
 
-        let has_key = self.creds.private_key_path.as_ref().is_some_and(|p| !p.is_empty());
+        let mut sess = Session::new().map_err(|e| StorageError::Provider {
+            message: e.to_string(),
+            status: None,
+        })?;
+        sess.set_tcp_stream(tcp);
+        sess.handshake().map_err(|e| StorageError::Provider {
+            message: e.to_string(),
+            status: None,
+        })?;
+
+        let has_key = self
+            .creds
+            .private_key_path
+            .as_ref()
+            .is_some_and(|p| !p.is_empty());
         if has_key {
             let path = Path::new(self.creds.private_key_path.as_ref().unwrap());
             sess.userauth_pubkey_file(&self.creds.username, None, path, None)
@@ -43,7 +53,9 @@ impl SFTPProvider {
             sess.userauth_password(&self.creds.username, password)
                 .map_err(|e| StorageError::Authentication(e.to_string()))?;
         } else {
-            return Err(StorageError::Authentication("No password or private key provided for SFTP".to_string()));
+            return Err(StorageError::Authentication(
+                "No password or private key provided for SFTP".to_string(),
+            ));
         }
 
         Ok(sess)
@@ -51,7 +63,13 @@ impl SFTPProvider {
 
     /// Helper to resolve the complete remote path using the destination folder prefix.
     fn resolve_remote_path(&self, remote_path: &str) -> String {
-        let dest_norm = super::utils::normalize_remote_path(self.creds.common.destination_folder.as_deref().unwrap_or(""));
+        let dest_norm = super::utils::normalize_remote_path(
+            self.creds
+                .common
+                .destination_folder
+                .as_deref()
+                .unwrap_or(""),
+        );
         let dest = dest_norm.trim_matches('/');
         let norm_path_str = super::utils::normalize_remote_path(remote_path);
         let norm_path = norm_path_str.trim_matches('/');
@@ -91,7 +109,10 @@ impl StorageBackend for SFTPProvider {
         tokio::task::spawn_blocking(move || {
             let sftp_provider = SFTPProvider::new(provider);
             let sess = sftp_provider.connect()?;
-            let sftp = sess.sftp().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+            let sftp = sess.sftp().map_err(|e| StorageError::Provider {
+                message: e.to_string(),
+                status: None,
+            })?;
             let resolved = sftp_provider.resolve_remote_path(&remote_path);
             let resolved_path = Path::new(&resolved);
 
@@ -99,18 +120,29 @@ impl StorageBackend for SFTPProvider {
 
             // Ensure parent directories exist
             if let Some(parent) = resolved_path.parent() {
-                mkdir_p(&sftp, parent).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+                mkdir_p(&sftp, parent).map_err(|e| StorageError::Provider {
+                    message: e.to_string(),
+                    status: None,
+                })?;
             }
 
-            let mut remote_file = sftp.create(resolved_path).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+            let mut remote_file =
+                sftp.create(resolved_path)
+                    .map_err(|e| StorageError::Provider {
+                        message: e.to_string(),
+                        status: None,
+                    })?;
             let mut local_file = std::fs::File::open(&local_path)?;
-            
+
             crate::providers::utils::copy_buffered(&mut local_file, &mut remote_file)?;
 
             Ok(())
         })
         .await
-        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
+        .map_err(|e| StorageError::Provider {
+            message: e.to_string(),
+            status: None,
+        })?
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -121,13 +153,21 @@ impl StorageBackend for SFTPProvider {
         tokio::task::spawn_blocking(move || {
             let sftp_provider = SFTPProvider::new(provider);
             let sess = sftp_provider.connect()?;
-            let sftp = sess.sftp().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+            let sftp = sess.sftp().map_err(|e| StorageError::Provider {
+                message: e.to_string(),
+                status: None,
+            })?;
             let resolved = sftp_provider.resolve_remote_path(&remote_path);
 
             info!("[SFTP] Real download starting for '{}'", resolved);
 
-            let mut remote_file = sftp.open(Path::new(&resolved)).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
-            
+            let mut remote_file =
+                sftp.open(Path::new(&resolved))
+                    .map_err(|e| StorageError::Provider {
+                        message: e.to_string(),
+                        status: None,
+                    })?;
+
             if let Some(parent) = local_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -138,7 +178,10 @@ impl StorageBackend for SFTPProvider {
             Ok(())
         })
         .await
-        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
+        .map_err(|e| StorageError::Provider {
+            message: e.to_string(),
+            status: None,
+        })?
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -148,7 +191,10 @@ impl StorageBackend for SFTPProvider {
         tokio::task::spawn_blocking(move || {
             let sftp_provider = SFTPProvider::new(provider);
             let sess = sftp_provider.connect()?;
-            let sftp = sess.sftp().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+            let sftp = sess.sftp().map_err(|e| StorageError::Provider {
+                message: e.to_string(),
+                status: None,
+            })?;
             let resolved = sftp_provider.resolve_remote_path(&remote_path);
             let resolved_path = Path::new(&resolved);
 
@@ -159,19 +205,35 @@ impl StorageBackend for SFTPProvider {
                 Err(ref e) if e.code() == ssh2::ErrorCode::SFTP(2) => {
                     return Err(StorageError::NotFound(remote_path));
                 }
-                Err(e) => return Err(StorageError::Provider { message: e.to_string(), status: None }),
+                Err(e) => {
+                    return Err(StorageError::Provider {
+                        message: e.to_string(),
+                        status: None,
+                    })
+                }
             };
 
             if stat.is_dir() {
-                sftp.rmdir(resolved_path).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+                sftp.rmdir(resolved_path)
+                    .map_err(|e| StorageError::Provider {
+                        message: e.to_string(),
+                        status: None,
+                    })?;
             } else {
-                sftp.unlink(resolved_path).map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+                sftp.unlink(resolved_path)
+                    .map_err(|e| StorageError::Provider {
+                        message: e.to_string(),
+                        status: None,
+                    })?;
             }
 
             Ok(())
         })
         .await
-        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
+        .map_err(|e| StorageError::Provider {
+            message: e.to_string(),
+            status: None,
+        })?
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -181,7 +243,10 @@ impl StorageBackend for SFTPProvider {
         tokio::task::spawn_blocking(move || {
             let sftp_provider = SFTPProvider::new(provider);
             let sess = sftp_provider.connect()?;
-            let sftp = sess.sftp().map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+            let sftp = sess.sftp().map_err(|e| StorageError::Provider {
+                message: e.to_string(),
+                status: None,
+            })?;
             let resolved = sftp_provider.resolve_remote_path(&remote_path);
             let resolved_path = Path::new(&resolved);
 
@@ -192,7 +257,12 @@ impl StorageBackend for SFTPProvider {
                 Err(ref e) if e.code() == ssh2::ErrorCode::SFTP(2) => {
                     return Err(StorageError::NotFound(remote_path));
                 }
-                Err(e) => return Err(StorageError::Provider { message: e.to_string(), status: None }),
+                Err(e) => {
+                    return Err(StorageError::Provider {
+                        message: e.to_string(),
+                        status: None,
+                    })
+                }
             };
 
             let mut items = Vec::new();
@@ -206,23 +276,24 @@ impl StorageBackend for SFTPProvider {
                     items.push(StorageItem {
                         path: relative_path,
                         size: stat.size.unwrap_or(0),
-                        modified: std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(stat.mtime.unwrap_or(0)),
+                        modified: std::time::SystemTime::UNIX_EPOCH
+                            + std::time::Duration::from_secs(stat.mtime.unwrap_or(0)),
                         is_dir: stat.is_dir(),
                         checksum: None,
                         permissions: None,
-                });
+                    });
                 }
             }
 
             Ok(items)
         })
         .await
-        .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?
+        .map_err(|e| StorageError::Provider {
+            message: e.to_string(),
+            status: None,
+        })?
     }
-
 }
-
-
 
 /// Builder for [`SFTPProvider`].
 pub struct SFTPProviderBuilder {

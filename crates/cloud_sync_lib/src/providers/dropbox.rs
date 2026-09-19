@@ -3,9 +3,9 @@
 //! Handles interaction with the Dropbox v2 REST API. Supports full OAuth2-based
 //! upload, download, delete, and list operations, with custom prefix path resolution.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::OAuthCredentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::OAuthCredentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -28,11 +28,15 @@ pub struct DropboxProvider {
     download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
-crate::impl_provider_builder!(DropboxProvider, DropboxProviderBuilder, OAuthCredentials, absolute);
+crate::impl_provider_builder!(
+    DropboxProvider,
+    DropboxProviderBuilder,
+    OAuthCredentials,
+    absolute
+);
 crate::impl_oauth_token_helper!(DropboxProvider);
 
 impl DropboxProvider {
-
     /// Creates a new `DropboxProvider` with custom HTTP client options.
     pub fn with_client_options(
         credentials: OAuthCredentials,
@@ -85,7 +89,12 @@ impl DropboxProvider {
     /// # Returns
     /// The modified `DropboxProvider` instance.
     #[cfg(test)]
-    pub fn with_endpoints(mut self, auth_url: String, api_url: String, content_url: String) -> Self {
+    pub fn with_endpoints(
+        mut self,
+        auth_url: String,
+        api_url: String,
+        content_url: String,
+    ) -> Self {
         self.api_url = api_url;
         self.content_url = content_url;
         self.token_manager = std::sync::Arc::new(super::utils::OAuthTokenManager::new(
@@ -98,9 +107,6 @@ impl DropboxProvider {
         ));
         self
     }
-
-
-
 }
 
 #[async_trait]
@@ -109,14 +115,14 @@ impl StorageBackend for DropboxProvider {
         "Dropbox"
     }
 
-
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
             let token = self.get_access_token().await?;
             let dbx_path = self.format_path(remote_path);
 
             info!("[{}] Real upload starting for '{}'", self.name(), dbx_path);
-            let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
+            let (body, size) =
+                super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
             let client_modified = std::fs::metadata(local_path)
                 .and_then(|m| m.modified())
@@ -144,7 +150,10 @@ impl StorageBackend for DropboxProvider {
 
             if let Some(ref cm) = client_modified {
                 if let Some(obj) = api_arg.as_object_mut() {
-                    obj.insert("client_modified".to_string(), serde_json::Value::String(cm.clone()));
+                    obj.insert(
+                        "client_modified".to_string(),
+                        serde_json::Value::String(cm.clone()),
+                    );
                 }
             }
 
@@ -162,7 +171,8 @@ impl StorageBackend for DropboxProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -185,9 +195,11 @@ impl StorageBackend for DropboxProvider {
                 return Err(translate_http_error(res, self.name(), "download").await);
             }
 
-            super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
+            super::utils::download_rate_limited(res, local_path, self.download_limiter.clone())
+                .await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -210,7 +222,8 @@ impl StorageBackend for DropboxProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     /// Creates a directory folder on Dropbox.
@@ -239,11 +252,15 @@ impl StorageBackend for DropboxProvider {
                 if err_text.contains("path/conflict") {
                     return Ok(());
                 }
-                return Err(StorageError::Provider { message: format!("Failed to create folder: {}", err_text), status: Some(status.as_u16()) });
+                return Err(StorageError::Provider {
+                    message: format!("Failed to create folder: {}", err_text),
+                    status: Some(status.as_u16()),
+                });
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -288,8 +305,15 @@ impl StorageBackend for DropboxProvider {
                         let is_dir = tag == "folder";
                         let checksum = entry["content_hash"].as_str().map(|s| s.to_string());
 
-                        let modified = entry["client_modified"].as_str()
-                            .and_then(|t| time::OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339).ok())
+                        let modified = entry["client_modified"]
+                            .as_str()
+                            .and_then(|t| {
+                                time::OffsetDateTime::parse(
+                                    t,
+                                    &time::format_description::well_known::Rfc3339,
+                                )
+                                .ok()
+                            })
                             .map(std::time::SystemTime::from)
                             .unwrap_or_else(std::time::SystemTime::now);
 
@@ -306,7 +330,7 @@ impl StorageBackend for DropboxProvider {
                             is_dir,
                             checksum,
                             permissions: None,
-                });
+                        });
                     }
                 }
 
@@ -318,15 +342,17 @@ impl StorageBackend for DropboxProvider {
             }
 
             Ok(items)
-        }).await
+        })
+        .await
     }
 
-    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
         Ok(crate::checksum::compute_dropbox_hash(local_path).await.ok())
     }
 }
-
-
 
 /// Builder for [`DropboxProvider`].
 pub struct DropboxProviderBuilder {

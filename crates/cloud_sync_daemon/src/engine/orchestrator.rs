@@ -1,5 +1,5 @@
 use cloud_sync_lib::sys::{Clock, FileSystem, RealFileSystem, SystemClock};
-use cloud_sync_lib::{SyncIgnore, ConflictPolicy};
+use cloud_sync_lib::{ConflictPolicy, SyncIgnore};
 
 use std::sync::Arc;
 use std::time::SystemTime;

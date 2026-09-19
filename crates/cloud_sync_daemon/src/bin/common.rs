@@ -1,9 +1,9 @@
 //! Shared diagnostic test harness functions for verifier binaries.
 
+use cloud_sync_lib::StorageBackend;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use cloud_sync_lib::StorageBackend;
 
 /// Resolves the default configuration file path based on existence.
 pub fn resolve_config_file() -> &'static str {
@@ -25,7 +25,11 @@ pub async fn run_connection_diagnostics(
         Ok(items) => {
             println!("   -> Success! Found {} items.", items.len());
             for item in items.iter().take(5) {
-                println!("      - {} ({})", item.path.display(), if item.is_dir { "Directory" } else { "File" });
+                println!(
+                    "      - {} ({})",
+                    item.path.display(),
+                    if item.is_dir { "Directory" } else { "File" }
+                );
             }
             if items.len() > 5 {
                 println!("      - ... and {} more items", items.len() - 5);
@@ -38,15 +42,23 @@ pub async fn run_connection_diagnostics(
     }
 
     println!("\n2. Performing read/write test (Upload -> List -> Delete)...");
-    
+
     // Create local temporary file
     {
         let mut file = File::create(temp_filename)?;
-        writeln!(file, "{} connectivity check file. Created at: {:?}", provider.name(), std::time::SystemTime::now())?;
+        writeln!(
+            file,
+            "{} connectivity check file. Created at: {:?}",
+            provider.name(),
+            std::time::SystemTime::now()
+        )?;
     }
 
     println!("   -> Uploading temporary file...");
-    match provider.upload(Path::new(temp_filename), "test_connectivity_check.txt").await {
+    match provider
+        .upload(Path::new(temp_filename), "test_connectivity_check.txt")
+        .await
+    {
         Ok(_) => println!("   -> Upload successful!"),
         Err(e) => {
             eprintln!("\n❌ Upload failed:\n{:?}\n", e);
@@ -68,7 +80,10 @@ pub async fn run_connection_diagnostics(
     // Clean up local temp file
     let _ = std::fs::remove_file(temp_filename);
 
-    println!("\n🎉 All {} connectivity tests passed successfully!", provider.name());
+    println!(
+        "\n🎉 All {} connectivity tests passed successfully!",
+        provider.name()
+    );
     Ok(())
 }
 
@@ -81,10 +96,6 @@ macro_rules! define_verifier_binary {
         pub mod config;
 
         #[cfg(feature = $feature)]
-        #[path = "common.rs"]
-        pub mod common;
-
-        #[cfg(feature = $feature)]
         #[tokio::main]
         async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{} Connection Verifier", $title);
@@ -94,7 +105,7 @@ macro_rules! define_verifier_binary {
             println!("Loading configuration from: {}", config_file);
             let config = config::load_or_create_config(config_file).await?;
 
-            let credentials = match config.$creds_field {
+            let credentials = match config.credentials.$creds_field {
                 Some(creds) => creds,
                 None => {
                     eprintln!("Error: [{}] section not found in configuration.", stringify!($creds_field));
@@ -119,5 +130,3 @@ macro_rules! define_verifier_binary {
 
 #[allow(dead_code)]
 fn main() {}
-
-

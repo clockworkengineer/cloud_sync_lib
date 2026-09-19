@@ -1,6 +1,6 @@
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::boxed::Box;
 
 #[cfg(feature = "std")]
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ pub enum StorageError {
 
     Authentication(String),
     NotFound(String),
-    
+
     RateLimit {
         message: String,
         #[cfg(feature = "std")]
@@ -55,9 +55,15 @@ impl core::fmt::Display for StorageError {
             StorageError::Io(e) => write!(f, "I/O error occurred: {}", e),
             StorageError::Authentication(s) => write!(f, "Authentication failed: {}", s),
             StorageError::NotFound(s) => write!(f, "Resource not found: {}", s),
-            StorageError::RateLimit { message, .. } => write!(f, "Rate limit exceeded. Try again later: {}", message),
+            StorageError::RateLimit { message, .. } => {
+                write!(f, "Rate limit exceeded. Try again later: {}", message)
+            }
             StorageError::Provider { message, status } => {
-                write!(f, "Storage provider error: {} (status: {:?})", message, status)
+                write!(
+                    f,
+                    "Storage provider error: {} (status: {:?})",
+                    message, status
+                )
             }
             #[cfg(feature = "std")]
             StorageError::Reqwest(e) => write!(f, "HTTP client error: {}", e),
@@ -117,13 +123,15 @@ pub trait FolderOps: Send + Sync {
 #[cfg(feature = "std")]
 #[async_trait::async_trait]
 pub trait ChecksumOps: Send + Sync {
-    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError>;
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError>;
 }
 
 #[async_trait::async_trait]
 pub trait StorageBackend: Send + Sync {
     fn name(&self) -> &str;
-
 
     #[cfg(feature = "std")]
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError>;
@@ -144,7 +152,10 @@ pub trait StorageBackend: Send + Sync {
     }
 
     #[cfg(feature = "std")]
-    async fn compute_local_checksum(&self, _local_path: &Path) -> Result<Option<String>, StorageError> {
+    async fn compute_local_checksum(
+        &self,
+        _local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
         Ok(None)
     }
 }
@@ -173,7 +184,10 @@ impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
         (**self).rename(from, to).await
     }
-    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
         (**self).compute_local_checksum(local_path).await
     }
 }
@@ -202,7 +216,10 @@ impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
         (**self).rename(from, to).await
     }
-    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
         (**self).compute_local_checksum(local_path).await
     }
 }
@@ -255,8 +272,8 @@ pub enum ConflictPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::sync::Arc;
     use alloc::string::ToString;
+    use alloc::sync::Arc;
     use alloc::vec;
 
     struct DummyBackend;
@@ -271,7 +288,11 @@ mod tests {
             Ok(())
         }
         #[cfg(feature = "std")]
-        async fn download(&self, _remote_path: &str, _local_path: &Path) -> Result<(), StorageError> {
+        async fn download(
+            &self,
+            _remote_path: &str,
+            _local_path: &Path,
+        ) -> Result<(), StorageError> {
             Ok(())
         }
         async fn delete(&self, _remote_path: &str) -> Result<(), StorageError> {
@@ -308,7 +329,11 @@ mod tests {
         assert!(boxed.list("").await.unwrap().is_empty());
         boxed.create_folder("folder").await.unwrap();
         assert!(boxed.rename("from", "to").await.is_err());
-        assert!(boxed.compute_local_checksum(Path::new("local")).await.unwrap().is_none());
+        assert!(boxed
+            .compute_local_checksum(Path::new("local"))
+            .await
+            .unwrap()
+            .is_none());
 
         let arc: Arc<dyn StorageBackend> = Arc::new(DummyBackend);
         assert_eq!(arc.name(), "dummy");
@@ -318,7 +343,11 @@ mod tests {
         assert!(arc.list("").await.unwrap().is_empty());
         arc.create_folder("folder").await.unwrap();
         assert!(arc.rename("from", "to").await.is_err());
-        assert!(arc.compute_local_checksum(Path::new("local")).await.unwrap().is_none());
+        assert!(arc
+            .compute_local_checksum(Path::new("local"))
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -336,7 +365,10 @@ mod tests {
         };
         assert!(err.to_string().contains("Rate limit exceeded"));
 
-        let err = StorageError::Provider { message: "fail".to_string(), status: Some(500) };
+        let err = StorageError::Provider {
+            message: "fail".to_string(),
+            status: Some(500),
+        };
         assert!(err.to_string().contains("status: Some(500)"));
 
         let err = StorageError::AuthenticationExpired("expired".to_string());
@@ -350,7 +382,7 @@ mod tests {
 
         #[cfg(feature = "std")]
         {
-            let io_err = StorageError::from(std::io::Error::new(std::io::ErrorKind::Other, "iofail"));
+            let io_err = StorageError::from(std::io::Error::other("iofail"));
             assert!(io_err.to_string().contains("I/O error occurred"));
         }
     }

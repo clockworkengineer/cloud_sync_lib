@@ -1,16 +1,21 @@
+use cloud_sync_lib::{BackendCredentials, LocalSimulation, StorageBackend, StorageItem};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::collections::HashMap;
-use cloud_sync_lib::{StorageBackend, StorageItem, LocalSimulation, BackendCredentials};
 
 mod config;
-use config::{BackupConfig, load_config};
+use config::{load_config, BackupConfig};
 
-fn build_backend(provider_name: &str, custom_path: Option<&str>, config: &BackupConfig) -> Result<Arc<dyn StorageBackend>, Box<dyn std::error::Error>> {
+fn build_backend(
+    provider_name: &str,
+    custom_path: Option<&str>,
+    config: &BackupConfig,
+) -> Result<Arc<dyn StorageBackend>, Box<dyn std::error::Error>> {
     let name_lower = provider_name.to_lowercase();
     match name_lower.as_str() {
         "local" => {
-            let path_str = custom_path.ok_or("Local provider requires source_path or destination_path configured")?;
+            let path_str = custom_path
+                .ok_or("Local provider requires source_path or destination_path configured")?;
             let path = PathBuf::from(path_str);
             Ok(Arc::new(LocalSimulation::new(path, "Local".to_string())))
         }
@@ -18,60 +23,124 @@ fn build_backend(provider_name: &str, custom_path: Option<&str>, config: &Backup
             let (creds, root) = match name_lower.as_str() {
                 #[cfg(feature = "google_drive")]
                 "google_drive" | "google drive" => {
-                    let creds = config.google_credentials.clone().ok_or("Google credentials not configured")?;
-                    let root = config.roots.google_drive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/google_drive"));
+                    let creds = config
+                        .google_credentials
+                        .clone()
+                        .ok_or("Google credentials not configured")?;
+                    let root = config
+                        .roots
+                        .google_drive_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/google_drive"));
                     (BackendCredentials::GoogleDrive(creds), root)
                 }
                 #[cfg(feature = "dropbox")]
                 "dropbox" => {
-                    let creds = config.dropbox_credentials.clone().ok_or("Dropbox credentials not configured")?;
-                    let root = config.roots.dropbox_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/dropbox"));
+                    let creds = config
+                        .dropbox_credentials
+                        .clone()
+                        .ok_or("Dropbox credentials not configured")?;
+                    let root = config
+                        .roots
+                        .dropbox_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/dropbox"));
                     (BackendCredentials::Dropbox(creds), root)
                 }
                 #[cfg(feature = "onedrive")]
                 "onedrive" => {
-                    let creds = config.onedrive_credentials.clone().ok_or("OneDrive credentials not configured")?;
-                    let root = config.roots.onedrive_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/onedrive"));
+                    let creds = config
+                        .onedrive_credentials
+                        .clone()
+                        .ok_or("OneDrive credentials not configured")?;
+                    let root = config
+                        .roots
+                        .onedrive_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/onedrive"));
                     (BackendCredentials::OneDrive(creds), root)
                 }
                 #[cfg(feature = "webdav")]
                 "webdav" => {
-                    let creds = config.webdav_credentials.clone().ok_or("WebDAV credentials not configured")?;
-                    let root = config.roots.webdav_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/webdav"));
+                    let creds = config
+                        .webdav_credentials
+                        .clone()
+                        .ok_or("WebDAV credentials not configured")?;
+                    let root = config
+                        .roots
+                        .webdav_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/webdav"));
                     (BackendCredentials::WebDAV(creds), root)
                 }
                 #[cfg(feature = "s3")]
                 "s3" => {
-                    let creds = config.s3_credentials.clone().ok_or("S3 credentials not configured")?;
-                    let root = config.roots.s3_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/s3"));
+                    let creds = config
+                        .s3_credentials
+                        .clone()
+                        .ok_or("S3 credentials not configured")?;
+                    let root = config
+                        .roots
+                        .s3_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/s3"));
                     (BackendCredentials::S3(creds), root)
                 }
                 #[cfg(feature = "sftp")]
                 "sftp" => {
-                    let creds = config.sftp_credentials.clone().ok_or("SFTP credentials not configured")?;
-                    let root = config.roots.sftp_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/sftp"));
+                    let creds = config
+                        .sftp_credentials
+                        .clone()
+                        .ok_or("SFTP credentials not configured")?;
+                    let root = config
+                        .roots
+                        .sftp_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/sftp"));
                     (BackendCredentials::SFTP(creds), root)
                 }
                 #[cfg(feature = "nextcloud")]
                 "nextcloud" => {
-                    let creds = config.nextcloud_credentials.clone().ok_or("Nextcloud credentials not configured")?;
-                    let root = config.roots.nextcloud_root.clone().unwrap_or_else(|| PathBuf::from("./cloud_simulation/nextcloud"));
+                    let creds = config
+                        .nextcloud_credentials
+                        .clone()
+                        .ok_or("Nextcloud credentials not configured")?;
+                    let root = config
+                        .roots
+                        .nextcloud_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/nextcloud"));
                     (BackendCredentials::Nextcloud(creds), root)
                 }
                 #[cfg(feature = "mega")]
                 "mega" => {
-                    let creds = config.mega_credentials.clone().ok_or("MEGA credentials not configured")?;
-                    let root = config.roots.mega_root.clone().unwrap_or_else(|| PathBuf::from("mega_backup"));
+                    let creds = config
+                        .mega_credentials
+                        .clone()
+                        .ok_or("MEGA credentials not configured")?;
+                    let root = config
+                        .roots
+                        .mega_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("mega_backup"));
                     (BackendCredentials::Mega(creds), root)
                 }
-                _ => return Err(format!("Unsupported backup provider or disabled feature: {}", provider_name).into()),
+                _ => {
+                    return Err(format!(
+                        "Unsupported backup provider or disabled feature: {}",
+                        provider_name
+                    )
+                    .into())
+                }
             };
             Ok(cloud_sync_lib::create_backend(creds, root))
         }
     }
 }
 
-async fn scan_backend_files<B: StorageBackend + ?Sized>(backend: &B) -> Result<HashMap<String, StorageItem>, Box<dyn std::error::Error>> {
+async fn scan_backend_files<B: StorageBackend + ?Sized>(
+    backend: &B,
+) -> Result<HashMap<String, StorageItem>, Box<dyn std::error::Error>> {
     let mut files = HashMap::new();
     let mut queue = vec!["".to_string()];
 
@@ -112,25 +181,31 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
         dest_files_lower.insert(path.to_lowercase(), item);
     }
 
-
     for (rel_path, source_item) in source_files {
         let rel_path_lower = rel_path.to_lowercase();
         let should_copy = match dest_files_lower.get(&rel_path_lower) {
             Some(dest_item) => {
-                if let Some((last_size, last_modified, last_checksum)) = synced_history.get(&rel_path) {
-                    if source_item.size == *last_size
-                        && source_item.modified == *last_modified
-                        && source_item.checksum == *last_checksum
-                    {
-                        false
-                    } else {
-                        true
-                    }
+                if let Some((last_size, last_modified, last_checksum)) =
+                    synced_history.get(&rel_path)
+                {
+                    source_item.size != *last_size
+                        || source_item.modified != *last_modified
+                        || source_item.checksum != *last_checksum
                 } else {
-                    let s_secs = source_item.modified.duration_since(std::time::SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-                    let d_secs = dest_item.modified.duration_since(std::time::SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                    let s_secs = source_item
+                        .modified
+                        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let d_secs = dest_item
+                        .modified
+                        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
                     if same_provider {
-                        if let (Some(s_sum), Some(d_sum)) = (&source_item.checksum, &dest_item.checksum) {
+                        if let (Some(s_sum), Some(d_sum)) =
+                            (&source_item.checksum, &dest_item.checksum)
+                        {
                             s_sum != d_sum
                         } else {
                             source_item.size != dest_item.size || s_secs > d_secs
@@ -150,7 +225,11 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
                 sync_count += 1;
                 synced_history.insert(
                     rel_path.clone(),
-                    (source_item.size, source_item.modified, source_item.checksum.clone()),
+                    (
+                        source_item.size,
+                        source_item.modified,
+                        source_item.checksum.clone(),
+                    ),
                 );
             } else {
                 println!("[Backup] Syncing file: {}", rel_path);
@@ -174,13 +253,21 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
 
                 synced_history.insert(
                     rel_path.clone(),
-                    (source_item.size, source_item.modified, source_item.checksum.clone()),
+                    (
+                        source_item.size,
+                        source_item.modified,
+                        source_item.checksum.clone(),
+                    ),
                 );
             }
         } else {
             synced_history.insert(
                 rel_path.clone(),
-                (source_item.size, source_item.modified, source_item.checksum.clone()),
+                (
+                    source_item.size,
+                    source_item.modified,
+                    source_item.checksum.clone(),
+                ),
             );
         }
     }
@@ -215,14 +302,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = log_file_path {
         let path = std::path::PathBuf::from(path);
         let directory = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-        let file_name = path.file_name().unwrap_or_else(|| std::ffi::OsStr::new("backup.log")).to_string_lossy().to_string();
+        let file_name = path
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("backup.log"))
+            .to_string_lossy()
+            .to_string();
         let file_appender = tracing_appender::rolling::daily(directory, file_name);
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
         _log_guard = Some(guard);
 
-        tracing_subscriber::fmt()
-            .with_writer(non_blocking)
-            .init();
+        tracing_subscriber::fmt().with_writer(non_blocking).init();
     } else {
         tracing_subscriber::fmt::init();
     }
@@ -234,7 +323,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if std::path::Path::new(local_path).exists() {
             local_path.to_string()
         } else {
-            config::get_default_backup_config_path().to_string_lossy().to_string()
+            config::get_default_backup_config_path()
+                .to_string_lossy()
+                .to_string()
         }
     };
 

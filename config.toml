@@ -17,7 +17,7 @@ client_id = "PLACEHOLDER_CLIENT_ID"
 client_secret = "PLACEHOLDER_CLIENT_SECRET"
 refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
 destination_folder = ""
-enabled = true
+enabled = false
 sync_mode = "two-way"
 
 [dropbox_credentials]
@@ -73,18 +73,18 @@ enabled = false
 sync_mode = "one-way"
 
 [box_credentials]
-client_id = "your_box_client_id"
-client_secret = "your_box_client_secret"
-refresh_token = "jmpK9L2ZJQcEhaY2e7e5Dt3ZusN6EGJH9e4f1NEqeY1nYeEZ4l7Zdg7Hpu877Rvd"
+client_id = "PLACEHOLDER_CLIENT_ID"
+client_secret = "PLACEHOLDER_CLIENT_SECRET"
+refresh_token = "PLACEHOLDER_REFRESH_TOKEN"
 destination_folder = "MySyncFolder"   # Optional: Folder name in Box root
-enabled = true
+enabled = false
 sync_mode = "one-way"
 
 [mega_credentials]
-email = "your-email@example.com"
-password = "your-mega-password"
+email = "PLACEHOLDER_EMAIL"
+password = "PLACEHOLDER_PASSWORD"
 destination_folder = "PiSync" # Optional sub-folder name (creates it if missing)
-enabled = true                # Set to false to disable this provider
+enabled = false                # Set to false to disable this provider
 sync_mode = "one-way"             # Options: "two-way", "one-way", "one-way-no-deletions"
 
 [azure_blob_credentials]

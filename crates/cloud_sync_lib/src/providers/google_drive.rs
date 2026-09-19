@@ -3,9 +3,9 @@
 //! Handles interaction with the Google Drive API v3. Supports full OAuth2-based
 //! upload, download, delete, and list operations, with recursive directory resolution.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::OAuthCredentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::OAuthCredentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -28,7 +28,11 @@ pub struct GoogleDriveProvider {
     download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
-crate::impl_provider_builder!(GoogleDriveProvider, GoogleDriveProviderBuilder, OAuthCredentials);
+crate::impl_provider_builder!(
+    GoogleDriveProvider,
+    GoogleDriveProviderBuilder,
+    OAuthCredentials
+);
 crate::impl_oauth_token_helper!(GoogleDriveProvider);
 
 impl GoogleDriveProvider {
@@ -98,7 +102,6 @@ impl GoogleDriveProvider {
         self
     }
 
-
     /// Retrieves or creates a Google Drive folder ID for a folder of the given name under `parent_id`.
     ///
     /// # Arguments
@@ -108,7 +111,12 @@ impl GoogleDriveProvider {
     ///
     /// # Returns
     /// The folder's ID, or a `StorageError`.
-    async fn get_or_create_folder_id(&self, token: &str, parent_id: &str, name: &str) -> Result<String, StorageError> {
+    async fn get_or_create_folder_id(
+        &self,
+        token: &str,
+        parent_id: &str,
+        name: &str,
+    ) -> Result<String, StorageError> {
         let query = format!(
             "name = '{}' and '{}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
             name.replace('\'', "\\'"),
@@ -141,8 +149,15 @@ impl GoogleDriveProvider {
             .json::<serde_json::Value>()
             .await?;
 
-        let id = create_res["id"].as_str()
-            .ok_or_else(|| StorageError::Provider { message: format!("Failed to create folder '{}' in Google Drive: {:?}", name, create_res), status: None })?
+        let id = create_res["id"]
+            .as_str()
+            .ok_or_else(|| StorageError::Provider {
+                message: format!(
+                    "Failed to create folder '{}' in Google Drive: {:?}",
+                    name, create_res
+                ),
+                status: None,
+            })?
             .to_string();
 
         Ok(id)
@@ -159,7 +174,12 @@ impl GoogleDriveProvider {
     ///
     /// # Returns
     /// The ID of the target file/folder in Google Drive, or a `StorageError`.
-    async fn get_or_create_file_id(&self, token: &str, path: &str, is_folder: bool) -> Result<String, StorageError> {
+    async fn get_or_create_file_id(
+        &self,
+        token: &str,
+        path: &str,
+        is_folder: bool,
+    ) -> Result<String, StorageError> {
         let normalized = super::utils::normalize_remote_path(path);
         let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
         let mut parent_id = "root".to_string();
@@ -179,7 +199,9 @@ impl GoogleDriveProvider {
             let current_is_folder = !is_last || is_folder;
 
             if current_is_folder {
-                parent_id = self.get_or_create_folder_id(token, &parent_id, part).await?;
+                parent_id = self
+                    .get_or_create_folder_id(token, &parent_id, part)
+                    .await?;
             } else {
                 let query = format!(
                     "name = '{}' and '{}' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
@@ -207,15 +229,23 @@ impl GoogleDriveProvider {
                     "mimeType": "application/octet-stream"
                 });
 
-                let create_res = super::utils::apply_bearer_auth(self.client.post(&self.api_url), token)
-                    .json(&body)
-                    .send()
-                    .await?
-                    .json::<serde_json::Value>()
-                    .await?;
+                let create_res =
+                    super::utils::apply_bearer_auth(self.client.post(&self.api_url), token)
+                        .json(&body)
+                        .send()
+                        .await?
+                        .json::<serde_json::Value>()
+                        .await?;
 
-                parent_id = create_res["id"].as_str()
-                    .ok_or_else(|| StorageError::Provider { message: format!("Failed to create file '{}' in Google Drive: {:?}", part, create_res), status: None })?
+                parent_id = create_res["id"]
+                    .as_str()
+                    .ok_or_else(|| StorageError::Provider {
+                        message: format!(
+                            "Failed to create file '{}' in Google Drive: {:?}",
+                            part, create_res
+                        ),
+                        status: None,
+                    })?
                     .to_string();
             }
         }
@@ -230,15 +260,22 @@ impl StorageBackend for GoogleDriveProvider {
         "Google Drive"
     }
 
-
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
             let token = self.get_access_token().await?;
-            let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
+            let file_id = self
+                .get_or_create_file_id(&token, remote_path, false)
+                .await?;
 
-            info!("[{}] Real upload starting for '{}' (ID: {})", self.name(), remote_path, file_id);
-            let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
-            
+            info!(
+                "[{}] Real upload starting for '{}' (ID: {})",
+                self.name(),
+                remote_path,
+                file_id
+            );
+            let (body, size) =
+                super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
+
             let upload_url = format!("{}/{}?uploadType=media", self.upload_url, file_id);
             let res = super::utils::apply_bearer_auth(self.client.patch(&upload_url), &token)
                 .header("Content-Type", "application/octet-stream")
@@ -252,13 +289,16 @@ impl StorageBackend for GoogleDriveProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "download", || async {
             let token = self.get_access_token().await?;
-            let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
+            let file_id = self
+                .get_or_create_file_id(&token, remote_path, false)
+                .await?;
 
             let download_url = format!("{}/{}?alt=media", self.api_url, file_id);
             let res = super::utils::apply_bearer_auth(self.client.get(&download_url), &token)
@@ -269,15 +309,19 @@ impl StorageBackend for GoogleDriveProvider {
                 return Err(translate_http_error(res, self.name(), "download").await);
             }
 
-            super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
+            super::utils::download_rate_limited(res, local_path, self.download_limiter.clone())
+                .await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "delete", || async {
             let token = self.get_access_token().await?;
-            let file_id = self.get_or_create_file_id(&token, remote_path, false).await?;
+            let file_id = self
+                .get_or_create_file_id(&token, remote_path, false)
+                .await?;
 
             let delete_url = format!("{}/{}", self.api_url, file_id);
             let res = super::utils::apply_bearer_auth(self.client.delete(&delete_url), &token)
@@ -289,7 +333,8 @@ impl StorageBackend for GoogleDriveProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     /// Creates a directory folder recursively on Google Drive.
@@ -299,15 +344,20 @@ impl StorageBackend for GoogleDriveProvider {
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "create_folder", || async {
             let token = self.get_access_token().await?;
-            let _ = self.get_or_create_file_id(&token, remote_path, true).await?;
+            let _ = self
+                .get_or_create_file_id(&token, remote_path, true)
+                .await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         super::utils::execute_with_retry(self.name(), "list", || async {
             let token = self.get_access_token().await?;
-            let folder_id = self.get_or_create_file_id(&token, remote_path, true).await?;
+            let folder_id = self
+                .get_or_create_file_id(&token, remote_path, true)
+                .await?;
 
             let query = format!("'{}' in parents and trashed = false", folder_id);
             let mut items = Vec::new();
@@ -315,19 +365,19 @@ impl StorageBackend for GoogleDriveProvider {
 
             loop {
                 let req = super::utils::apply_bearer_auth(self.client.get(&self.api_url), &token);
-                
-                let fields = "nextPageToken, files(id, name, size, mimeType, modifiedTime, md5Checksum)".to_string();
-                let mut query_params = vec![
-                    ("q", query.clone()),
-                    ("fields", fields),
-                ];
+
+                let fields =
+                    "nextPageToken, files(id, name, size, mimeType, modifiedTime, md5Checksum)"
+                        .to_string();
+                let mut query_params = vec![("q", query.clone()), ("fields", fields)];
                 let page_token_str;
                 if let Some(ref page_token) = next_page_token {
                     page_token_str = page_token.clone();
                     query_params.push(("pageToken", page_token_str));
                 }
 
-                let res = req.query(&query_params)
+                let res = req
+                    .query(&query_params)
                     .send()
                     .await?
                     .json::<serde_json::Value>()
@@ -336,18 +386,29 @@ impl StorageBackend for GoogleDriveProvider {
                 if let Some(files) = res["files"].as_array() {
                     for file in files {
                         let name = file["name"].as_str().unwrap_or("").to_string();
-                        let size = file["size"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0);
+                        let size = file["size"]
+                            .as_str()
+                            .unwrap_or("0")
+                            .parse::<u64>()
+                            .unwrap_or(0);
                         let mime_type = file["mimeType"].as_str().unwrap_or("");
                         let is_dir = mime_type == "application/vnd.google-apps.folder";
-                        
+
                         if mime_type.starts_with("application/vnd.google-apps.") && !is_dir {
                             continue;
                         }
 
                         let checksum = file["md5Checksum"].as_str().map(|s| s.to_string());
 
-                        let modified = file["modifiedTime"].as_str()
-                            .and_then(|t| time::OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339).ok())
+                        let modified = file["modifiedTime"]
+                            .as_str()
+                            .and_then(|t| {
+                                time::OffsetDateTime::parse(
+                                    t,
+                                    &time::format_description::well_known::Rfc3339,
+                                )
+                                .ok()
+                            })
                             .map(std::time::SystemTime::from)
                             .unwrap_or_else(std::time::SystemTime::now);
 
@@ -364,7 +425,7 @@ impl StorageBackend for GoogleDriveProvider {
                             is_dir,
                             checksum,
                             permissions: None,
-                });
+                        });
                     }
                 }
 
@@ -375,15 +436,17 @@ impl StorageBackend for GoogleDriveProvider {
             }
 
             Ok(items)
-        }).await
+        })
+        .await
     }
 
-    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
         Ok(crate::checksum::compute_md5(local_path).await.ok())
     }
 }
-
-
 
 /// Builder for [`GoogleDriveProvider`].
 pub struct GoogleDriveProviderBuilder {
@@ -404,6 +467,10 @@ impl GoogleDriveProviderBuilder {
 
     /// Builds the provider.
     pub fn build(self) -> GoogleDriveProvider {
-        GoogleDriveProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
+        GoogleDriveProvider::with_client_options(
+            self.credentials,
+            self.timeout,
+            self.custom_headers,
+        )
     }
 }

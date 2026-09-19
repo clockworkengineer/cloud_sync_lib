@@ -1,6 +1,6 @@
+use cloud_sync_lib::{ProviderCredentialsConfig, ProviderRootsConfig};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use cloud_sync_lib::{ProviderRootsConfig, ProviderCredentialsConfig};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BackupSection {
@@ -37,7 +37,9 @@ pub fn get_default_backup_config_path() -> std::path::PathBuf {
         let _ = std::fs::create_dir_all(&p);
         p.join("backup_config.toml")
     } else if let Ok(home) = std::env::var("HOME") {
-        let p = std::path::PathBuf::from(home).join(".config").join("cloud_sync");
+        let p = std::path::PathBuf::from(home)
+            .join(".config")
+            .join("cloud_sync");
         let _ = std::fs::create_dir_all(&p);
         p.join("backup_config.toml")
     } else {

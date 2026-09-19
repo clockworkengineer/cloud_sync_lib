@@ -3,8 +3,8 @@
 //! Handles interaction with AWS S3, MinIO, Cloudflare R2, and other S3-compatible backends
 //! using the lightweight `rust-s3` crate.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::S3Credentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tokio::fs;
@@ -21,7 +21,6 @@ pub struct S3Provider {
 crate::impl_provider_builder!(S3Provider, S3ProviderBuilder, S3Credentials, relative);
 
 impl S3Provider {
-
     pub fn with_client_options(
         credentials: S3Credentials,
         _timeout: Option<std::time::Duration>,
@@ -33,7 +32,10 @@ impl S3Provider {
                 endpoint: ep.clone(),
             }
         } else {
-            credentials.region.parse::<s3::Region>().unwrap_or(s3::Region::UsEast1)
+            credentials
+                .region
+                .parse::<s3::Region>()
+                .unwrap_or(s3::Region::UsEast1)
         };
 
         let creds = s3::creds::Credentials::new(
@@ -42,7 +44,8 @@ impl S3Provider {
             None,
             None,
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         let mut bucket = s3::Bucket::new(&credentials.bucket, region, creds).unwrap();
         // S3-compatible providers typically require path style queries
@@ -76,14 +79,13 @@ impl S3Provider {
             None,
             None,
             None,
-        ).unwrap();
+        )
+        .unwrap();
         let mut bucket = s3::Bucket::new(&self.credentials.bucket, region, creds).unwrap();
         bucket.set_path_style();
         self.bucket = bucket;
         self
     }
-
-
 }
 
 #[async_trait]
@@ -94,16 +96,31 @@ impl StorageBackend for S3Provider {
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let clean_path = self.format_path(remote_path);
-        info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+        info!(
+            "[{}] Real upload starting for '{}'",
+            self.name(),
+            clean_path
+        );
 
         let file_content = fs::read(local_path).await?;
-        let res = self.bucket.put_object(&clean_path, &file_content).await
-            .map_err(|e| StorageError::Provider { message: format!("S3 upload error: {}", e), status: None })?;
+        let res = self
+            .bucket
+            .put_object(&clean_path, &file_content)
+            .await
+            .map_err(|e| StorageError::Provider {
+                message: format!("S3 upload error: {}", e),
+                status: None,
+            })?;
 
         // HTTP status 200 or 201 indicates success
         let status_code = res.status_code();
         if status_code != 200 && status_code != 201 {
-            return Err(crate::providers::utils::translate_status_code_error(status_code, "S3", "upload", None));
+            return Err(crate::providers::utils::translate_status_code_error(
+                status_code,
+                "S3",
+                "upload",
+                None,
+            ));
         }
 
         Ok(())
@@ -112,12 +129,23 @@ impl StorageBackend for S3Provider {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         let clean_path = self.format_path(remote_path);
 
-        let res = self.bucket.get_object(&clean_path).await
-            .map_err(|e| StorageError::Provider { message: format!("S3 download error: {}", e), status: None })?;
+        let res =
+            self.bucket
+                .get_object(&clean_path)
+                .await
+                .map_err(|e| StorageError::Provider {
+                    message: format!("S3 download error: {}", e),
+                    status: None,
+                })?;
 
         let status_code = res.status_code();
         if status_code != 200 {
-            return Err(crate::providers::utils::translate_status_code_error(status_code, "S3", "download", None));
+            return Err(crate::providers::utils::translate_status_code_error(
+                status_code,
+                "S3",
+                "download",
+                None,
+            ));
         }
 
         if let Some(parent) = local_path.parent() {
@@ -132,13 +160,24 @@ impl StorageBackend for S3Provider {
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         let clean_path = self.format_path(remote_path);
 
-        let res = self.bucket.delete_object(&clean_path).await
-            .map_err(|e| StorageError::Provider { message: format!("S3 delete error: {}", e), status: None })?;
+        let res =
+            self.bucket
+                .delete_object(&clean_path)
+                .await
+                .map_err(|e| StorageError::Provider {
+                    message: format!("S3 delete error: {}", e),
+                    status: None,
+                })?;
 
         let status_code = res.status_code();
         // 204 No Content or 200 OK are typical success status codes
         if status_code != 200 && status_code != 204 {
-            return Err(crate::providers::utils::translate_status_code_error(status_code, "S3", "delete", None));
+            return Err(crate::providers::utils::translate_status_code_error(
+                status_code,
+                "S3",
+                "delete",
+                None,
+            ));
         }
 
         Ok(())
@@ -151,8 +190,14 @@ impl StorageBackend for S3Provider {
         }
 
         // List files in the bucket matching the prefix
-        let results = self.bucket.list(prefix.clone(), Some("/".to_string())).await
-            .map_err(|e| StorageError::Provider { message: format!("S3 list error: {}", e), status: None })?;
+        let results = self
+            .bucket
+            .list(prefix.clone(), Some("/".to_string()))
+            .await
+            .map_err(|e| StorageError::Provider {
+                message: format!("S3 list error: {}", e),
+                status: None,
+            })?;
 
         let mut items = Vec::new();
         for result in results {
@@ -170,7 +215,10 @@ impl StorageBackend for S3Provider {
                     continue;
                 }
 
-                let checksum = object.e_tag.as_ref().map(|tag| tag.trim_matches('"').to_string());
+                let checksum = object
+                    .e_tag
+                    .as_ref()
+                    .map(|tag| tag.trim_matches('"').to_string());
 
                 items.push(StorageItem {
                     path: PathBuf::from(relative_name),
@@ -185,7 +233,9 @@ impl StorageBackend for S3Provider {
             // Add directories (common prefixes represent subfolders)
             for dir in result.common_prefixes.unwrap_or_default() {
                 let key = dir.prefix;
-                let relative_name = key.strip_prefix(&prefix).unwrap_or(&key)
+                let relative_name = key
+                    .strip_prefix(&prefix)
+                    .unwrap_or(&key)
                     .trim_end_matches('/')
                     .to_string();
 
@@ -207,7 +257,10 @@ impl StorageBackend for S3Provider {
         Ok(items)
     }
 
-    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
         Ok(crate::checksum::compute_md5(local_path).await.ok())
     }
 }

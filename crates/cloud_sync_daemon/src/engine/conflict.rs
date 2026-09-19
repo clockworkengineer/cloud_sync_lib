@@ -1,7 +1,6 @@
 use cloud_sync_lib::ConflictPolicy;
 use std::time::SystemTime;
 
-
 /// Action to be taken when a conflict between local and remote file is detected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConflictResolutionAction {

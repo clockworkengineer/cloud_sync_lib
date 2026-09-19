@@ -2,16 +2,16 @@
 //!
 //! Handles interaction with Azure Blob Storage REST API using Shared Key authentication.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::AzureBlobCredentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::AzureBlobCredentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
+use base64::Engine;
+use ring::hmac;
 use std::path::Path;
 use std::time::SystemTime;
 use tokio::fs;
 use tracing::info;
-use ring::hmac;
-use base64::Engine;
 // Removed quick-xml imports
 
 /// Storage provider client for Azure Blob Storage REST API.
@@ -24,10 +24,14 @@ pub struct AzureBlobProvider {
     api_url: String,
 }
 
-crate::impl_provider_builder!(AzureBlobProvider, AzureBlobProviderBuilder, AzureBlobCredentials, relative);
+crate::impl_provider_builder!(
+    AzureBlobProvider,
+    AzureBlobProviderBuilder,
+    AzureBlobCredentials,
+    relative
+);
 
 impl AzureBlobProvider {
-
     /// Creates a new `AzureBlobProvider` with custom HTTP client options.
     pub fn with_client_options(
         credentials: AzureBlobCredentials,
@@ -53,7 +57,6 @@ impl AzureBlobProvider {
         self.api_url = api_url;
         self
     }
-
 
     /// Signs an Azure REST request using Shared Key authorization.
     fn sign_request(
@@ -87,7 +90,10 @@ impl AzureBlobProvider {
             path_and_query
         };
 
-        let mut canonicalized_resource = format!("/{}/{}", self.credentials.account_name, self.credentials.container);
+        let mut canonicalized_resource = format!(
+            "/{}/{}",
+            self.credentials.account_name, self.credentials.container
+        );
         if resource_path != "/" && !resource_path.is_empty() {
             canonicalized_resource.push_str(&format!("/{}", resource_path.trim_start_matches('/')));
         }
@@ -122,13 +128,18 @@ impl AzureBlobProvider {
 
         let key_bytes = base64::engine::general_purpose::STANDARD
             .decode(&self.credentials.account_key)
-            .map_err(|e| StorageError::Authentication(format!("Invalid account key base64: {}", e)))?;
+            .map_err(|e| {
+                StorageError::Authentication(format!("Invalid account key base64: {}", e))
+            })?;
 
         let key = hmac::Key::new(hmac::HMAC_SHA256, &key_bytes);
         let tag = hmac::sign(&key, signable.as_bytes());
         let signature = base64::engine::general_purpose::STANDARD.encode(tag.as_ref());
 
-        Ok(format!("SharedKey {}:{}", self.credentials.account_name, signature))
+        Ok(format!(
+            "SharedKey {}:{}",
+            self.credentials.account_name, signature
+        ))
     }
 }
 
@@ -141,7 +152,11 @@ impl StorageBackend for AzureBlobProvider {
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
             let clean_path = self.format_path(remote_path);
-            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+            info!(
+                "[{}] Real upload starting for '{}'",
+                self.name(),
+                clean_path
+            );
 
             let file_content = fs::read(local_path).await?;
             let len = file_content.len() as u64;
@@ -163,8 +178,13 @@ impl StorageBackend for AzureBlobProvider {
                 ],
             )?;
 
-            let upload_url = format!("{}/{}/{}", self.api_url, self.credentials.container, clean_path);
-            let res = self.client.put(&upload_url)
+            let upload_url = format!(
+                "{}/{}/{}",
+                self.api_url, self.credentials.container, clean_path
+            );
+            let res = self
+                .client
+                .put(&upload_url)
                 .header("x-ms-date", &date_str)
                 .header("x-ms-version", version_str)
                 .header("x-ms-blob-type", blob_type)
@@ -179,7 +199,8 @@ impl StorageBackend for AzureBlobProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -195,14 +216,16 @@ impl StorageBackend for AzureBlobProvider {
                 &path_and_query,
                 None,
                 None,
-                &[
-                    ("x-ms-date", &date_str),
-                    ("x-ms-version", version_str),
-                ],
+                &[("x-ms-date", &date_str), ("x-ms-version", version_str)],
             )?;
 
-            let download_url = format!("{}/{}/{}", self.api_url, self.credentials.container, clean_path);
-            let res = self.client.get(&download_url)
+            let download_url = format!(
+                "{}/{}/{}",
+                self.api_url, self.credentials.container, clean_path
+            );
+            let res = self
+                .client
+                .get(&download_url)
                 .header("x-ms-date", &date_str)
                 .header("x-ms-version", version_str)
                 .header("Authorization", &auth)
@@ -219,7 +242,8 @@ impl StorageBackend for AzureBlobProvider {
             let bytes = res.bytes().await?;
             fs::write(local_path, bytes).await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -235,14 +259,16 @@ impl StorageBackend for AzureBlobProvider {
                 &path_and_query,
                 None,
                 None,
-                &[
-                    ("x-ms-date", &date_str),
-                    ("x-ms-version", version_str),
-                ],
+                &[("x-ms-date", &date_str), ("x-ms-version", version_str)],
             )?;
 
-            let delete_url = format!("{}/{}/{}", self.api_url, self.credentials.container, clean_path);
-            let res = self.client.delete(&delete_url)
+            let delete_url = format!(
+                "{}/{}/{}",
+                self.api_url, self.credentials.container, clean_path
+            );
+            let res = self
+                .client
+                .delete(&delete_url)
                 .header("x-ms-date", &date_str)
                 .header("x-ms-version", version_str)
                 .header("Authorization", &auth)
@@ -254,7 +280,8 @@ impl StorageBackend for AzureBlobProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -282,14 +309,18 @@ impl StorageBackend for AzureBlobProvider {
                 &path_and_query,
                 None,
                 None,
-                &[
-                    ("x-ms-date", &date_str),
-                    ("x-ms-version", version_str),
-                ],
+                &[("x-ms-date", &date_str), ("x-ms-version", version_str)],
             )?;
 
-            let list_url = format!("{}/{}{}", self.api_url, self.credentials.container, &path_and_query[1..]);
-            let res = self.client.get(&list_url)
+            let list_url = format!(
+                "{}/{}{}",
+                self.api_url,
+                self.credentials.container,
+                &path_and_query[1..]
+            );
+            let res = self
+                .client
+                .get(&list_url)
                 .header("x-ms-date", &date_str)
                 .header("x-ms-version", version_str)
                 .header("Authorization", &auth)
@@ -312,33 +343,34 @@ impl StorageBackend for AzureBlobProvider {
                     Ok(xmlparser::Token::ElementStart { local, .. }) => {
                         active_tag = local.as_str().to_string();
                     }
-                    Ok(xmlparser::Token::ElementEnd { end, .. }) => {
-                        match end {
-                            xmlparser::ElementEnd::Close(_, local) => {
-                                active_tag.clear();
-                                let name = local.as_str();
-                                if name == "Blob" {
-                                    let item_path = super::utils::strip_destination_prefix(Path::new(&current_name), self.credentials.common.destination_folder.as_deref());
+                    Ok(xmlparser::Token::ElementEnd { end, .. }) => match end {
+                        xmlparser::ElementEnd::Close(_, local) => {
+                            active_tag.clear();
+                            let name = local.as_str();
+                            if name == "Blob" {
+                                let item_path = super::utils::strip_destination_prefix(
+                                    Path::new(&current_name),
+                                    self.credentials.common.destination_folder.as_deref(),
+                                );
 
-                                    items.push(StorageItem {
-                                        path: item_path,
-                                        size: current_size,
-                                        modified: current_modified,
-                                        is_dir: false,
-                                        checksum: None,
-                                        permissions: None,
-                });
-                                    current_name.clear();
-                                    current_size = 0;
-                                    current_modified = SystemTime::now();
-                                }
+                                items.push(StorageItem {
+                                    path: item_path,
+                                    size: current_size,
+                                    modified: current_modified,
+                                    is_dir: false,
+                                    checksum: None,
+                                    permissions: None,
+                                });
+                                current_name.clear();
+                                current_size = 0;
+                                current_modified = SystemTime::now();
                             }
-                            xmlparser::ElementEnd::Empty => {
-                                active_tag.clear();
-                            }
-                            _ => {}
                         }
-                    }
+                        xmlparser::ElementEnd::Empty => {
+                            active_tag.clear();
+                        }
+                        _ => {}
+                    },
                     Ok(xmlparser::Token::Text { text }) => {
                         let val = text.as_str().trim();
                         if !val.is_empty() {
@@ -353,17 +385,21 @@ impl StorageBackend for AzureBlobProvider {
                             }
                         }
                     }
-                    Err(e) => return Err(StorageError::Provider { message: format!("XML parse error: {}", e), status: None }),
+                    Err(e) => {
+                        return Err(StorageError::Provider {
+                            message: format!("XML parse error: {}", e),
+                            status: None,
+                        })
+                    }
                     _ => {}
                 }
             }
 
             Ok(items)
-        }).await
+        })
+        .await
     }
-
 }
-
 
 /// Builder for [`AzureBlobProvider`].
 pub struct AzureBlobProviderBuilder {

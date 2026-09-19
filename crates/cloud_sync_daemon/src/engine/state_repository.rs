@@ -16,7 +16,11 @@ impl SyncStateRepository {
     }
 
     /// Saves updated sync state catalog atomically to disk.
-    pub async fn save(&self, sync_state: &SyncState, state_file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn save(
+        &self,
+        sync_state: &SyncState,
+        state_file_path: &Path,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         sync_state.save(state_file_path).await?;
         Ok(())
     }

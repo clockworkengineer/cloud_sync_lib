@@ -1,18 +1,23 @@
 [package]
 name = "cloud_sync_std"
-version = "0.1.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Standard utilities and helpers for Cloud Sync"
-license = "MIT"
-repository = "https://github.com/clockworkengineer/cloud_sync_lib"
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
-cloud_sync_core = { path = "../cloud_sync_core", version = "0.1.1" }
-
+cloud_sync_core = { path = "../cloud_sync_core", version = "0.2.0" }
 ignore = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util"] }
-ring = { version = "0.17", features = ["alloc"] }
-md5 = "0.7"
+ring = { workspace = true, features = ["alloc"] }
+md5 = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

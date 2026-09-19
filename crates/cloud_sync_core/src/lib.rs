@@ -5,18 +5,19 @@ extern crate std;
 
 extern crate alloc;
 
-pub mod traits;
-pub mod state;
 pub mod path;
+pub mod state;
 #[cfg(feature = "std")]
 pub mod sys;
+pub mod traits;
 
-pub use traits::{StorageBackend, StorageError, StorageItem, SyncPolicy, SyncMode, ConflictPolicy, StorageReader, StorageWriter, DirectoryLister, FolderOps, ChecksumOps};
-pub use state::{SyncState, FileState};
-pub use path::{NormalizedPath, normalize_remote_path, format_relative_path, format_absolute_path};
 #[cfg(feature = "std")]
 pub use path::get_permissions;
+pub use path::{format_absolute_path, format_relative_path, normalize_remote_path, NormalizedPath};
+pub use state::{FileState, SyncState};
 #[cfg(feature = "std")]
-pub use sys::{Clock, SystemClock, FileSystem, RealFileSystem};
-
-
+pub use sys::{Clock, FileSystem, RealFileSystem, SystemClock};
+pub use traits::{
+    ChecksumOps, ConflictPolicy, DirectoryLister, FolderOps, StorageBackend, StorageError,
+    StorageItem, StorageReader, StorageWriter, SyncMode, SyncPolicy,
+};

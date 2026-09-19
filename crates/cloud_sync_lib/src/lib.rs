@@ -6,27 +6,35 @@
 //! It supports both actual API clients (using OAuth2 refresh tokens) and a local
 //! folder fallback simulation for offline development and testing.
 
+pub mod config;
 pub mod providers;
 pub mod rate_limit;
-pub mod config;
 
-pub use config::{ProviderRootsConfig, ProviderCredentialsConfig};
+pub use config::{ProviderCredentialsConfig, ProviderRootsConfig};
 
 pub use cloud_sync_core::traits;
 pub mod sys {
     pub use cloud_sync_core::sys::*;
 }
-pub use cloud_sync_core::state;
 pub use cloud_sync_core::path;
-pub use cloud_sync_std::ignore;
+pub use cloud_sync_core::state;
 pub use cloud_sync_std::checksum;
+pub use cloud_sync_std::ignore;
 
-pub use providers::{OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials, NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials, B2Credentials, PCloudCredentials, IPFSCredentials, SimulatedFallback, local_sim::LocalSimulation, CommonProviderSettings, ProviderConfig, EncryptedBackend, SyncMode, BackendCredentials, BackendRegistry, OAuthTokenManager, BackendFactory, DynamicBackendRegistry};
-pub use cloud_sync_core::{SyncState, FileState, ConflictPolicy, NormalizedPath, StorageReader, StorageWriter, DirectoryLister, FolderOps, ChecksumOps, Clock, SystemClock, FileSystem, RealFileSystem};
-
+pub use cloud_sync_core::{
+    ChecksumOps, Clock, ConflictPolicy, DirectoryLister, FileState, FileSystem, FolderOps,
+    NormalizedPath, RealFileSystem, StorageReader, StorageWriter, SyncState, SystemClock,
+};
+pub use providers::{
+    local_sim::LocalSimulation, AzureBlobCredentials, B2Credentials, BackendCredentials,
+    BackendFactory, BackendRegistry, CommonProviderSettings, DynamicBackendRegistry,
+    EncryptedBackend, GCSCredentials, IPFSCredentials, MegaCredentials, NextcloudCredentials,
+    OAuthCredentials, OAuthTokenManager, PCloudCredentials, ProviderConfig, S3Credentials,
+    SFTPCredentials, SimulatedFallback, SyncMode, WebDAVCredentials,
+};
 
 pub use cloud_sync_std::SyncIgnore;
-pub use providers::utils::{RetryConfig, set_global_retry_config, get_global_retry_config};
+pub use providers::utils::{get_global_retry_config, set_global_retry_config, RetryConfig};
 
 /// Dynamically constructs a fully-wrapped `StorageBackend` instance from `BackendCredentials` and target root path.
 pub fn create_backend(
@@ -35,35 +43,35 @@ pub fn create_backend(
 ) -> std::sync::Arc<dyn traits::StorageBackend> {
     BackendRegistry::create_backend(creds, sim_root)
 }
-#[cfg(feature = "google_drive")]
-pub use providers::{GoogleDriveProvider, GoogleDriveProviderBuilder};
+pub use cloud_sync_core::{StorageBackend, StorageError, StorageItem, SyncPolicy};
+#[cfg(feature = "azure_blob")]
+pub use providers::{AzureBlobProvider, AzureBlobProviderBuilder};
+#[cfg(feature = "b2")]
+pub use providers::{B2Provider, B2ProviderBuilder};
+#[cfg(feature = "box")]
+pub use providers::{BoxProvider, BoxProviderBuilder};
 #[cfg(feature = "dropbox")]
 pub use providers::{DropboxProvider, DropboxProviderBuilder};
+#[cfg(feature = "gcs")]
+pub use providers::{GCSProvider, GCSProviderBuilder};
+#[cfg(feature = "google_drive")]
+pub use providers::{GoogleDriveProvider, GoogleDriveProviderBuilder};
+#[cfg(feature = "ipfs")]
+pub use providers::{IPFSProvider, IPFSProviderBuilder};
+#[cfg(feature = "mega")]
+pub use providers::{MegaProvider, MegaProviderBuilder};
+#[cfg(feature = "nextcloud")]
+pub use providers::{NextcloudProvider, NextcloudProviderBuilder};
 #[cfg(feature = "onedrive")]
 pub use providers::{OneDriveProvider, OneDriveProviderBuilder};
-#[cfg(feature = "webdav")]
-pub use providers::{WebDAVProvider, WebDAVProviderBuilder};
+#[cfg(feature = "pcloud")]
+pub use providers::{PCloudProvider, PCloudProviderBuilder};
 #[cfg(feature = "s3")]
 pub use providers::{S3Provider, S3ProviderBuilder};
 #[cfg(feature = "sftp")]
 pub use providers::{SFTPProvider, SFTPProviderBuilder};
-#[cfg(feature = "nextcloud")]
-pub use providers::{NextcloudProvider, NextcloudProviderBuilder};
-#[cfg(feature = "box")]
-pub use providers::{BoxProvider, BoxProviderBuilder};
-#[cfg(feature = "mega")]
-pub use providers::{MegaProvider, MegaProviderBuilder};
-#[cfg(feature = "azure_blob")]
-pub use providers::{AzureBlobProvider, AzureBlobProviderBuilder};
-#[cfg(feature = "gcs")]
-pub use providers::{GCSProvider, GCSProviderBuilder};
-#[cfg(feature = "b2")]
-pub use providers::{B2Provider, B2ProviderBuilder};
-#[cfg(feature = "pcloud")]
-pub use providers::{PCloudProvider, PCloudProviderBuilder};
-#[cfg(feature = "ipfs")]
-pub use providers::{IPFSProvider, IPFSProviderBuilder};
-pub use cloud_sync_core::{StorageBackend, StorageError, StorageItem, SyncPolicy};
+#[cfg(feature = "webdav")]
+pub use providers::{WebDAVProvider, WebDAVProviderBuilder};
 
 #[cfg(test)]
 mod tests {
@@ -95,7 +103,8 @@ mod tests {
         let safe_name = provider_name.to_lowercase().replace(' ', "_");
         let provider_root = temp_dir.path().join(format!("{}_root", safe_name));
         let local_sim = LocalSimulation::new(provider_root.clone(), provider_name.to_string());
-        let provider = SimulatedFallback::<B>::new(None, local_sim, provider_name, SyncMode::TwoWay);
+        let provider =
+            SimulatedFallback::<B>::new(None, local_sim, provider_name, SyncMode::TwoWay);
 
         // Create a local temporary file to upload
         let local_file_path = temp_dir.path().join("test.txt");
@@ -103,12 +112,18 @@ mod tests {
         writeln!(file, "Hello simulated cloud storage!").unwrap();
 
         // Upload
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+        provider
+            .upload(&local_file_path, "hello.txt")
+            .await
+            .unwrap();
 
         // Verify remote file exists
         let remote_file = provider_root.join("hello.txt");
         assert!(remote_file.exists());
-        assert_eq!(std::fs::read_to_string(remote_file).unwrap().trim(), "Hello simulated cloud storage!");
+        assert_eq!(
+            std::fs::read_to_string(remote_file).unwrap().trim(),
+            "Hello simulated cloud storage!"
+        );
 
         // List
         let items = provider.list("").await.unwrap();
@@ -117,9 +132,15 @@ mod tests {
 
         // Download
         let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
+        provider
+            .download("hello.txt", &download_path)
+            .await
+            .unwrap();
         assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated cloud storage!");
+        assert_eq!(
+            std::fs::read_to_string(download_path).unwrap().trim(),
+            "Hello simulated cloud storage!"
+        );
 
         // Delete
         provider.delete("hello.txt").await.unwrap();
@@ -185,7 +206,9 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/files/hello-file-id"))
             .and(query_param("alt", "media"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("Hello simulated cloud storage!"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("Hello simulated cloud storage!"),
+            )
             .mount(&server)
             .await;
 
@@ -198,7 +221,7 @@ mod tests {
 
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("gdrive_root");
-        
+
         let creds = OAuthCredentials {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
@@ -207,21 +230,24 @@ mod tests {
         };
 
         // Create provider and set endpoints to mock server
-        let inner = GoogleDriveProvider::new(creds)
-            .with_endpoints(
-                format!("{}/oauth", server.uri()),
-                format!("{}/files", server.uri()),
-                format!("{}/upload", server.uri()),
-            );
+        let inner = GoogleDriveProvider::new(creds).with_endpoints(
+            format!("{}/oauth", server.uri()),
+            format!("{}/files", server.uri()),
+            format!("{}/upload", server.uri()),
+        );
         let local_sim = LocalSimulation::new(provider_root.clone(), "Google Drive".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "Google Drive", SyncMode::TwoWay);
+        let provider =
+            SimulatedFallback::new(Some(inner), local_sim, "Google Drive", SyncMode::TwoWay);
 
         // Upload
         let local_file_path = temp_dir.path().join("test.txt");
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello simulated cloud storage!").unwrap();
 
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+        provider
+            .upload(&local_file_path, "hello.txt")
+            .await
+            .unwrap();
 
         // List
         let items = provider.list("").await.unwrap();
@@ -230,9 +256,15 @@ mod tests {
 
         // Download
         let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
+        provider
+            .download("hello.txt", &download_path)
+            .await
+            .unwrap();
         assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated cloud storage!");
+        assert_eq!(
+            std::fs::read_to_string(download_path).unwrap().trim(),
+            "Hello simulated cloud storage!"
+        );
 
         // Delete
         provider.delete("hello.txt").await.unwrap();
@@ -267,17 +299,20 @@ mod tests {
         let config: TestConfig = match toml::from_str(&content) {
             Ok(cfg) => cfg,
             Err(e) => {
-                println!("Skipping real Google Drive test: failed to parse config file ({:?})", e);
+                println!(
+                    "Skipping real Google Drive test: failed to parse config file ({:?})",
+                    e
+                );
                 return;
             }
         };
 
         let credentials = match config.google_credentials {
             Some(creds) => {
-                if creds.client_secret.contains('*') 
-                    || creds.client_secret.contains("PLACEHOLDER") 
+                if creds.client_secret.contains('*')
+                    || creds.client_secret.contains("PLACEHOLDER")
                     || creds.client_id.contains("PLACEHOLDER")
-                    || creds.client_id.is_empty() 
+                    || creds.client_id.is_empty()
                 {
                     println!("Skipping real Google Drive test: Credentials contain placeholder or masked secret.");
                     return;
@@ -285,7 +320,9 @@ mod tests {
                 creds
             }
             None => {
-                println!("Skipping real Google Drive test: No google_credentials found in config file");
+                println!(
+                    "Skipping real Google Drive test: No google_credentials found in config file"
+                );
                 return;
             }
         };
@@ -295,10 +332,17 @@ mod tests {
         let provider_root = temp_dir.path().join("gdrive_root");
         let inner = GoogleDriveProvider::new(credentials);
         let local_sim = LocalSimulation::new(provider_root.clone(), "Google Drive".to_string());
-        let provider = SimulatedFallback::new(Some(inner), local_sim, "Google Drive", SyncMode::TwoWay);
+        let provider =
+            SimulatedFallback::new(Some(inner), local_sim, "Google Drive", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
-        let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
+        let file_name = format!(
+            "test_real_{}.txt",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        );
         let local_file_path = temp_dir.path().join(&file_name);
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello real Google Drive!").unwrap();
@@ -309,27 +353,40 @@ mod tests {
 
             // List files to find it
             let items = provider.list("").await?;
-            let found = items.iter().any(|item| item.path.to_string_lossy() == file_name);
+            let found = items
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
             assert!(found, "Uploaded file was not found in the file listing");
 
             // Download
             let download_path = temp_dir.path().join("downloaded_real.txt");
             provider.download(&file_name, &download_path).await?;
             assert!(download_path.exists());
-            assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello real Google Drive!");
+            assert_eq!(
+                std::fs::read_to_string(download_path).unwrap().trim(),
+                "Hello real Google Drive!"
+            );
 
             // Delete
             provider.delete(&file_name).await?;
 
             // Verify it's deleted
             let items_after = provider.list("").await?;
-            let found_after = items_after.iter().any(|item| item.path.to_string_lossy() == file_name);
-            assert!(!found_after, "File was not successfully deleted from Google Drive");
+            let found_after = items_after
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
+            assert!(
+                !found_after,
+                "File was not successfully deleted from Google Drive"
+            );
             Ok::<(), StorageError>(())
         };
 
         if let Err(e) = run_test().await {
-            println!("Skipping real Google Drive test due to API/connection error: {:?}", e);
+            println!(
+                "Skipping real Google Drive test due to API/connection error: {:?}",
+                e
+            );
         }
     }
 
@@ -363,7 +420,9 @@ mod tests {
         // 3. Mock Download endpoint (POST to /content/download)
         Mock::given(method("POST"))
             .and(path("/content/download"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("Hello simulated cloud storage!"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("Hello simulated cloud storage!"),
+            )
             .mount(&server)
             .await;
 
@@ -398,7 +457,7 @@ mod tests {
 
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("dropbox_root");
-        
+
         let creds = OAuthCredentials {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
@@ -407,12 +466,11 @@ mod tests {
         };
 
         // Create provider and set endpoints to mock server
-        let inner = DropboxProvider::new(creds)
-            .with_endpoints(
-                format!("{}/oauth", server.uri()),
-                format!("{}/files", server.uri()),
-                format!("{}/content", server.uri()),
-            );
+        let inner = DropboxProvider::new(creds).with_endpoints(
+            format!("{}/oauth", server.uri()),
+            format!("{}/files", server.uri()),
+            format!("{}/content", server.uri()),
+        );
         let local_sim = LocalSimulation::new(provider_root.clone(), "Dropbox".to_string());
         let provider = SimulatedFallback::new(Some(inner), local_sim, "Dropbox", SyncMode::TwoWay);
 
@@ -421,7 +479,10 @@ mod tests {
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello simulated cloud storage!").unwrap();
 
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+        provider
+            .upload(&local_file_path, "hello.txt")
+            .await
+            .unwrap();
 
         // List
         let items = provider.list("").await.unwrap();
@@ -430,9 +491,15 @@ mod tests {
 
         // Download
         let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
+        provider
+            .download("hello.txt", &download_path)
+            .await
+            .unwrap();
         assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated cloud storage!");
+        assert_eq!(
+            std::fs::read_to_string(download_path).unwrap().trim(),
+            "Hello simulated cloud storage!"
+        );
 
         // Delete
         provider.delete("hello.txt").await.unwrap();
@@ -467,17 +534,20 @@ mod tests {
         let config: TestConfig = match toml::from_str(&content) {
             Ok(cfg) => cfg,
             Err(e) => {
-                println!("Skipping real Dropbox test: failed to parse config file ({:?})", e);
+                println!(
+                    "Skipping real Dropbox test: failed to parse config file ({:?})",
+                    e
+                );
                 return;
             }
         };
 
         let credentials = match config.dropbox_credentials {
             Some(creds) => {
-                if creds.client_secret.contains('*') 
-                    || creds.client_secret.contains("PLACEHOLDER") 
+                if creds.client_secret.contains('*')
+                    || creds.client_secret.contains("PLACEHOLDER")
                     || creds.client_id.contains("PLACEHOLDER")
-                    || creds.client_id.is_empty() 
+                    || creds.client_id.is_empty()
                 {
                     println!("Skipping real Dropbox test: Credentials contain placeholder or masked secret.");
                     return;
@@ -498,7 +568,13 @@ mod tests {
         let provider = SimulatedFallback::new(Some(inner), local_sim, "Dropbox", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
-        let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
+        let file_name = format!(
+            "test_real_{}.txt",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        );
         let local_file_path = temp_dir.path().join(&file_name);
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello real Dropbox!").unwrap();
@@ -509,27 +585,40 @@ mod tests {
 
             // List files to find it
             let items = provider.list("").await?;
-            let found = items.iter().any(|item| item.path.to_string_lossy() == file_name);
+            let found = items
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
             assert!(found, "Uploaded file was not found in the file listing");
 
             // Download
             let download_path = temp_dir.path().join("downloaded_real.txt");
             provider.download(&file_name, &download_path).await?;
             assert!(download_path.exists());
-            assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello real Dropbox!");
+            assert_eq!(
+                std::fs::read_to_string(download_path).unwrap().trim(),
+                "Hello real Dropbox!"
+            );
 
             // Delete
             provider.delete(&file_name).await?;
 
             // Verify it's deleted
             let items_after = provider.list("").await?;
-            let found_after = items_after.iter().any(|item| item.path.to_string_lossy() == file_name);
-            assert!(!found_after, "File was not successfully deleted from Dropbox");
+            let found_after = items_after
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
+            assert!(
+                !found_after,
+                "File was not successfully deleted from Dropbox"
+            );
             Ok::<(), StorageError>(())
         };
 
         if let Err(e) = run_test().await {
-            println!("Skipping real Dropbox test due to API/connection error: {:?}", e);
+            println!(
+                "Skipping real Dropbox test due to API/connection error: {:?}",
+                e
+            );
         }
     }
 
@@ -562,7 +651,9 @@ mod tests {
         // 3. Mock Download endpoint (GET to /me/drive/root:/hello.txt:/content)
         Mock::given(method("GET"))
             .and(path("/me/drive/root:/hello.txt:/content"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("Hello simulated cloud storage!"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("Hello simulated cloud storage!"),
+            )
             .mount(&server)
             .await;
 
@@ -589,7 +680,7 @@ mod tests {
 
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("onedrive_root");
-        
+
         let creds = OAuthCredentials {
             client_id: "mock_client".to_string(),
             client_secret: "mock_secret".to_string(),
@@ -599,10 +690,7 @@ mod tests {
 
         // Create provider and set endpoints to mock server
         let inner = OneDriveProvider::new(creds)
-            .with_endpoints(
-                format!("{}/oauth", server.uri()),
-                server.uri(),
-            );
+            .with_endpoints(format!("{}/oauth", server.uri()), server.uri());
         let local_sim = LocalSimulation::new(provider_root.clone(), "OneDrive".to_string());
         let provider = SimulatedFallback::new(Some(inner), local_sim, "OneDrive", SyncMode::TwoWay);
 
@@ -611,7 +699,10 @@ mod tests {
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello simulated cloud storage!").unwrap();
 
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+        provider
+            .upload(&local_file_path, "hello.txt")
+            .await
+            .unwrap();
 
         // List
         let items = provider.list("").await.unwrap();
@@ -620,9 +711,15 @@ mod tests {
 
         // Download
         let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
+        provider
+            .download("hello.txt", &download_path)
+            .await
+            .unwrap();
         assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated cloud storage!");
+        assert_eq!(
+            std::fs::read_to_string(download_path).unwrap().trim(),
+            "Hello simulated cloud storage!"
+        );
 
         // Delete
         provider.delete("hello.txt").await.unwrap();
@@ -657,17 +754,20 @@ mod tests {
         let config: TestConfig = match toml::from_str(&content) {
             Ok(cfg) => cfg,
             Err(e) => {
-                println!("Skipping real OneDrive test: failed to parse config file ({:?})", e);
+                println!(
+                    "Skipping real OneDrive test: failed to parse config file ({:?})",
+                    e
+                );
                 return;
             }
         };
 
         let credentials = match config.onedrive_credentials {
             Some(creds) => {
-                if creds.client_secret.contains('*') 
-                    || creds.client_secret.contains("PLACEHOLDER") 
+                if creds.client_secret.contains('*')
+                    || creds.client_secret.contains("PLACEHOLDER")
                     || creds.client_id.contains("PLACEHOLDER")
-                    || creds.client_id.is_empty() 
+                    || creds.client_id.is_empty()
                 {
                     println!("Skipping real OneDrive test: Credentials contain placeholder or masked secret.");
                     return;
@@ -675,7 +775,9 @@ mod tests {
                 creds
             }
             None => {
-                println!("Skipping real OneDrive test: No onedrive_credentials found in config file");
+                println!(
+                    "Skipping real OneDrive test: No onedrive_credentials found in config file"
+                );
                 return;
             }
         };
@@ -688,7 +790,13 @@ mod tests {
         let provider = SimulatedFallback::new(Some(inner), local_sim, "OneDrive", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
-        let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
+        let file_name = format!(
+            "test_real_{}.txt",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        );
         let local_file_path = temp_dir.path().join(&file_name);
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello real OneDrive!").unwrap();
@@ -699,27 +807,40 @@ mod tests {
 
             // List files to find it
             let items = provider.list("").await?;
-            let found = items.iter().any(|item| item.path.to_string_lossy() == file_name);
+            let found = items
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
             assert!(found, "Uploaded file was not found in the file listing");
 
             // Download
             let download_path = temp_dir.path().join("downloaded_real.txt");
             provider.download(&file_name, &download_path).await?;
             assert!(download_path.exists());
-            assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello real OneDrive!");
+            assert_eq!(
+                std::fs::read_to_string(download_path).unwrap().trim(),
+                "Hello real OneDrive!"
+            );
 
             // Delete
             provider.delete(&file_name).await?;
 
             // Verify it's deleted
             let items_after = provider.list("").await?;
-            let found_after = items_after.iter().any(|item| item.path.to_string_lossy() == file_name);
-            assert!(!found_after, "File was not successfully deleted from OneDrive");
+            let found_after = items_after
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
+            assert!(
+                !found_after,
+                "File was not successfully deleted from OneDrive"
+            );
             Ok::<(), StorageError>(())
         };
 
         if let Err(e) = run_test().await {
-            println!("Skipping real OneDrive test due to API/connection error: {:?}", e);
+            println!(
+                "Skipping real OneDrive test due to API/connection error: {:?}",
+                e
+            );
         }
     }
 
@@ -754,7 +875,9 @@ mod tests {
         // 3. Mock Download endpoint (GET to /MySyncFolder/hello.txt)
         Mock::given(method("GET"))
             .and(path("/MySyncFolder/hello.txt"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("Hello simulated WebDAV storage!"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("Hello simulated WebDAV storage!"),
+            )
             .mount(&server)
             .await;
 
@@ -797,7 +920,7 @@ mod tests {
 
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("webdav_root");
-        
+
         let creds = WebDAVCredentials {
             url: server.uri(),
             username: "username".to_string(),
@@ -823,7 +946,10 @@ mod tests {
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello simulated WebDAV storage!").unwrap();
 
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+        provider
+            .upload(&local_file_path, "hello.txt")
+            .await
+            .unwrap();
 
         // List
         let items = provider.list("").await.unwrap();
@@ -832,9 +958,15 @@ mod tests {
 
         // Download
         let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
+        provider
+            .download("hello.txt", &download_path)
+            .await
+            .unwrap();
         assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated WebDAV storage!");
+        assert_eq!(
+            std::fs::read_to_string(download_path).unwrap().trim(),
+            "Hello simulated WebDAV storage!"
+        );
 
         // Delete
         provider.delete("hello.txt").await.unwrap();
@@ -868,16 +1000,17 @@ mod tests {
         let config: TestConfig = match toml::from_str(&content) {
             Ok(cfg) => cfg,
             Err(e) => {
-                println!("Skipping real WebDAV test: failed to parse config file ({:?})", e);
+                println!(
+                    "Skipping real WebDAV test: failed to parse config file ({:?})",
+                    e
+                );
                 return;
             }
         };
 
         let credentials = match config.webdav_credentials {
             Some(creds) => {
-                if creds.username.contains("PLACEHOLDER") 
-                    || creds.username.is_empty() 
-                {
+                if creds.username.contains("PLACEHOLDER") || creds.username.is_empty() {
                     println!("Skipping real WebDAV test: Credentials contain placeholder or empty username.");
                     return;
                 }
@@ -897,7 +1030,13 @@ mod tests {
         let provider = SimulatedFallback::new(Some(inner), local_sim, "WebDAV", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
-        let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
+        let file_name = format!(
+            "test_real_{}.txt",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        );
         let local_file_path = temp_dir.path().join(&file_name);
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello real WebDAV!").unwrap();
@@ -908,27 +1047,40 @@ mod tests {
 
             // List files to find it
             let items = provider.list("").await?;
-            let found = items.iter().any(|item| item.path.to_string_lossy() == file_name);
+            let found = items
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
             assert!(found, "Uploaded file was not found in the file listing");
 
             // Download
             let download_path = temp_dir.path().join("downloaded_real.txt");
             provider.download(&file_name, &download_path).await?;
             assert!(download_path.exists());
-            assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello real WebDAV!");
+            assert_eq!(
+                std::fs::read_to_string(download_path).unwrap().trim(),
+                "Hello real WebDAV!"
+            );
 
             // Delete
             provider.delete(&file_name).await?;
 
             // Verify it's deleted
             let items_after = provider.list("").await?;
-            let found_after = items_after.iter().any(|item| item.path.to_string_lossy() == file_name);
-            assert!(!found_after, "File was not successfully deleted from WebDAV");
+            let found_after = items_after
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
+            assert!(
+                !found_after,
+                "File was not successfully deleted from WebDAV"
+            );
             Ok::<(), StorageError>(())
         };
 
         if let Err(e) = run_test().await {
-            println!("Skipping real WebDAV test due to API/connection error: {:?}", e);
+            println!(
+                "Skipping real WebDAV test due to API/connection error: {:?}",
+                e
+            );
         }
     }
 
@@ -992,7 +1144,7 @@ mod tests {
 
         let temp_dir = tempdir().unwrap();
         let provider_root = temp_dir.path().join("s3_root");
-        
+
         let creds = S3Credentials {
             bucket: "test-bucket".to_string(),
             region: "us-east-1".to_string(),
@@ -1020,7 +1172,10 @@ mod tests {
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello simulated S3 storage!").unwrap();
 
-        provider.upload(&local_file_path, "hello.txt").await.unwrap();
+        provider
+            .upload(&local_file_path, "hello.txt")
+            .await
+            .unwrap();
 
         // List
         let items = provider.list("").await.unwrap();
@@ -1029,9 +1184,15 @@ mod tests {
 
         // Download
         let download_path = temp_dir.path().join("downloaded.txt");
-        provider.download("hello.txt", &download_path).await.unwrap();
+        provider
+            .download("hello.txt", &download_path)
+            .await
+            .unwrap();
         assert!(download_path.exists());
-        assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello simulated S3 storage!");
+        assert_eq!(
+            std::fs::read_to_string(download_path).unwrap().trim(),
+            "Hello simulated S3 storage!"
+        );
 
         // Delete
         provider.delete("hello.txt").await.unwrap();
@@ -1065,17 +1226,20 @@ mod tests {
         let config: TestConfig = match toml::from_str(&content) {
             Ok(cfg) => cfg,
             Err(e) => {
-                println!("Skipping real S3 test: failed to parse config file ({:?})", e);
+                println!(
+                    "Skipping real S3 test: failed to parse config file ({:?})",
+                    e
+                );
                 return;
             }
         };
 
         let credentials = match config.s3_credentials {
             Some(creds) => {
-                if creds.access_key_id.contains("PLACEHOLDER") 
-                    || creds.access_key_id.is_empty() 
-                {
-                    println!("Skipping real S3 test: Credentials contain placeholder or empty key.");
+                if creds.access_key_id.contains("PLACEHOLDER") || creds.access_key_id.is_empty() {
+                    println!(
+                        "Skipping real S3 test: Credentials contain placeholder or empty key."
+                    );
                     return;
                 }
                 creds
@@ -1094,7 +1258,13 @@ mod tests {
         let provider = SimulatedFallback::new(Some(inner), local_sim, "S3", SyncMode::TwoWay);
 
         // Create a local temporary file to upload
-        let file_name = format!("test_real_{}.txt", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
+        let file_name = format!(
+            "test_real_{}.txt",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        );
         let local_file_path = temp_dir.path().join(&file_name);
         let mut file = File::create(&local_file_path).unwrap();
         writeln!(file, "Hello real S3!").unwrap();
@@ -1105,21 +1275,28 @@ mod tests {
 
             // List files to find it
             let items = provider.list("").await?;
-            let found = items.iter().any(|item| item.path.to_string_lossy() == file_name);
+            let found = items
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
             assert!(found, "Uploaded file was not found in the file listing");
 
             // Download
             let download_path = temp_dir.path().join("downloaded_real.txt");
             provider.download(&file_name, &download_path).await?;
             assert!(download_path.exists());
-            assert_eq!(std::fs::read_to_string(download_path).unwrap().trim(), "Hello real S3!");
+            assert_eq!(
+                std::fs::read_to_string(download_path).unwrap().trim(),
+                "Hello real S3!"
+            );
 
             // Delete
             provider.delete(&file_name).await?;
 
             // Verify it's deleted
             let items_after = provider.list("").await?;
-            let found_after = items_after.iter().any(|item| item.path.to_string_lossy() == file_name);
+            let found_after = items_after
+                .iter()
+                .any(|item| item.path.to_string_lossy() == file_name);
             assert!(!found_after, "File was not successfully deleted from S3");
             Ok::<(), StorageError>(())
         };

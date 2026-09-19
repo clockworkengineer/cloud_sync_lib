@@ -26,7 +26,15 @@ pub async fn refresh_oauth2_token(
     refresh_token: &str,
     provider_name: &str,
 ) -> Result<String, StorageError> {
-    let (access_token, _, _) = refresh_oauth2_token_details(client, auth_url, client_id, client_secret, refresh_token, provider_name).await?;
+    let (access_token, _, _) = refresh_oauth2_token_details(
+        client,
+        auth_url,
+        client_id,
+        client_secret,
+        refresh_token,
+        provider_name,
+    )
+    .await?;
     Ok(access_token)
 }
 
@@ -46,10 +54,7 @@ pub async fn refresh_oauth2_token_details(
         ("grant_type", "refresh_token"),
     ];
 
-    let res = client.post(auth_url)
-        .form(&params)
-        .send()
-        .await?;
+    let res = client.post(auth_url).form(&params).send().await?;
 
     if !res.status().is_success() {
         return Err(translate_http_error(res, provider_name, "refresh_oauth2_token").await);
@@ -57,9 +62,15 @@ pub async fn refresh_oauth2_token_details(
 
     let json: serde_json::Value = res.json().await?;
 
-    let access_token = json["access_token"].as_str().ok_or_else(|| {
-        StorageError::Authentication(format!("Failed to retrieve {} access token: {:?}", provider_name, json))
-    })?.to_string();
+    let access_token = json["access_token"]
+        .as_str()
+        .ok_or_else(|| {
+            StorageError::Authentication(format!(
+                "Failed to retrieve {} access token: {:?}",
+                provider_name, json
+            ))
+        })?
+        .to_string();
 
     let new_refresh_token = json["refresh_token"].as_str().map(|s| s.to_string());
     let expires_in = json["expires_in"].as_u64();
@@ -90,7 +101,15 @@ impl OAuthTokenManager {
         refresh_token: &str,
         provider_name: &str,
     ) -> Self {
-        Self::with_callback(client, token_url, client_id, client_secret, refresh_token, provider_name, None)
+        Self::with_callback(
+            client,
+            token_url,
+            client_id,
+            client_secret,
+            refresh_token,
+            provider_name,
+            None,
+        )
     }
 
     pub fn with_callback(
@@ -140,7 +159,8 @@ impl OAuthTokenManager {
             &self.client_secret,
             &current_refresh_token,
             &self.provider_name,
-        ).await?;
+        )
+        .await?;
 
         if let Some(ref new_ref) = new_refresh_token {
             let mut ref_guard = self.refresh_token.write().await;
@@ -152,7 +172,8 @@ impl OAuthTokenManager {
 
         let ttl = expires_in.unwrap_or(3600);
         let safety_margin = if ttl > 600 { 300 } else { ttl / 2 };
-        let expiry = std::time::Instant::now() + std::time::Duration::from_secs(ttl.saturating_sub(safety_margin));
+        let expiry = std::time::Instant::now()
+            + std::time::Duration::from_secs(ttl.saturating_sub(safety_margin));
 
         *cache = Some((token.clone(), expiry));
         Ok(token)
@@ -160,7 +181,12 @@ impl OAuthTokenManager {
 }
 
 /// Unified helper to map an HTTP status code to `StorageError`.
-pub fn translate_status_code_error(status_code: u16, provider_name: &str, action: &str, detail: Option<&str>) -> StorageError {
+pub fn translate_status_code_error(
+    status_code: u16,
+    provider_name: &str,
+    action: &str,
+    detail: Option<&str>,
+) -> StorageError {
     let msg = match detail {
         Some(d) if !d.trim().is_empty() => d.to_string(),
         _ => format!("HTTP status {}", status_code),
@@ -172,7 +198,10 @@ pub fn translate_status_code_error(status_code: u16, provider_name: &str, action
             retry_after: None,
         },
         404 => StorageError::NotFound(format!("Resource not found on {}: {}", provider_name, msg)),
-        401 | 403 => StorageError::AuthenticationExpired(format!("Authentication expired or forbidden on {}: {}", provider_name, msg)),
+        401 | 403 => StorageError::AuthenticationExpired(format!(
+            "Authentication expired or forbidden on {}: {}",
+            provider_name, msg
+        )),
         409 => StorageError::Conflict(format!("Conflict on {}: {}", provider_name, msg)),
         _ => StorageError::Provider {
             message: format!("Failed to {} on {}: {}", action, provider_name, msg),
@@ -190,11 +219,17 @@ pub fn translate_status_code_error(status_code: u16, provider_name: &str, action
 ///
 /// # Returns
 /// A `StorageError` wrapping the details from the response.
-pub async fn translate_http_error(res: reqwest::Response, provider_name: &str, action: &str) -> StorageError {
+pub async fn translate_http_error(
+    res: reqwest::Response,
+    provider_name: &str,
+    action: &str,
+) -> StorageError {
     let status = res.status();
-    
+
     // Inspect Retry-After header
-    let retry_after = res.headers().get(reqwest::header::RETRY_AFTER)
+    let retry_after = res
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
         .and_then(|val| val.to_str().ok())
         .and_then(|val_str| {
             if let Ok(secs) = val_str.parse::<u64>() {
@@ -211,8 +246,13 @@ pub async fn translate_http_error(res: reqwest::Response, provider_name: &str, a
         body
     };
 
-    let mut err = translate_status_code_error(status.as_u16(), provider_name, action, Some(&detail));
-    if let StorageError::RateLimit { retry_after: ref mut ra, .. } = err {
+    let mut err =
+        translate_status_code_error(status.as_u16(), provider_name, action, Some(&detail));
+    if let StorageError::RateLimit {
+        retry_after: ref mut ra,
+        ..
+    } = err
+    {
         if ra.is_none() {
             *ra = retry_after;
         }
@@ -221,7 +261,10 @@ pub async fn translate_http_error(res: reqwest::Response, provider_name: &str, a
 }
 
 /// Copies bytes from a reader to a writer using a standardized buffer size.
-pub fn copy_buffered<R: std::io::Read, W: std::io::Write>(mut reader: R, mut writer: W) -> std::io::Result<u64> {
+pub fn copy_buffered<R: std::io::Read, W: std::io::Write>(
+    mut reader: R,
+    mut writer: W,
+) -> std::io::Result<u64> {
     let mut buffer = [0u8; 16384];
     let mut total_copied = 0;
     loop {
@@ -252,7 +295,10 @@ pub fn get_secure_credential(service: &str, key: &str, fallback: &str) -> String
     fallback.to_string()
 }
 
-pub use cloud_sync_core::path::{normalize_remote_path, format_relative_path, format_absolute_path, strip_destination_prefix, url_encode, url_encode_path, get_parent_and_filename};
+pub use cloud_sync_core::path::{
+    format_absolute_path, format_relative_path, get_parent_and_filename, normalize_remote_path,
+    strip_destination_prefix, url_encode, url_encode_path,
+};
 
 /// Generates standard `builder()`, `new()`, `timeout()`, and `custom_headers()` methods for a provider and its builder.
 #[macro_export]
@@ -261,7 +307,10 @@ macro_rules! impl_provider_builder {
         $crate::impl_provider_builder!($provider, $builder, $creds);
         impl $provider {
             fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-                $crate::providers::utils::format_absolute_path(remote_path, self.credentials.common.destination_folder.as_deref())
+                $crate::providers::utils::format_absolute_path(
+                    remote_path,
+                    self.credentials.common.destination_folder.as_deref(),
+                )
             }
         }
     };
@@ -269,7 +318,10 @@ macro_rules! impl_provider_builder {
         $crate::impl_provider_builder!($provider, $builder, $creds);
         impl $provider {
             fn format_path<'a>(&self, remote_path: &'a str) -> std::borrow::Cow<'a, str> {
-                $crate::providers::utils::format_relative_path(remote_path, self.credentials.common.destination_folder.as_deref())
+                $crate::providers::utils::format_relative_path(
+                    remote_path,
+                    self.credentials.common.destination_folder.as_deref(),
+                )
             }
         }
     };
@@ -356,7 +408,7 @@ pub async fn download_rate_limited(
     let mut rate_limited_stream = RateLimitedStream::new(byte_stream, limiter);
     use futures_util::stream::StreamExt;
     use tokio::io::AsyncWriteExt;
-    
+
     while let Some(chunk_result) = rate_limited_stream.next().await {
         let chunk = chunk_result.map_err(StorageError::Reqwest)?;
         file.write_all(&chunk).await?;
@@ -377,18 +429,23 @@ pub fn is_transient_error(err: &StorageError) -> bool {
                 return true;
             }
             if let Some(status) = e.status() {
-                status == reqwest::StatusCode::TOO_MANY_REQUESTS
-                    || status.is_server_error()
+                status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
             } else {
                 false
             }
         }
         StorageError::ConnectionFailed(_) => true,
-        StorageError::Provider { status: Some(status_code), .. } => {
+        StorageError::Provider {
+            status: Some(status_code),
+            ..
+        } => {
             *status_code == 429 || *status_code == 502 || *status_code == 503 || *status_code == 504
         }
         StorageError::Provider { message, .. } => {
-            message.contains("429") || message.contains("503") || message.contains("504") || message.contains("502")
+            message.contains("429")
+                || message.contains("503")
+                || message.contains("504")
+                || message.contains("502")
         }
         _ => false,
     }
@@ -426,7 +483,7 @@ pub fn set_global_retry_config(config: RetryConfig) {
 /// Retrieves the global retry configuration.
 pub fn get_global_retry_config() -> RetryConfig {
     if let Ok(lock) = GLOBAL_RETRY_CONFIG.lock() {
-        lock.clone().unwrap_or_default()
+        (*lock).unwrap_or_default()
     } else {
         RetryConfig::default()
     }
@@ -458,12 +515,15 @@ where
             Err(e) => {
                 if is_transient_error(&e) && attempt < max_attempts - 1 {
                     attempt += 1;
-                    
+
                     let sleep_duration = match &e {
-                        StorageError::RateLimit { retry_after: Some(d), .. } => *d,
+                        StorageError::RateLimit {
+                            retry_after: Some(d),
+                            ..
+                        } => *d,
                         _ => delay,
                     };
-                    
+
                     tracing::warn!(
                         "[{}] Transient error during {}: {}. Retrying in {:?} (attempt {}/{})",
                         provider_name,
@@ -473,7 +533,7 @@ where
                         attempt,
                         max_attempts
                     );
-                    
+
                     tokio::time::sleep(sleep_duration).await;
                     delay = std::time::Duration::from_secs_f64(delay.as_secs_f64() * multiplier);
                     continue;
@@ -488,23 +548,24 @@ where
 mod tests {
     use super::*;
     use crate::StorageError;
+    use http;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use tempfile::tempdir;
-    use http;
 
     #[tokio::test]
     async fn test_execute_with_retry_success() {
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = counter.clone();
-        
+
         let result = execute_with_retry("test", "op", || {
             let cnt = counter_clone.clone();
             async move {
                 cnt.fetch_add(1, Ordering::SeqCst);
                 Ok::<_, StorageError>("success")
             }
-        }).await;
+        })
+        .await;
 
         assert_eq!(result.unwrap(), "success");
         assert_eq!(counter.load(Ordering::SeqCst), 1);
@@ -521,7 +582,8 @@ mod tests {
                 cnt.fetch_add(1, Ordering::SeqCst);
                 Err::<(), StorageError>(StorageError::Authentication("Auth error".to_string()))
             }
-        }).await;
+        })
+        .await;
 
         assert!(matches!(result, Err(StorageError::Authentication(_))));
         assert_eq!(counter.load(Ordering::SeqCst), 1);
@@ -537,12 +599,16 @@ mod tests {
             async move {
                 let current = cnt.fetch_add(1, Ordering::SeqCst);
                 if current < 2 {
-                    Err(StorageError::RateLimit { message: "Rate limit".to_string(), retry_after: None })
+                    Err(StorageError::RateLimit {
+                        message: "Rate limit".to_string(),
+                        retry_after: None,
+                    })
                 } else {
                     Ok("success")
                 }
             }
-        }).await;
+        })
+        .await;
 
         assert_eq!(result.unwrap(), "success");
         assert_eq!(counter.load(Ordering::SeqCst), 3); // 0, 1 (retries) then 2 (success)
@@ -557,9 +623,13 @@ mod tests {
             let cnt = counter_clone.clone();
             async move {
                 cnt.fetch_add(1, Ordering::SeqCst);
-                Err::<(), StorageError>(StorageError::RateLimit { message: "Rate limit".to_string(), retry_after: None })
+                Err::<(), StorageError>(StorageError::RateLimit {
+                    message: "Rate limit".to_string(),
+                    retry_after: None,
+                })
             }
-        }).await;
+        })
+        .await;
 
         assert!(matches!(result, Err(StorageError::RateLimit { .. })));
         assert_eq!(counter.load(Ordering::SeqCst), 5); // 5 attempts max
@@ -567,19 +637,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_with_retry_respects_retry_after() {
+        use std::time::Instant;
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
-        use std::time::Instant;
 
         let server = MockServer::start().await;
 
         // Mock response returning 429 Too Many Requests with Retry-After: 1
         Mock::given(method("GET"))
             .and(path("/retry-test"))
-            .respond_with(
-                ResponseTemplate::new(429)
-                    .insert_header("Retry-After", "1")
-            )
+            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "1"))
             .up_to_n_times(1)
             .mount(&server)
             .await;
@@ -605,21 +672,44 @@ mod tests {
                 }
                 Ok("success")
             }
-        }).await;
+        })
+        .await;
 
         let elapsed = start.elapsed();
         assert_eq!(result.unwrap(), "success");
         // It should have slept for at least 1 second due to the Retry-After: 1 header
-        assert!(elapsed.as_millis() >= 950, "Should respect Retry-After delay, took {:?}", elapsed);
+        assert!(
+            elapsed.as_millis() >= 950,
+            "Should respect Retry-After delay, took {:?}",
+            elapsed
+        );
     }
 
     #[tokio::test]
     async fn test_translate_status_code_error() {
-        assert!(matches!(translate_status_code_error(429, "P", "A", None), StorageError::RateLimit { .. }));
-        assert!(matches!(translate_status_code_error(404, "P", "A", None), StorageError::NotFound(_)));
-        assert!(matches!(translate_status_code_error(401, "P", "A", None), StorageError::AuthenticationExpired(_)));
-        assert!(matches!(translate_status_code_error(409, "P", "A", None), StorageError::Conflict(_)));
-        assert!(matches!(translate_status_code_error(500, "P", "A", None), StorageError::Provider { status: Some(500), .. }));
+        assert!(matches!(
+            translate_status_code_error(429, "P", "A", None),
+            StorageError::RateLimit { .. }
+        ));
+        assert!(matches!(
+            translate_status_code_error(404, "P", "A", None),
+            StorageError::NotFound(_)
+        ));
+        assert!(matches!(
+            translate_status_code_error(401, "P", "A", None),
+            StorageError::AuthenticationExpired(_)
+        ));
+        assert!(matches!(
+            translate_status_code_error(409, "P", "A", None),
+            StorageError::Conflict(_)
+        ));
+        assert!(matches!(
+            translate_status_code_error(500, "P", "A", None),
+            StorageError::Provider {
+                status: Some(500),
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -641,7 +731,10 @@ mod tests {
     #[test]
     fn test_build_http_client() {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(reqwest::header::USER_AGENT, reqwest::header::HeaderValue::from_static("test-agent"));
+        headers.insert(
+            reqwest::header::USER_AGENT,
+            reqwest::header::HeaderValue::from_static("test-agent"),
+        );
         let _client = build_http_client(Some(std::time::Duration::from_secs(5)), Some(headers));
     }
 
@@ -662,7 +755,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_oauth_token_manager() {
-        use wiremock::matchers::{method, path, body_string_contains};
+        use wiremock::matchers::{body_string_contains, method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
@@ -678,7 +771,7 @@ mod tests {
         let client = reqwest::Client::new();
         let callback_called = Arc::new(AtomicUsize::new(0));
         let callback_called_clone = callback_called.clone();
-        
+
         let on_refresh = Arc::new(move |new_token: &str| {
             assert_eq!(new_token, "new_refresh_token_456");
             callback_called_clone.fetch_add(1, Ordering::SeqCst);
@@ -711,19 +804,24 @@ mod tests {
         std::fs::write(&file_path, "hello rate limited upload body").unwrap();
 
         let limiter = crate::rate_limit::TokenBucket::new(100);
-        let (_body, size) = get_upload_body(&file_path, Some(limiter.clone())).await.unwrap();
+        let (_body, size) = get_upload_body(&file_path, Some(limiter.clone()))
+            .await
+            .unwrap();
         assert_eq!(size, 30);
 
         let res = reqwest::Response::from(
             http::Response::builder()
                 .status(200)
                 .body(Bytes::from("hello rate limited download body"))
-                .unwrap()
+                .unwrap(),
         );
         let download_path = temp_dir.path().join("download.txt");
-        download_rate_limited(res, &download_path, Some(limiter)).await.unwrap();
-        assert_eq!(std::fs::read_to_string(download_path).unwrap(), "hello rate limited download body");
+        download_rate_limited(res, &download_path, Some(limiter))
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(download_path).unwrap(),
+            "hello rate limited download body"
+        );
     }
 }
-
-

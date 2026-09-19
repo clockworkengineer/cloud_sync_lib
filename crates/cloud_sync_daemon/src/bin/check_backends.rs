@@ -6,9 +6,9 @@ pub mod config;
 #[path = "common.rs"]
 pub mod common;
 
-use cloud_sync_lib::StorageBackend;
 #[allow(unused_imports)]
 use cloud_sync_lib::providers::*;
+use cloud_sync_lib::StorageBackend;
 
 #[allow(dead_code)]
 async fn check_provider(name: &str, provider: &dyn StorageBackend) {

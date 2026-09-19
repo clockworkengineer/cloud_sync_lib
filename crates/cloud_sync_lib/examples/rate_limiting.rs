@@ -1,5 +1,5 @@
-use cloud_sync_lib::{LocalSimulation, SimulatedFallback, StorageBackend, SyncMode};
 use cloud_sync_lib::rate_limit::TokenBucket;
+use cloud_sync_lib::{LocalSimulation, SimulatedFallback, StorageBackend, SyncMode};
 use std::fs::File;
 use std::io::Write;
 use std::time::Instant;
@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize LocalSimulation mock backend with rate limiters
     let local_sim = LocalSimulation::new(temp_dir.clone(), "MockRateLimitProvider".to_string())
         .with_limiters(Some(upload_limiter), Some(download_limiter));
-    
+
     let backend = SimulatedFallback::new(
         None::<LocalSimulation>,
         local_sim,
@@ -47,7 +47,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let download_file_path = std::env::temp_dir().join("rate_limit_downloaded.txt");
     let start_download = Instant::now();
     println!("Downloading at 100 bytes/sec limit...");
-    backend.download("large_file.txt", &download_file_path).await?;
+    backend
+        .download("large_file.txt", &download_file_path)
+        .await?;
     let download_duration = start_download.elapsed();
     println!("Download finished in {:.2?}", download_duration);
 

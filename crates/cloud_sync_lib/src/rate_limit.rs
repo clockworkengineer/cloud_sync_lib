@@ -1,15 +1,15 @@
 use crate::traits::{StorageBackend, StorageError, StorageItem};
-use std::path::Path;
-use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
-use std::time::Instant;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::future::Future;
-use tokio::time::{sleep_until, Duration, Instant as TokioInstant, Sleep};
-use futures_util::stream::Stream;
 use bytes::Bytes;
+use futures_util::stream::Stream;
+use std::future::Future;
+use std::path::Path;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
+use std::time::Instant;
 use tokio::io::{AsyncRead, ReadBuf};
+use tokio::time::{sleep_until, Duration, Instant as TokioInstant, Sleep};
 
 /// Generic rate-limiting wrapper for any [`StorageBackend`].
 ///
@@ -22,7 +22,11 @@ pub struct RateLimitingBackend<B: StorageBackend> {
 
 impl<B: StorageBackend> RateLimitingBackend<B> {
     /// Creates a new `RateLimitingBackend` wrapper.
-    pub fn new(inner: B, upload_limiter: Option<TokenBucket>, download_limiter: Option<TokenBucket>) -> Self {
+    pub fn new(
+        inner: B,
+        upload_limiter: Option<TokenBucket>,
+        download_limiter: Option<TokenBucket>,
+    ) -> Self {
         Self {
             inner,
             upload_limiter,
@@ -81,7 +85,10 @@ impl<B: StorageBackend> StorageBackend for RateLimitingBackend<B> {
         self.inner.rename(from, to).await
     }
 
-    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
         self.inner.compute_local_checksum(local_path).await
     }
 }
@@ -299,7 +306,7 @@ mod tests {
     #[tokio::test]
     async fn test_token_bucket_limiting() {
         let bucket = TokenBucket::new(1000); // 1000 bytes per second
-        
+
         // Consuming 500 should be instant
         assert!(bucket.consume(500).is_none());
 
@@ -319,7 +326,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let src = dir.path().join("src.txt");
         let dst = dir.path().join("dst.txt");
-        
+
         // Write 10KB of data
         let data = vec![0u8; 10000];
         write(&src, &data).await.unwrap();
@@ -350,7 +357,7 @@ mod tests {
         let cursor = std::io::Cursor::new(data);
         let limiter = TokenBucket::new(50);
         let mut reader = RateLimitedReader::new(cursor, Some(limiter));
-        
+
         let mut buf1 = vec![0u8; 50];
         let mut buf2 = vec![0u8; 50];
         let mut buf3 = vec![0u8; 50];
@@ -392,7 +399,8 @@ mod tests {
 
         // Test stream with None limiter
         let bytes_none = Bytes::from("hello world");
-        let source_stream_none = futures_util::stream::iter(vec![Ok::<Bytes, std::io::Error>(bytes_none)]);
+        let source_stream_none =
+            futures_util::stream::iter(vec![Ok::<Bytes, std::io::Error>(bytes_none)]);
         let mut limited_stream_none = RateLimitedStream::new(source_stream_none, None);
         let res_none = limited_stream_none.next().await.unwrap().unwrap();
         assert_eq!(res_none.as_ref(), b"hello world");
@@ -406,12 +414,16 @@ mod tests {
         std::fs::create_dir_all(&local_root).unwrap();
         std::fs::create_dir_all(&remote_root).unwrap();
 
-        let local_sim = crate::providers::local_sim::LocalSimulation::new(remote_root.clone(), "MockRemote".to_string());
-        
+        let local_sim = crate::providers::local_sim::LocalSimulation::new(
+            remote_root.clone(),
+            "MockRemote".to_string(),
+        );
+
         let upload_limiter = TokenBucket::new(1000);
         let download_limiter = TokenBucket::new(1000);
-        let backend = RateLimitingBackend::new(local_sim, Some(upload_limiter), Some(download_limiter));
-        
+        let backend =
+            RateLimitingBackend::new(local_sim, Some(upload_limiter), Some(download_limiter));
+
         assert_eq!(backend.name(), "MockRemote");
 
         let local_file = local_root.join("test.txt");
@@ -421,7 +433,10 @@ mod tests {
         backend.upload(&local_file, "remote.txt").await.unwrap();
 
         let download_dest = local_root.join("dest.txt");
-        backend.download("remote.txt", &download_dest).await.unwrap();
+        backend
+            .download("remote.txt", &download_dest)
+            .await
+            .unwrap();
 
         backend.create_folder("new_dir").await.unwrap();
         let list = backend.list("").await.unwrap();

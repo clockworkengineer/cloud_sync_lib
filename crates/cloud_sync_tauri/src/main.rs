@@ -41,8 +41,13 @@ async fn main() {
                     Ok((mut rx, _child)) => {
                         tauri::async_runtime::spawn(async move {
                             while let Some(event) = rx.recv().await {
-                                if let tauri_plugin_shell::process::CommandEvent::Stdout(line) = event {
-                                    println!("[Daemon] {}", String::from_utf8_lossy(&line).trim_end());
+                                if let tauri_plugin_shell::process::CommandEvent::Stdout(line) =
+                                    event
+                                {
+                                    println!(
+                                        "[Daemon] {}",
+                                        String::from_utf8_lossy(&line).trim_end()
+                                    );
                                 }
                             }
                         });

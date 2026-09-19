@@ -1,5 +1,5 @@
-use std::path::Path;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use std::path::Path;
 
 /// Matches paths against glob exclusions loaded from `.syncignore` and configuration.
 #[derive(Debug, Clone)]
@@ -14,7 +14,11 @@ impl SyncIgnore {
         let syncignore_path = watch_dir.join(".syncignore");
         if syncignore_path.exists() {
             if let Some(err) = builder.add(&syncignore_path) {
-                tracing::warn!("Error loading .syncignore at {:?}: {}", syncignore_path, err);
+                tracing::warn!(
+                    "Error loading .syncignore at {:?}: {}",
+                    syncignore_path,
+                    err
+                );
             }
         }
         for pattern in exclude_patterns {
@@ -35,7 +39,9 @@ impl SyncIgnore {
 
     /// Returns true if the path matches any of the ignore patterns.
     pub fn is_ignored<P: AsRef<Path>>(&self, path: P, is_dir: bool) -> bool {
-        self.inner.matched_path_or_any_parents(path.as_ref(), is_dir).is_ignore()
+        self.inner
+            .matched_path_or_any_parents(path.as_ref(), is_dir)
+            .is_ignore()
     }
 }
 
@@ -47,11 +53,8 @@ mod tests {
     fn test_sync_ignore_basic() {
         let temp_dir = tempfile::tempdir().unwrap();
         let watch_path = temp_dir.path();
-        
-        let gitignore = SyncIgnore::new(
-            watch_path,
-            &["*.log".to_string(), "target/".to_string()],
-        );
+
+        let gitignore = SyncIgnore::new(watch_path, &["*.log".to_string(), "target/".to_string()]);
 
         assert!(gitignore.is_ignored(watch_path.join("error.log"), false));
         assert!(!gitignore.is_ignored(watch_path.join("error.txt"), false));
@@ -68,13 +71,10 @@ mod tests {
     fn test_sync_ignore_invalid_patterns() {
         let temp_dir = tempfile::tempdir().unwrap();
         let watch_path = temp_dir.path();
-        
+
         std::fs::create_dir(watch_path.join(".syncignore")).unwrap();
 
-        let gitignore = SyncIgnore::new(
-            watch_path,
-            &["\\".to_string()],
-        );
+        let gitignore = SyncIgnore::new(watch_path, &["\\".to_string()]);
 
         assert!(!gitignore.is_ignored(watch_path.join("test.txt"), false));
     }

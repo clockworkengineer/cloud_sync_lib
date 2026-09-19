@@ -3,15 +3,15 @@
 //! Handles interaction with the pCloud native JSON REST API. Supports OAuth2 authentication,
 //! multipart uploads, download link resolution, file deletion, and listing.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::PCloudCredentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::PCloudCredentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
+use serde::Deserialize;
 use std::path::Path;
-use std::time::{SystemTime, Duration};
+use std::time::{Duration, SystemTime};
 use tokio::fs;
 use tracing::info;
-use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
 struct PCloudMetadata {
@@ -47,10 +47,14 @@ pub struct PCloudProvider {
     api_url: String,
 }
 
-crate::impl_provider_builder!(PCloudProvider, PCloudProviderBuilder, PCloudCredentials, absolute);
+crate::impl_provider_builder!(
+    PCloudProvider,
+    PCloudProviderBuilder,
+    PCloudCredentials,
+    absolute
+);
 
 impl PCloudProvider {
-
     /// Creates a new `PCloudProvider` with custom HTTP client options.
     pub fn with_client_options(
         credentials: PCloudCredentials,
@@ -69,8 +73,6 @@ impl PCloudProvider {
             api_url,
         }
     }
-
-
 }
 
 #[async_trait]
@@ -82,10 +84,14 @@ impl StorageBackend for PCloudProvider {
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
             let clean_path = self.format_path(remote_path);
-            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+            info!(
+                "[{}] Real upload starting for '{}'",
+                self.name(),
+                clean_path
+            );
 
             let file_content = fs::read(local_path).await?;
-            
+
             let parent_dir = Path::new(clean_path.as_ref())
                 .parent()
                 .map(|p| p.to_string_lossy().to_string())
@@ -100,21 +106,27 @@ impl StorageBackend for PCloudProvider {
             let upload_url = format!("{}/uploadfile", self.api_url);
 
             // Build multipart body
-            let form = reqwest::multipart::Form::new()
-                .part("file", reqwest::multipart::Part::bytes(file_content).file_name(file_name));
+            let form = reqwest::multipart::Form::new().part(
+                "file",
+                reqwest::multipart::Part::bytes(file_content).file_name(file_name),
+            );
 
-            let res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &self.credentials.access_token)
-                .query(&[("path", &parent_dir)])
-                .multipart(form)
-                .send()
-                .await?;
+            let res = super::utils::apply_bearer_auth(
+                self.client.post(&upload_url),
+                &self.credentials.access_token,
+            )
+            .query(&[("path", &parent_dir)])
+            .multipart(form)
+            .send()
+            .await?;
 
             if !res.status().is_success() {
                 return Err(translate_http_error(res, self.name(), "upload").await);
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -122,18 +134,22 @@ impl StorageBackend for PCloudProvider {
             let clean_path = self.format_path(remote_path);
             let link_url = format!("{}/getfilelink", self.api_url);
 
-            let res = super::utils::apply_bearer_auth(self.client.get(&link_url), &self.credentials.access_token)
-                .query(&[("path", &clean_path)])
-                .send()
-                .await?;
+            let res = super::utils::apply_bearer_auth(
+                self.client.get(&link_url),
+                &self.credentials.access_token,
+            )
+            .query(&[("path", &clean_path)])
+            .send()
+            .await?;
 
             if !res.status().is_success() {
                 return Err(translate_http_error(res, self.name(), "getfilelink").await);
             }
 
             let link_info: PCloudFileLinkResponse = res.json().await?;
-            let host = link_info.hosts.first()
-                .ok_or_else(|| StorageError::NotFound("No download hosts returned by pCloud".to_string()))?;
+            let host = link_info.hosts.first().ok_or_else(|| {
+                StorageError::NotFound("No download hosts returned by pCloud".to_string())
+            })?;
 
             let download_url = format!("https://{}{}", host, link_info.path);
             let dl_res = self.client.get(&download_url).send().await?;
@@ -148,7 +164,8 @@ impl StorageBackend for PCloudProvider {
             let bytes = dl_res.bytes().await?;
             fs::write(local_path, bytes).await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -156,17 +173,21 @@ impl StorageBackend for PCloudProvider {
             let clean_path = self.format_path(remote_path);
             let delete_url = format!("{}/deletefile", self.api_url);
 
-            let res = super::utils::apply_bearer_auth(self.client.get(&delete_url), &self.credentials.access_token)
-                .query(&[("path", &clean_path)])
-                .send()
-                .await?;
+            let res = super::utils::apply_bearer_auth(
+                self.client.get(&delete_url),
+                &self.credentials.access_token,
+            )
+            .query(&[("path", &clean_path)])
+            .send()
+            .await?;
 
             if !res.status().is_success() {
                 return Err(translate_http_error(res, self.name(), "delete").await);
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -174,10 +195,13 @@ impl StorageBackend for PCloudProvider {
             let clean_path = self.format_path(remote_path);
             let list_url = format!("{}/listfolder", self.api_url);
 
-            let res = super::utils::apply_bearer_auth(self.client.get(&list_url), &self.credentials.access_token)
-                .query(&[("path", &clean_path)])
-                .send()
-                .await?;
+            let res = super::utils::apply_bearer_auth(
+                self.client.get(&list_url),
+                &self.credentials.access_token,
+            )
+            .query(&[("path", &clean_path)])
+            .send()
+            .await?;
 
             if !res.status().is_success() {
                 return Err(translate_http_error(res, self.name(), "list").await);
@@ -193,9 +217,13 @@ impl StorageBackend for PCloudProvider {
                             continue;
                         }
 
-                        let item_path = super::utils::strip_destination_prefix(Path::new(&entry.name), self.credentials.common.destination_folder.as_deref());
+                        let item_path = super::utils::strip_destination_prefix(
+                            Path::new(&entry.name),
+                            self.credentials.common.destination_folder.as_deref(),
+                        );
 
-                        let modified = entry.modified
+                        let modified = entry
+                            .modified
                             .map(|m| SystemTime::UNIX_EPOCH + Duration::from_secs(m))
                             .unwrap_or(SystemTime::now());
 
@@ -206,17 +234,16 @@ impl StorageBackend for PCloudProvider {
                             is_dir: false,
                             checksum: None,
                             permissions: None,
-                });
+                        });
                     }
                 }
             }
 
             Ok(items)
-        }).await
+        })
+        .await
     }
-
 }
-
 
 /// Builder for [`PCloudProvider`].
 pub struct PCloudProviderBuilder {

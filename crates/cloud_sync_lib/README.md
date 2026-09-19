@@ -6,7 +6,7 @@ A modular Rust library providing clean abstractions and clients to interface wit
 
 ## Core Abstractions
 
-All providers implement the `StorageBackend` trait defined in [`traits.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/traits.rs):
+All providers implement the `StorageBackend` trait defined in [`traits.rs`](../cloud_sync_core/src/traits.rs):
 
 ```rust
 #[async_trait]
@@ -24,31 +24,31 @@ pub trait StorageBackend: Send + Sync {
 
 ## Crate Layout
 
-- **[`traits.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/traits.rs)**: Core trait definitions, list item metadata (`StorageItem`), sync policies (`SyncPolicy`), and error types (`StorageError`).
-- **[`providers/`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/)**: Submodule housing specific client implementations and helpers:
-  - [`google_drive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/google_drive.rs): Google Drive REST API integration.
-  - [`dropbox.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/dropbox.rs): Dropbox REST API integration. Includes pagination listing loop.
-  - [`onedrive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/onedrive.rs): Microsoft OneDrive Graph API integration. Includes pagination listing loop.
-  - [`webdav.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/webdav.rs): WebDAV client integration.
-  - [`s3.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/s3.rs): Amazon S3 and S3-Compatible API integration.
-  - [`sftp.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/sftp.rs): SFTP client integration.
-  - [`nextcloud.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/nextcloud.rs): Nextcloud WebDAV & OCS client integration.
-  - [`azure_blob.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/azure_blob.rs): Azure Blob Storage REST API integration.
-  - [`gcs.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/gcs.rs): Google Cloud Storage JSON API integration.
-  - [`b2.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/b2.rs): Backblaze B2 REST API integration. Includes pagination listing loop.
-  - [`pcloud.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/pcloud.rs): pCloud REST API integration.
-  - [`ipfs.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/ipfs.rs): IPFS Pinning Service REST API integration.
-  - [`box_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/box_provider.rs): Box storage API integration.
-  - [`mega_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/mega_provider.rs): MEGA cloud storage encrypted client integration.
-  - [`local_sim.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/local_sim.rs): Shared local fallback simulator (`LocalSimulation`) implementing local folder operations for offline testing.
-  - [`encryption.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/encryption.rs): Client-side zero-knowledge encryption decorator. Implements PBKDF2-HMAC-SHA256 key derivation and secure Unix `0600` file permissions.
-  - [`utils.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/utils.rs): Helpers for OAuth2, HTTP error response mapping, transient retry timing tests.
+- **[`traits.rs`](../cloud_sync_core/src/traits.rs)**: Core trait definitions, list item metadata (`StorageItem`), sync policies (`SyncPolicy`), and error types (`StorageError`).
+- **[`providers/`](src/providers/)**: Submodule housing specific client implementations and helpers:
+  - [`google_drive.rs`](src/providers/google_drive.rs): Google Drive REST API integration.
+  - [`dropbox.rs`](src/providers/dropbox.rs): Dropbox REST API integration. Includes pagination listing loop.
+  - [`onedrive.rs`](src/providers/onedrive.rs): Microsoft OneDrive Graph API integration. Includes pagination listing loop.
+  - [`webdav.rs`](src/providers/webdav.rs): WebDAV client integration.
+  - [`s3.rs`](src/providers/s3.rs): Amazon S3 and S3-Compatible API integration.
+  - [`sftp.rs`](src/providers/sftp.rs): SFTP client integration.
+  - [`nextcloud.rs`](src/providers/nextcloud.rs): Nextcloud WebDAV & OCS client integration.
+  - [`azure_blob.rs`](src/providers/azure_blob.rs): Azure Blob Storage REST API integration.
+  - [`gcs.rs`](src/providers/gcs.rs): Google Cloud Storage JSON API integration.
+  - [`b2.rs`](src/providers/b2.rs): Backblaze B2 REST API integration. Includes pagination listing loop.
+  - [`pcloud.rs`](src/providers/pcloud.rs): pCloud REST API integration.
+  - [`ipfs.rs`](src/providers/ipfs.rs): IPFS Pinning Service REST API integration.
+  - [`box_provider.rs`](src/providers/box_provider.rs): Box storage API integration.
+  - [`mega_provider.rs`](src/providers/mega_provider.rs): MEGA cloud storage encrypted client integration.
+  - [`local_sim.rs`](src/providers/local_sim.rs): Shared local fallback simulator (`LocalSimulation`) implementing local folder operations for offline testing.
+  - [`encryption.rs`](src/providers/encryption.rs): Client-side zero-knowledge encryption decorator. Implements PBKDF2-HMAC-SHA256 key derivation and secure Unix `0600` file permissions.
+  - [`utils.rs`](src/providers/utils.rs): Helpers for OAuth2, HTTP error response mapping, transient retry timing tests.
 
 ---
 
 ## Backend Registry (Dynamic Instantiation)
 
-The library provides `BackendRegistry` and `BackendCredentials` inside the [`providers/`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/mod.rs) module to enable dynamic backend configuration parsing and instantiation:
+The library provides `BackendRegistry` and `BackendCredentials` inside the [`providers/`](src/providers/mod.rs) module to enable dynamic backend configuration parsing and instantiation:
 
 ```rust
 use cloud_sync_lib::{BackendRegistry, BackendCredentials};
@@ -61,7 +61,7 @@ let provider = BackendRegistry::build(BackendCredentials::S3(s3_credentials));
 
 ## Local Simulation Fallback
 
-When `OAuthCredentials` (or other provider credentials) are passed as `None` to a provider constructor, the client automatically defaults to **Simulation Mode**, which is powered by the shared `LocalSimulation` struct inside [`local_sim.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/local_sim.rs).
+When `OAuthCredentials` (or other provider credentials) are passed as `None` to a provider constructor, the client automatically defaults to **Simulation Mode**, which is powered by the shared `LocalSimulation` struct inside [`local_sim.rs`](src/providers/local_sim.rs).
 
 Instead of connecting to remote web APIs, the providers delegate file operations (upload, download, listing, deletion) to this helper. It maps and copies files inside the local simulation directories:
 * Google Drive simulated root: `./cloud_simulation/google_drive`
@@ -89,7 +89,7 @@ All providers support dynamic endpoint redirection for automated testing using `
 - Google Drive: `.with_endpoints(auth_url, api_url, upload_url)`
 - Dropbox: `.with_endpoints(auth_url, api_url, content_url)`
 
-Check [`lib.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/lib.rs) for examples of automated mock HTTP flow tests.
+Check [`lib.rs`](src/lib.rs) for examples of automated mock HTTP flow tests.
 Real integration tests automatically skip gracefully when configuration is missing or tokens are expired.
 
 ---
@@ -101,4 +101,3 @@ If you find this project useful, consider supporting its development:
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
 
 [Buy Me a Coffee](https://buymeacoffee.com/roberttizz1)
-

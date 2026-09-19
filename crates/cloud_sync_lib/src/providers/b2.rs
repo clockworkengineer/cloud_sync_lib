@@ -3,16 +3,16 @@
 //! Handles interaction with the Backblaze B2 native JSON REST API. Supports authorization,
 //! upload url retrieval, file upload, download, deletion, and listing.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::B2Credentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::B2Credentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
-use std::time::{SystemTime, Duration};
+use std::time::{Duration, SystemTime};
 use tokio::fs;
 use tracing::info;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
 struct B2Auth {
@@ -115,7 +115,6 @@ use super::utils::url_encode_path as url_encode;
 crate::impl_provider_builder!(B2Provider, B2ProviderBuilder, B2Credentials, relative);
 
 impl B2Provider {
-
     /// Creates a new `B2Provider` with custom HTTP client options.
     pub fn with_client_options(
         credentials: B2Credentials,
@@ -149,8 +148,13 @@ impl B2Provider {
         }
 
         let auth_url = format!("{}/b2api/v2/b2_authorize_account", self.auth_endpoint());
-        let res = self.client.get(&auth_url)
-            .basic_auth(&self.credentials.key_id, Some(&self.credentials.application_key))
+        let res = self
+            .client
+            .get(&auth_url)
+            .basic_auth(
+                &self.credentials.key_id,
+                Some(&self.credentials.application_key),
+            )
             .send()
             .await?;
 
@@ -181,7 +185,9 @@ impl B2Provider {
         }
 
         let url = format!("{}/b2api/v2/b2_list_buckets", auth.api_url);
-        let res = self.client.post(&url)
+        let res = self
+            .client
+            .post(&url)
             .header("Authorization", &auth.auth_token)
             .json(&ListBucketsRequest {
                 account_id: auth.account_id.clone(),
@@ -195,14 +201,14 @@ impl B2Provider {
         }
 
         let body: ListBucketsResponse = res.json().await?;
-        let bucket = body.buckets.first()
-            .ok_or_else(|| StorageError::NotFound(format!("Bucket '{}' not found", self.credentials.bucket)))?;
+        let bucket = body.buckets.first().ok_or_else(|| {
+            StorageError::NotFound(format!("Bucket '{}' not found", self.credentials.bucket))
+        })?;
 
         let mut cache = self.bucket_id_cache.lock().unwrap();
         *cache = Some(bucket.bucket_id.clone());
         Ok(bucket.bucket_id.clone())
     }
-
 }
 
 #[async_trait]
@@ -214,7 +220,11 @@ impl StorageBackend for B2Provider {
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
             let clean_path = self.format_path(remote_path).into_owned();
-            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+            info!(
+                "[{}] Real upload starting for '{}'",
+                self.name(),
+                clean_path
+            );
 
             let auth = self.authorize().await?;
             let bucket_id = self.get_bucket_id(&auth).await?;
@@ -223,7 +233,9 @@ impl StorageBackend for B2Provider {
 
             // 1. Get Upload URL
             let get_url_endpoint = format!("{}/b2api/v2/b2_get_upload_url", auth.api_url);
-            let res = self.client.post(&get_url_endpoint)
+            let res = self
+                .client
+                .post(&get_url_endpoint)
                 .header("Authorization", &auth.auth_token)
                 .json(&GetUploadUrlRequest { bucket_id })
                 .send()
@@ -237,7 +249,9 @@ impl StorageBackend for B2Provider {
 
             // 2. Upload file
             let encoded_name = url_encode(&clean_path);
-            let upload_res = self.client.post(&upload_info.upload_url)
+            let upload_res = self
+                .client
+                .post(&upload_info.upload_url)
                 .header("Authorization", &upload_info.authorization_token)
                 .header("X-Bz-File-Name", &encoded_name)
                 .header("Content-Type", "b2/x-auto")
@@ -252,7 +266,8 @@ impl StorageBackend for B2Provider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -262,9 +277,14 @@ impl StorageBackend for B2Provider {
 
             // B2 download URL format: {downloadUrl}/file/{bucketName}/{fileName}
             let encoded_name = url_encode(&clean_path);
-            let download_url = format!("{}/file/{}/{}", auth.download_url, self.credentials.bucket, encoded_name);
+            let download_url = format!(
+                "{}/file/{}/{}",
+                auth.download_url, self.credentials.bucket, encoded_name
+            );
 
-            let res = self.client.get(&download_url)
+            let res = self
+                .client
+                .get(&download_url)
                 .header("Authorization", &auth.auth_token)
                 .send()
                 .await?;
@@ -279,7 +299,8 @@ impl StorageBackend for B2Provider {
             let bytes = res.bytes().await?;
             fs::write(local_path, bytes).await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -290,7 +311,9 @@ impl StorageBackend for B2Provider {
 
             // 1. List file names starting with this filename to find the file ID
             let list_url = format!("{}/b2api/v2/b2_list_file_names", auth.api_url);
-            let list_res = self.client.post(&list_url)
+            let list_res = self
+                .client
+                .post(&list_url)
                 .header("Authorization", &auth.auth_token)
                 .json(&ListFileNamesRequest {
                     bucket_id: bucket_id.clone(),
@@ -306,13 +329,19 @@ impl StorageBackend for B2Provider {
             }
 
             let list_body: ListFileNamesResponse = list_res.json().await?;
-            let file = list_body.files.first()
+            let file = list_body
+                .files
+                .first()
                 .filter(|f| f.file_name == clean_path)
-                .ok_or_else(|| StorageError::NotFound(format!("File '{}' not found", clean_path)))?;
+                .ok_or_else(|| {
+                    StorageError::NotFound(format!("File '{}' not found", clean_path))
+                })?;
 
             // 2. Delete the specific file version
             let delete_url = format!("{}/b2api/v2/b2_delete_file_version", auth.api_url);
-            let del_res = self.client.post(&delete_url)
+            let del_res = self
+                .client
+                .post(&delete_url)
                 .header("Authorization", &auth.auth_token)
                 .json(&DeleteFileVersionRequest {
                     file_name: file.file_name.clone(),
@@ -326,7 +355,8 @@ impl StorageBackend for B2Provider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -350,7 +380,9 @@ impl StorageBackend for B2Provider {
             let mut start_file_name: Option<String> = None;
 
             loop {
-                let res = self.client.post(&list_url)
+                let res = self
+                    .client
+                    .post(&list_url)
                     .header("Authorization", &auth.auth_token)
                     .json(&ListFileNamesRequest {
                         bucket_id: bucket_id.clone(),
@@ -367,10 +399,14 @@ impl StorageBackend for B2Provider {
 
                 let body: ListFileNamesResponse = res.json().await?;
                 for file in body.files {
-                    let item_path = super::utils::strip_destination_prefix(Path::new(&file.file_name), self.credentials.common.destination_folder.as_deref());
+                    let item_path = super::utils::strip_destination_prefix(
+                        Path::new(&file.file_name),
+                        self.credentials.common.destination_folder.as_deref(),
+                    );
 
                     // Convert B2 timestamp (milliseconds since epoch) to SystemTime
-                    let modified = SystemTime::UNIX_EPOCH + Duration::from_millis(file.upload_timestamp);
+                    let modified =
+                        SystemTime::UNIX_EPOCH + Duration::from_millis(file.upload_timestamp);
 
                     items.push(StorageItem {
                         path: item_path,
@@ -379,7 +415,7 @@ impl StorageBackend for B2Provider {
                         is_dir: false, // B2 is a flat namespace, folders are virtual
                         checksum: None,
                         permissions: None,
-                });
+                    });
                 }
 
                 if body.next_file_name.is_some() {
@@ -390,11 +426,10 @@ impl StorageBackend for B2Provider {
             }
 
             Ok(items)
-        }).await
+        })
+        .await
     }
-
 }
-
 
 /// Builder for [`B2Provider`].
 pub struct B2ProviderBuilder {

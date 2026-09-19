@@ -1,18 +1,18 @@
 //! Filesystem watcher event loop and full sync triggers.
 
+use cloud_sync_lib::{StorageBackend, SyncIgnore};
+use notify::{Event, EventKind};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::fs;
 use tokio::sync::Mutex;
-use notify::{Event, EventKind};
 use tracing::{error, info, warn};
-use cloud_sync_lib::{StorageBackend, SyncIgnore};
 
-use crate::{DaemonState, ActiveBackend};
-use crate::{DEBOUNCE_DELAY_MS, RETRY_DELAY_MS, MAX_SYNC_ATTEMPTS};
 use crate::utils::get_remote_path;
+use crate::{ActiveBackend, DaemonState};
+use crate::{DEBOUNCE_DELAY_MS, MAX_SYNC_ATTEMPTS, RETRY_DELAY_MS};
 
 pub type ActiveLocks = Arc<Mutex<HashMap<(String, PathBuf), Arc<tokio::sync::Mutex<()>>>>>;
 
@@ -65,13 +65,20 @@ impl<'a> DirectoryScanner<'a> {
                             if let Ok(rel_path) = path.strip_prefix(&self.watch_dir) {
                                 let rel_str = rel_path.to_string_lossy().to_string();
                                 if !rel_str.is_empty() {
-                                    return Ok(Some((rel_str, ScannedItem {
-                                        path,
-                                        is_dir: true,
-                                        size: 0,
-                                        modified: metadata.modified().unwrap_or_else(|_| SystemTime::now()),
-                                        permissions: cloud_sync_lib::path::get_permissions(&metadata.permissions()),
-                                    })));
+                                    return Ok(Some((
+                                        rel_str,
+                                        ScannedItem {
+                                            path,
+                                            is_dir: true,
+                                            size: 0,
+                                            modified: metadata
+                                                .modified()
+                                                .unwrap_or_else(|_| SystemTime::now()),
+                                            permissions: cloud_sync_lib::path::get_permissions(
+                                                &metadata.permissions(),
+                                            ),
+                                        },
+                                    )));
                                 }
                             }
                         } else if metadata.is_file() {
@@ -83,17 +90,26 @@ impl<'a> DirectoryScanner<'a> {
                                 if rel_str == ".sync_state.json"
                                     || rel_str == ".sync_state.bin"
                                     || rel_str == ".syncignore"
-                                    || (rel_str.starts_with(".sync_state_") && (rel_str.ends_with(".json") || rel_str.ends_with(".bin")))
+                                    || (rel_str.starts_with(".sync_state_")
+                                        && (rel_str.ends_with(".json")
+                                            || rel_str.ends_with(".bin")))
                                 {
                                     continue;
                                 }
-                                return Ok(Some((rel_str, ScannedItem {
-                                    path,
-                                    is_dir: false,
-                                    size: metadata.len(),
-                                    modified: metadata.modified().unwrap_or_else(|_| SystemTime::now()),
-                                    permissions: cloud_sync_lib::path::get_permissions(&metadata.permissions()),
-                                })));
+                                return Ok(Some((
+                                    rel_str,
+                                    ScannedItem {
+                                        path,
+                                        is_dir: false,
+                                        size: metadata.len(),
+                                        modified: metadata
+                                            .modified()
+                                            .unwrap_or_else(|_| SystemTime::now()),
+                                        permissions: cloud_sync_lib::path::get_permissions(
+                                            &metadata.permissions(),
+                                        ),
+                                    },
+                                )));
                             }
                         }
                     }
@@ -130,7 +146,11 @@ pub async fn scan_local_directory(
 }
 
 /// Scans the watch directory recursively and uploads all files to active backends.
-pub async fn trigger_full_sync(watch_dir: &Path, backends: &[ActiveBackend], gitignore: &SyncIgnore) -> std::io::Result<()> {
+pub async fn trigger_full_sync(
+    watch_dir: &Path,
+    backends: &[ActiveBackend],
+    gitignore: &SyncIgnore,
+) -> std::io::Result<()> {
     let items = scan_local_directory(watch_dir, gitignore).await?;
     for (remote_path_str, item) in items {
         for active_backend in backends {
@@ -140,14 +160,32 @@ pub async fn trigger_full_sync(watch_dir: &Path, backends: &[ActiveBackend], git
             let is_dir = item.is_dir;
             tokio::spawn(async move {
                 if is_dir {
-                    info!("[{}] Syncing directory '{}' via manual trigger", backend.name(), remote_path);
+                    info!(
+                        "[{}] Syncing directory '{}' via manual trigger",
+                        backend.name(),
+                        remote_path
+                    );
                     if let Err(e) = backend.create_folder(&remote_path).await {
-                        error!("[{}] Failed to create directory '{}': {}", backend.name(), remote_path, e);
+                        error!(
+                            "[{}] Failed to create directory '{}': {}",
+                            backend.name(),
+                            remote_path,
+                            e
+                        );
                     }
                 } else {
-                    info!("[{}] Syncing '{}' via manual trigger", backend.name(), remote_path);
+                    info!(
+                        "[{}] Syncing '{}' via manual trigger",
+                        backend.name(),
+                        remote_path
+                    );
                     if let Err(e) = backend.upload(&local_path, &remote_path).await {
-                        error!("[{}] Failed to sync '{}': {}", backend.name(), remote_path, e);
+                        error!(
+                            "[{}] Failed to sync '{}': {}",
+                            backend.name(),
+                            remote_path,
+                            e
+                        );
                     } else {
                         info!("[{}] Successfully synced '{}'", backend.name(), remote_path);
                     }
@@ -166,15 +204,12 @@ pub async fn trigger_full_sync(watch_dir: &Path, backends: &[ActiveBackend], git
 /// * `event` - The filesystem event detail.
 /// * `state` - The daemon's internal state.
 /// * `active_locks` - Concurrent sync locking map for active files/backends.
-pub async fn handle_event(
-    event: Event,
-    state: Arc<Mutex<DaemonState>>,
-    active_locks: ActiveLocks,
-) {
+pub async fn handle_event(event: Event, state: Arc<Mutex<DaemonState>>, active_locks: ActiveLocks) {
     // Check if .syncignore itself changed
-    let syncignore_changed = event.paths.iter().any(|p| {
-        p.file_name().is_some_and(|name| name == ".syncignore")
-    });
+    let syncignore_changed = event
+        .paths
+        .iter()
+        .any(|p| p.file_name().is_some_and(|name| name == ".syncignore"));
 
     if syncignore_changed {
         info!(".syncignore change detected. Rebuilding ignore rules...");
@@ -185,7 +220,12 @@ pub async fn handle_event(
     // Read current state
     let (paused, backends, watch_dir, gitignore) = {
         let s = state.lock().await;
-        (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone())
+        (
+            s.paused,
+            s.backends.clone(),
+            s.watch_dir.clone(),
+            s.gitignore.clone(),
+        )
     };
 
     if paused {
@@ -195,7 +235,9 @@ pub async fn handle_event(
 
     // Only respond to creation, modification (writes), and deletions
     match event.kind {
-        EventKind::Create(_) | EventKind::Modify(notify::event::ModifyKind::Data(_)) | EventKind::Modify(notify::event::ModifyKind::Any) => {
+        EventKind::Create(_)
+        | EventKind::Modify(notify::event::ModifyKind::Data(_))
+        | EventKind::Modify(notify::event::ModifyKind::Any) => {
             for path in event.paths {
                 if !path.exists() {
                     continue; // Skip if file was deleted before we could process it
@@ -226,14 +268,26 @@ pub async fn handle_event(
                 let remote_path_str = match get_remote_path(&abs_path, &watch_dir) {
                     Some(p) => p,
                     None => {
-                        error!("Failed to strip prefix for {:?} (absolute: {:?})", path, abs_path);
+                        error!(
+                            "Failed to strip prefix for {:?} (absolute: {:?})",
+                            path, abs_path
+                        );
                         continue;
                     }
                 };
-                if remote_path_str == ".sync_state.json" || remote_path_str == ".sync_state.bin" || remote_path_str == ".syncignore" || (remote_path_str.starts_with(".sync_state_") && (remote_path_str.ends_with(".json") || remote_path_str.ends_with(".bin"))) {
+                if remote_path_str == ".sync_state.json"
+                    || remote_path_str == ".sync_state.bin"
+                    || remote_path_str == ".syncignore"
+                    || (remote_path_str.starts_with(".sync_state_")
+                        && (remote_path_str.ends_with(".json")
+                            || remote_path_str.ends_with(".bin")))
+                {
                     continue;
                 }
-                info!("Path change detected: '{}' (dir: {}). Syncing to all cloud backends...", remote_path_str, is_directory);
+                info!(
+                    "Path change detected: '{}' (dir: {}). Syncing to all cloud backends...",
+                    remote_path_str, is_directory
+                );
 
                 for active_backend in &backends {
                     let backend = active_backend.backend.clone();
@@ -243,7 +297,10 @@ pub async fn handle_event(
                     let key = (backend.name().to_string(), local_path.clone());
                     let file_mutex = {
                         let mut locks = active_locks.lock().await;
-                        locks.entry(key).or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))).clone()
+                        locks
+                            .entry(key)
+                            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                            .clone()
                     };
 
                     tokio::spawn(async move {
@@ -263,7 +320,11 @@ pub async fn handle_event(
                             };
                             match sync_res {
                                 Ok(_) => {
-                                    info!("[{}] Successfully synced '{}'", backend.name(), remote_path);
+                                    info!(
+                                        "[{}] Successfully synced '{}'",
+                                        backend.name(),
+                                        remote_path
+                                    );
                                     break;
                                 }
                                 Err(e) => {
@@ -303,10 +364,19 @@ pub async fn handle_event(
                         continue;
                     }
                 };
-                if remote_path_str == ".sync_state.json" || remote_path_str == ".sync_state.bin" || remote_path_str == ".syncignore" || (remote_path_str.starts_with(".sync_state_") && (remote_path_str.ends_with(".json") || remote_path_str.ends_with(".bin"))) {
+                if remote_path_str == ".sync_state.json"
+                    || remote_path_str == ".sync_state.bin"
+                    || remote_path_str == ".syncignore"
+                    || (remote_path_str.starts_with(".sync_state_")
+                        && (remote_path_str.ends_with(".json")
+                            || remote_path_str.ends_with(".bin")))
+                {
                     continue;
                 }
-                info!("File deletion detected: '{}'. Deleting from all cloud backends...", remote_path_str);
+                info!(
+                    "File deletion detected: '{}'. Deleting from all cloud backends...",
+                    remote_path_str
+                );
 
                 for active_backend in &backends {
                     let backend = active_backend.backend.clone();
@@ -318,11 +388,20 @@ pub async fn handle_event(
 
                     tokio::spawn(async move {
                         match backend.delete(&remote_path).await {
-                            Ok(_) => info!("[{}] Successfully deleted remote file '{}'", backend.name(), remote_path),
+                            Ok(_) => info!(
+                                "[{}] Successfully deleted remote file '{}'",
+                                backend.name(),
+                                remote_path
+                            ),
                             Err(cloud_sync_lib::StorageError::NotFound(_)) => {
                                 // Already deleted or doesn't exist
                             }
-                            Err(e) => error!("[{}] Failed to delete '{}': {}", backend.name(), remote_path, e),
+                            Err(e) => error!(
+                                "[{}] Failed to delete '{}': {}",
+                                backend.name(),
+                                remote_path,
+                                e
+                            ),
                         }
                     });
                 }
@@ -364,17 +443,29 @@ mod tests {
             fn name(&self) -> &str {
                 &self.name
             }
-            async fn upload(&self, _local_path: &Path, _remote_path: &str) -> Result<(), cloud_sync_lib::StorageError> {
+            async fn upload(
+                &self,
+                _local_path: &Path,
+                _remote_path: &str,
+            ) -> Result<(), cloud_sync_lib::StorageError> {
                 Ok(())
             }
-            async fn download(&self, _remote_path: &str, _local_path: &Path) -> Result<(), cloud_sync_lib::StorageError> {
+            async fn download(
+                &self,
+                _remote_path: &str,
+                _local_path: &Path,
+            ) -> Result<(), cloud_sync_lib::StorageError> {
                 Ok(())
             }
             async fn delete(&self, _remote_path: &str) -> Result<(), cloud_sync_lib::StorageError> {
                 self.delete_called.store(true, Ordering::SeqCst);
                 Ok(())
             }
-            async fn list(&self, _remote_path: &str) -> Result<Vec<cloud_sync_lib::StorageItem>, cloud_sync_lib::StorageError> {
+            async fn list(
+                &self,
+                _remote_path: &str,
+            ) -> Result<Vec<cloud_sync_lib::StorageItem>, cloud_sync_lib::StorageError>
+            {
                 Ok(vec![])
             }
         }
@@ -399,7 +490,9 @@ mod tests {
             },
             ActiveBackend {
                 backend: backend_false,
-                policy: cloud_sync_lib::SyncPolicy::new(cloud_sync_lib::SyncMode::OneWayNoDeletions),
+                policy: cloud_sync_lib::SyncPolicy::new(
+                    cloud_sync_lib::SyncMode::OneWayNoDeletions,
+                ),
                 selective_sync: None,
             },
         ];
@@ -431,8 +524,14 @@ mod tests {
         // Give any tokio spawns a short moment to execute
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        assert!(delete_called_sync_true.load(Ordering::SeqCst), "Backend with sync=true should have delete called");
-        assert!(!delete_called_sync_false.load(Ordering::SeqCst), "Backend with sync=false should NOT have delete called");
+        assert!(
+            delete_called_sync_true.load(Ordering::SeqCst),
+            "Backend with sync=true should have delete called"
+        );
+        assert!(
+            !delete_called_sync_false.load(Ordering::SeqCst),
+            "Backend with sync=false should NOT have delete called"
+        );
     }
 
     #[test]
@@ -446,17 +545,26 @@ mod tests {
         assert!(!gitignore.is_ignored(watch_dir.join("error.txt"), false));
         assert!(gitignore.is_ignored(watch_dir.join("temp/file.txt"), false));
         // Verify that deleting a directory matched by trailing slash is ignored by checking both false and true
-        assert!(gitignore.is_ignored(watch_dir.join("temp"), false) || gitignore.is_ignored(watch_dir.join("temp"), true));
+        assert!(
+            gitignore.is_ignored(watch_dir.join("temp"), false)
+                || gitignore.is_ignored(watch_dir.join("temp"), true)
+        );
     }
 
     #[tokio::test]
     async fn test_scan_local_directory_ignores_sync_files() {
         let temp_dir = tempfile::tempdir().unwrap();
         let watch_dir = temp_dir.path();
-        
-        tokio::fs::write(watch_dir.join("test.txt"), "hello").await.unwrap();
-        tokio::fs::write(watch_dir.join(".sync_state.bin"), "{}").await.unwrap();
-        tokio::fs::write(watch_dir.join(".syncignore"), "*.log").await.unwrap();
+
+        tokio::fs::write(watch_dir.join("test.txt"), "hello")
+            .await
+            .unwrap();
+        tokio::fs::write(watch_dir.join(".sync_state.bin"), "{}")
+            .await
+            .unwrap();
+        tokio::fs::write(watch_dir.join(".syncignore"), "*.log")
+            .await
+            .unwrap();
 
         let gitignore = build_gitignore(watch_dir, &None);
         let items = scan_local_directory(watch_dir, &gitignore).await.unwrap();
@@ -479,24 +587,38 @@ mod tests {
             fn name(&self) -> &str {
                 "TestBackend"
             }
-            async fn upload(&self, _local_path: &Path, _remote_path: &str) -> Result<(), cloud_sync_lib::StorageError> {
+            async fn upload(
+                &self,
+                _local_path: &Path,
+                _remote_path: &str,
+            ) -> Result<(), cloud_sync_lib::StorageError> {
                 self.called.store(true, Ordering::SeqCst);
                 Ok(())
             }
-            async fn download(&self, _remote_path: &str, _local_path: &Path) -> Result<(), cloud_sync_lib::StorageError> {
+            async fn download(
+                &self,
+                _remote_path: &str,
+                _local_path: &Path,
+            ) -> Result<(), cloud_sync_lib::StorageError> {
                 Ok(())
             }
             async fn delete(&self, _remote_path: &str) -> Result<(), cloud_sync_lib::StorageError> {
                 self.called.store(true, Ordering::SeqCst);
                 Ok(())
             }
-            async fn list(&self, _remote_path: &str) -> Result<Vec<cloud_sync_lib::StorageItem>, cloud_sync_lib::StorageError> {
+            async fn list(
+                &self,
+                _remote_path: &str,
+            ) -> Result<Vec<cloud_sync_lib::StorageItem>, cloud_sync_lib::StorageError>
+            {
                 Ok(vec![])
             }
         }
 
         let called = Arc::new(AtomicBool::new(false));
-        let backend = Arc::new(TestBackend { called: called.clone() });
+        let backend = Arc::new(TestBackend {
+            called: called.clone(),
+        });
 
         let backends = vec![ActiveBackend {
             backend,
@@ -506,7 +628,7 @@ mod tests {
 
         let temp_dir = tempfile::tempdir().unwrap();
         let watch_dir = temp_dir.path().to_path_buf();
-        
+
         let (event_tx, _) = tokio::sync::broadcast::channel(10);
         let state = Arc::new(Mutex::new(DaemonState {
             paused: false,
@@ -527,7 +649,7 @@ mod tests {
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));
-        
+
         // 1. Check Create event for .sync_state.bin
         let sync_state_file = watch_dir.join(".sync_state.bin");
         tokio::fs::write(&sync_state_file, "{}").await.unwrap();
@@ -541,6 +663,9 @@ mod tests {
         handle_event(event_remove, state.clone(), active_locks.clone()).await;
 
         tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(!called.load(Ordering::SeqCst), "Should not trigger upload/delete operations for internal sync files");
+        assert!(
+            !called.load(Ordering::SeqCst),
+            "Should not trigger upload/delete operations for internal sync files"
+        );
     }
 }

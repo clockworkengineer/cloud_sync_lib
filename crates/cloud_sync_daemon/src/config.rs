@@ -1,9 +1,9 @@
 //! Configuration handling and parsing module.
 
+use cloud_sync_lib::ProviderConfig;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tracing::info;
-use cloud_sync_lib::ProviderConfig;
 
 pub const DEFAULT_CONFIG_FILE: &str = "config.toml";
 pub const DEFAULT_WATCH_DIR: &str = "./watched_folder";
@@ -84,7 +84,10 @@ impl Default for AppConfig {
             .unwrap_or_else(|_| std::env::temp_dir());
 
         let watch_dir = home_dir.join("CloudSync");
-        let sim_dir = home_dir.join(".config").join("cloud_sync").join("simulation");
+        let sim_dir = home_dir
+            .join(".config")
+            .join("cloud_sync")
+            .join("simulation");
 
         Self {
             watch_directory: watch_dir,
@@ -124,7 +127,9 @@ pub fn get_default_config_path() -> std::path::PathBuf {
         let _ = std::fs::create_dir_all(&p);
         p.join("config.toml")
     } else if let Ok(home) = std::env::var("HOME") {
-        let p = std::path::PathBuf::from(home).join(".config").join("cloud_sync");
+        let p = std::path::PathBuf::from(home)
+            .join(".config")
+            .join("cloud_sync");
         let _ = std::fs::create_dir_all(&p);
         p.join("config.toml")
     } else {
@@ -192,7 +197,7 @@ pub async fn load_or_create_config(path: &str) -> Result<AppConfig, Box<dyn std:
 
 /// Helper function to check if a provider is enabled based on its credentials config.
 pub fn is_provider_enabled<C: ProviderConfig>(credentials: &Option<C>) -> bool {
-    credentials.as_ref().is_none_or(|c| c.is_enabled())
+    credentials.as_ref().map_or(true, |c| c.is_enabled())
 }
 
 #[cfg(test)]

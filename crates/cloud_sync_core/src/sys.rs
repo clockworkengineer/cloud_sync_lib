@@ -1,9 +1,8 @@
+use alloc::boxed::Box;
 #[cfg(feature = "std")]
 use std::path::Path;
 #[cfg(feature = "std")]
 use std::time::SystemTime;
-use alloc::boxed::Box;
-
 
 /// Abstraction for system clock operations enabling deterministic testing.
 #[cfg(feature = "std")]

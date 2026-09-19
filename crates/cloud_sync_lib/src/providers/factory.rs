@@ -10,7 +10,11 @@ pub trait BackendFactory: Send + Sync {
     fn provider_name(&self) -> &'static str;
 
     /// Instantiates a thread-safe `StorageBackend` reference from JSON/TOML configuration parameters.
-    fn create(&self, config: &JsonValue, sim_root: PathBuf) -> Result<Arc<dyn StorageBackend>, StorageError>;
+    fn create(
+        &self,
+        config: &JsonValue,
+        sim_root: PathBuf,
+    ) -> Result<Arc<dyn StorageBackend>, StorageError>;
 }
 
 /// Thread-safe dynamic registry allowing self-registration of storage backend factories.
@@ -33,13 +37,21 @@ impl DynamicBackendRegistry {
     }
 
     /// Looks up and instantiates a backend dynamically by provider name.
-    pub fn create_backend(&self, provider_name: &str, config: &JsonValue, sim_root: PathBuf) -> Result<Arc<dyn StorageBackend>, StorageError> {
+    pub fn create_backend(
+        &self,
+        provider_name: &str,
+        config: &JsonValue,
+        sim_root: PathBuf,
+    ) -> Result<Arc<dyn StorageBackend>, StorageError> {
         if let Ok(lock) = self.factories.read() {
             if let Some(factory) = lock.get(provider_name) {
                 return factory.create(config, sim_root);
             }
         }
-        Err(StorageError::NotFound(format!("Provider factory '{}' not registered in DynamicBackendRegistry", provider_name)))
+        Err(StorageError::NotFound(format!(
+            "Provider factory '{}' not registered in DynamicBackendRegistry",
+            provider_name
+        )))
     }
 }
 

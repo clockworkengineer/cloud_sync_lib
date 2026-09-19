@@ -2,9 +2,9 @@
 //!
 //! Provides an implementation of storage simulation on the local filesystem.
 
-use crate::traits::{StorageBackend, StorageItem, StorageError};
+use crate::rate_limit::{copy_rate_limited, TokenBucket};
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
-use crate::rate_limit::{TokenBucket, copy_rate_limited};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
@@ -75,7 +75,10 @@ impl LocalSimulation {
     /// An empty `Result`, or a `StorageError` if copying fails.
     pub async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let destination = self.resolve(remote_path);
-        info!("[{}] (Simulated) Uploading local file {:?} to remote path '{}'", self.provider_name, local_path, remote_path);
+        info!(
+            "[{}] (Simulated) Uploading local file {:?} to remote path '{}'",
+            self.provider_name, local_path, remote_path
+        );
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).await?;
         }
@@ -100,7 +103,10 @@ impl LocalSimulation {
     /// An empty `Result`, or a `StorageError` if the file doesn't exist or copying fails.
     pub async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         let source = self.resolve(remote_path);
-        info!("[{}] (Simulated) Downloading remote path '{}' to local file {:?}", self.provider_name, remote_path, local_path);
+        info!(
+            "[{}] (Simulated) Downloading remote path '{}' to local file {:?}",
+            self.provider_name, remote_path, local_path
+        );
         if !source.exists() {
             return Err(StorageError::NotFound(remote_path.to_string()));
         }
@@ -123,7 +129,10 @@ impl LocalSimulation {
     /// An empty `Result`, or a `StorageError` if the file doesn't exist or deletion fails.
     pub async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         let target = self.resolve(remote_path);
-        info!("[{}] (Simulated) Deleting remote path '{}'", self.provider_name, remote_path);
+        info!(
+            "[{}] (Simulated) Deleting remote path '{}'",
+            self.provider_name, remote_path
+        );
         if !target.exists() {
             return Err(StorageError::NotFound(remote_path.to_string()));
         }
@@ -138,7 +147,10 @@ impl LocalSimulation {
     /// Simulates creating a folder/directory in the local simulation folder.
     pub async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         let target = self.resolve(remote_path);
-        info!("[{}] (Simulated) Creating remote directory '{}'", self.provider_name, remote_path);
+        info!(
+            "[{}] (Simulated) Creating remote directory '{}'",
+            self.provider_name, remote_path
+        );
         fs::create_dir_all(&target).await?;
         Ok(())
     }
@@ -147,7 +159,10 @@ impl LocalSimulation {
     pub async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
         let source = self.resolve(from);
         let dest = self.resolve(to);
-        info!("[{}] (Simulated) Renaming remote path '{}' to '{}'", self.provider_name, from, to);
+        info!(
+            "[{}] (Simulated) Renaming remote path '{}' to '{}'",
+            self.provider_name, from, to
+        );
         if !source.exists() {
             return Err(StorageError::NotFound(from.to_string()));
         }
@@ -167,7 +182,10 @@ impl LocalSimulation {
     /// A vector of `StorageItem` containing metadata for files/folders in the directory, or a `StorageError`.
     pub async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         let target = self.resolve(remote_path);
-        info!("[{}] (Simulated) Listing contents of remote path '{}'", self.provider_name, remote_path);
+        info!(
+            "[{}] (Simulated) Listing contents of remote path '{}'",
+            self.provider_name, remote_path
+        );
         if !target.exists() {
             return Err(StorageError::NotFound(remote_path.to_string()));
         }
@@ -182,7 +200,11 @@ impl LocalSimulation {
                 crate::checksum::compute_sha256(&entry.path()).await.ok()
             };
             items.push(StorageItem {
-                path: entry.path().strip_prefix(&self.root_dir).unwrap_or(&entry.path()).to_path_buf(),
+                path: entry
+                    .path()
+                    .strip_prefix(&self.root_dir)
+                    .unwrap_or(&entry.path())
+                    .to_path_buf(),
                 size: metadata.len(),
                 modified: metadata.modified().unwrap_or(std::time::SystemTime::now()),
                 is_dir,
@@ -224,7 +246,10 @@ impl StorageBackend for LocalSimulation {
         self.rename(from, to).await
     }
 
-    async fn compute_local_checksum(&self, local_path: &Path) -> Result<Option<String>, StorageError> {
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
         Ok(crate::checksum::compute_sha256(local_path).await.ok())
     }
 }
@@ -277,4 +302,3 @@ mod tests {
         assert!(checksum.is_some());
     }
 }
-

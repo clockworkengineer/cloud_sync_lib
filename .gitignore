@@ -3,7 +3,10 @@ target/
 **/*.rs.bk
 # Local developer config
 # config.toml
+config.local.toml
 private_config.toml
+private.toml
+*.secret.toml
 watched_folder/.sync_state.json
 
 # Tauri generated sidecars

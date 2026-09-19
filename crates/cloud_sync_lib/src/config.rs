@@ -1,12 +1,12 @@
 //! Shared provider configuration structs and models.
 
+use crate::{
+    AzureBlobCredentials, B2Credentials, GCSCredentials, IPFSCredentials, MegaCredentials,
+    NextcloudCredentials, OAuthCredentials, PCloudCredentials, S3Credentials, SFTPCredentials,
+    WebDAVCredentials,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::{
-    OAuthCredentials, WebDAVCredentials, S3Credentials, SFTPCredentials,
-    NextcloudCredentials, MegaCredentials, AzureBlobCredentials, GCSCredentials,
-    B2Credentials, PCloudCredentials, IPFSCredentials,
-};
 
 /// Shared configuration holding root directories for all supported storage backends.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

@@ -3,15 +3,15 @@
 //! Handles interaction with the GCS JSON REST API. Supports OAuth2 authentication
 //! using Service Account JSON key files or bypasses auth for local emulators.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::GCSCredentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::GCSCredentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
+use serde::Deserialize;
 use std::path::Path;
 use std::time::SystemTime;
 use tokio::fs;
 use tracing::info;
-use serde::Deserialize;
 use yup_oauth2::authenticator::ServiceAccountAuthenticator;
 
 #[derive(Deserialize, Debug)]
@@ -20,7 +20,6 @@ struct GCSObject {
     size: String,
     updated: String,
 }
-
 
 #[derive(Deserialize, Debug)]
 struct GCSListResponse {
@@ -42,7 +41,6 @@ use super::utils::url_encode;
 crate::impl_provider_builder!(GCSProvider, GCSProviderBuilder, GCSCredentials, relative);
 
 impl GCSProvider {
-
     /// Creates a new `GCSProvider` with custom HTTP client options.
     pub fn with_client_options(
         credentials: GCSCredentials,
@@ -69,7 +67,6 @@ impl GCSProvider {
         self
     }
 
-
     /// Retrieves an access token for GCS if service account credentials are provided.
     async fn get_access_token(&self) -> Result<Option<String>, StorageError> {
         if self.credentials.service_account_key_path.is_empty() {
@@ -78,17 +75,23 @@ impl GCSProvider {
 
         let key = yup_oauth2::read_service_account_key(&self.credentials.service_account_key_path)
             .await
-            .map_err(|e| StorageError::Authentication(format!("Failed to read service account key: {}", e)))?;
+            .map_err(|e| {
+                StorageError::Authentication(format!("Failed to read service account key: {}", e))
+            })?;
 
         let auth = ServiceAccountAuthenticator::builder(key)
             .build()
             .await
-            .map_err(|e| StorageError::Authentication(format!("Failed to build authenticator: {}", e)))?;
+            .map_err(|e| {
+                StorageError::Authentication(format!("Failed to build authenticator: {}", e))
+            })?;
 
         let token = auth
             .token(&["https://www.googleapis.com/auth/devstorage.full_control"])
             .await
-            .map_err(|e| StorageError::Authentication(format!("Failed to retrieve OAuth token: {}", e)))?;
+            .map_err(|e| {
+                StorageError::Authentication(format!("Failed to retrieve OAuth token: {}", e))
+            })?;
 
         Ok(Some(token.token().unwrap_or_default().to_string()))
     }
@@ -103,7 +106,11 @@ impl StorageBackend for GCSProvider {
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
             let clean_path = self.format_path(remote_path);
-            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+            info!(
+                "[{}] Real upload starting for '{}'",
+                self.name(),
+                clean_path
+            );
 
             let file_content = fs::read(local_path).await?;
             let token = self.get_access_token().await?;
@@ -115,7 +122,9 @@ impl StorageBackend for GCSProvider {
                 self.api_url, self.credentials.bucket, encoded_name
             );
 
-            let mut req = self.client.post(&upload_url)
+            let mut req = self
+                .client
+                .post(&upload_url)
                 .header("Content-Type", "application/octet-stream")
                 .body(file_content);
 
@@ -130,7 +139,8 @@ impl StorageBackend for GCSProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -161,7 +171,8 @@ impl StorageBackend for GCSProvider {
             let bytes = res.bytes().await?;
             fs::write(local_path, bytes).await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -187,7 +198,8 @@ impl StorageBackend for GCSProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -228,12 +240,18 @@ impl StorageBackend for GCSProvider {
 
             if let Some(objects) = list_response.items {
                 for obj in objects {
-                    let item_path = super::utils::strip_destination_prefix(Path::new(&obj.name), self.credentials.common.destination_folder.as_deref());
+                    let item_path = super::utils::strip_destination_prefix(
+                        Path::new(&obj.name),
+                        self.credentials.common.destination_folder.as_deref(),
+                    );
 
                     // Parse GCS RFC3339 time format
-                    let modified = time::OffsetDateTime::parse(&obj.updated, &time::format_description::well_known::Rfc3339)
-                        .map(SystemTime::from)
-                        .unwrap_or(SystemTime::now());
+                    let modified = time::OffsetDateTime::parse(
+                        &obj.updated,
+                        &time::format_description::well_known::Rfc3339,
+                    )
+                    .map(SystemTime::from)
+                    .unwrap_or(SystemTime::now());
 
                     let size = obj.size.parse::<u64>().unwrap_or(0);
 
@@ -244,16 +262,15 @@ impl StorageBackend for GCSProvider {
                         is_dir: false, // GCS is a flat namespace, virtual directories are simulated
                         checksum: None,
                         permissions: None,
-                });
+                    });
                 }
             }
 
             Ok(items)
-        }).await
+        })
+        .await
     }
-
 }
-
 
 /// Builder for [`GCSProvider`].
 pub struct GCSProviderBuilder {

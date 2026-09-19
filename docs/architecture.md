@@ -72,25 +72,25 @@ graph TD
    - Sanitizes remote files during scanning to drop relative traversal sequences (`..`), securing the directory boundary.
 
 ### 4. `cloud_sync_lib`
-- **`StorageBackend` Trait**: The core interface defined in [`traits.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/traits.rs). It guarantees consistent APIs (`upload`, `download`, `delete`, `list`, `create_folder`) for all providers.
+- **`StorageBackend` Trait**: The core interface defined in [`traits.rs`](../crates/cloud_sync_core/src/traits.rs). It guarantees consistent APIs (`upload`, `download`, `delete`, `list`, `create_folder`) for all providers.
 - **`BackendRegistry`**: Factory wrapper allowing dynamic instantiation of storage providers by matching configuration enums.
 - **Provider Clients**:
-   - [`google_drive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/google_drive.rs): Google Drive API v3 (paginated listing).
-   - [`dropbox.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/dropbox.rs): Dropbox API v2 (paginated listing).
-   - [`onedrive.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/onedrive.rs): Microsoft Graph API for OneDrive (paginated listing).
-   - [`box_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/box_provider.rs): Box OAuth2 API.
-   - [`mega_provider.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/mega_provider.rs): MEGA client API.
-   - [`azure_blob.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/azure_blob.rs): Azure Blob Storage.
-   - [`gcs.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/gcs.rs): Google Cloud Storage.
-   - [`b2.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/b2.rs): Backblaze B2 (paginated listing).
-   - [`pcloud.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/pcloud.rs): pCloud.
-   - [`ipfs.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/ipfs.rs): IPFS pinning service.
-   - [`s3.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/s3.rs): S3-compatible API.
-   - [`sftp.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/sftp.rs): SFTP Client.
-   - [`webdav.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/webdav.rs): WebDAV Client.
-   - [`nextcloud.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/nextcloud.rs): Nextcloud-specific WebDAV & OCS client.
+   - [`google_drive.rs`](../crates/cloud_sync_lib/src/providers/google_drive.rs): Google Drive API v3 (paginated listing).
+   - [`dropbox.rs`](../crates/cloud_sync_lib/src/providers/dropbox.rs): Dropbox API v2 (paginated listing).
+   - [`onedrive.rs`](../crates/cloud_sync_lib/src/providers/onedrive.rs): Microsoft Graph API for OneDrive (paginated listing).
+   - [`box_provider.rs`](../crates/cloud_sync_lib/src/providers/box_provider.rs): Box OAuth2 API.
+   - [`mega_provider.rs`](../crates/cloud_sync_lib/src/providers/mega_provider.rs): MEGA client API.
+   - [`azure_blob.rs`](../crates/cloud_sync_lib/src/providers/azure_blob.rs): Azure Blob Storage.
+   - [`gcs.rs`](../crates/cloud_sync_lib/src/providers/gcs.rs): Google Cloud Storage.
+   - [`b2.rs`](../crates/cloud_sync_lib/src/providers/b2.rs): Backblaze B2 (paginated listing).
+   - [`pcloud.rs`](../crates/cloud_sync_lib/src/providers/pcloud.rs): pCloud.
+   - [`ipfs.rs`](../crates/cloud_sync_lib/src/providers/ipfs.rs): IPFS pinning service.
+   - [`s3.rs`](../crates/cloud_sync_lib/src/providers/s3.rs): S3-compatible API.
+   - [`sftp.rs`](../crates/cloud_sync_lib/src/providers/sftp.rs): SFTP Client.
+   - [`webdav.rs`](../crates/cloud_sync_lib/src/providers/webdav.rs): WebDAV Client.
+   - [`nextcloud.rs`](../crates/cloud_sync_lib/src/providers/nextcloud.rs): Nextcloud-specific WebDAV & OCS client.
 - **Feature Wrappers & Helpers**:
-   - [`encryption.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/encryption.rs): `EncryptedBackend` decorator that adds client-side AES-256-GCM zero-knowledge encryption. Keys are derived via PBKDF2-HMAC-SHA256, and temporary file handles on Unix are restricted to `0600` permissions.
-   - [`rate_limit.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/rate_limit.rs): `TokenBucket` rate limiter for imposing bandwidth ceilings on uploads/downloads.
-   - [`local_sim.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/local_sim.rs): Local simulation backend (`LocalSimulation`) acting as fallback when API credentials are absent.
-   - [`utils.rs`](file:///home/robt/projects/cloud_sync_lib/cloud_sync_lib/src/providers/utils.rs): Unified OAuth2 refresh exchanges, error parsing mappings, and retry-after logic.
+   - [`encryption.rs`](../crates/cloud_sync_lib/src/providers/encryption.rs): `EncryptedBackend` decorator that adds client-side AES-256-GCM zero-knowledge encryption. Keys are derived via PBKDF2-HMAC-SHA256, and temporary file handles on Unix are restricted to `0600` permissions.
+   - [`rate_limit.rs`](../crates/cloud_sync_lib/src/rate_limit.rs): `TokenBucket` rate limiter for imposing bandwidth ceilings on uploads/downloads.
+   - [`local_sim.rs`](../crates/cloud_sync_lib/src/providers/local_sim.rs): Local simulation backend (`LocalSimulation`) acting as fallback when API credentials are absent.
+   - [`utils.rs`](../crates/cloud_sync_lib/src/providers/utils.rs): Unified OAuth2 refresh exchanges, error parsing mappings, and retry-after logic.

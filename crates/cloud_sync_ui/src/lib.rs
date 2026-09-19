@@ -2,8 +2,8 @@
 //!
 //! Exposes the Axum HTTP API server logic for integration into other runtimes (like Tauri).
 
-pub mod parser;
 pub mod handlers;
+pub mod parser;
 
 use axum::{
     routing::{get, post},
@@ -12,8 +12,8 @@ use axum::{
 use tower_http::cors::CorsLayer;
 
 use handlers::{
-    serve_index, api_status, api_start, api_pause, api_resume, api_sync,
-    api_reload, api_stop, api_clear, api_events
+    api_clear, api_events, api_pause, api_reload, api_resume, api_start, api_status, api_stop,
+    api_sync, serve_index,
 };
 
 pub const UI_BIND_ADDR: &str = "127.0.0.1:8082";

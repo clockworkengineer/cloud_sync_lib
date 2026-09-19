@@ -3,8 +3,8 @@
 //! Route requests to either a real storage provider or local directory simulation
 //! depending on the presence of configured credentials.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
 use crate::providers::local_sim::LocalSimulation;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
 use std::path::Path;
 
@@ -32,7 +32,12 @@ impl<B: StorageBackend> SimulatedFallback<B> {
     ///
     /// # Returns
     /// A new instance of `SimulatedFallback`.
-    pub fn new(inner: Option<B>, local_sim: LocalSimulation, name: &str, sync_mode: super::SyncMode) -> Self {
+    pub fn new(
+        inner: Option<B>,
+        local_sim: LocalSimulation,
+        name: &str,
+        sync_mode: super::SyncMode,
+    ) -> Self {
         Self {
             inner,
             local_sim,
@@ -52,8 +57,13 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         if let Some(ref inner) = self.inner {
             match inner.upload(local_path, remote_path).await {
                 Ok(()) => Ok(()),
-                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
-                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                Err(StorageError::Authentication(e))
+                | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!(
+                        "[{}] Authentication failed, falling back to local simulation: {}",
+                        self.name,
+                        e
+                    );
                     self.local_sim.upload(local_path, remote_path).await
                 }
                 Err(e) => Err(e),
@@ -67,8 +77,13 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         if let Some(ref inner) = self.inner {
             match inner.download(remote_path, local_path).await {
                 Ok(()) => Ok(()),
-                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
-                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                Err(StorageError::Authentication(e))
+                | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!(
+                        "[{}] Authentication failed, falling back to local simulation: {}",
+                        self.name,
+                        e
+                    );
                     self.local_sim.download(remote_path, local_path).await
                 }
                 Err(e) => Err(e),
@@ -82,8 +97,13 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         if let Some(ref inner) = self.inner {
             match inner.delete(remote_path).await {
                 Ok(()) => Ok(()),
-                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
-                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                Err(StorageError::Authentication(e))
+                | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!(
+                        "[{}] Authentication failed, falling back to local simulation: {}",
+                        self.name,
+                        e
+                    );
                     self.local_sim.delete(remote_path).await
                 }
                 Err(e) => Err(e),
@@ -97,8 +117,13 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         if let Some(ref inner) = self.inner {
             match inner.list(remote_path).await {
                 Ok(items) => Ok(items),
-                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
-                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                Err(StorageError::Authentication(e))
+                | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!(
+                        "[{}] Authentication failed, falling back to local simulation: {}",
+                        self.name,
+                        e
+                    );
                     self.local_sim.list(remote_path).await
                 }
                 Err(e) => Err(e),
@@ -112,8 +137,13 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         if let Some(ref inner) = self.inner {
             match inner.create_folder(remote_path).await {
                 Ok(()) => Ok(()),
-                Err(StorageError::Authentication(e)) | Err(StorageError::AuthenticationExpired(e)) => {
-                    tracing::warn!("[{}] Authentication failed, falling back to local simulation: {}", self.name, e);
+                Err(StorageError::Authentication(e))
+                | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!(
+                        "[{}] Authentication failed, falling back to local simulation: {}",
+                        self.name,
+                        e
+                    );
                     self.local_sim.create_folder(remote_path).await
                 }
                 Err(e) => Err(e),
@@ -127,9 +157,9 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use std::sync::Mutex;
     use tempfile::tempdir;
-    use std::sync::Arc;
 
     struct MockBackend {
         should_fail_auth: Arc<Mutex<bool>>,
@@ -152,9 +182,15 @@ mod tests {
             Ok(())
         }
 
-        async fn download(&self, _remote_path: &str, _local_path: &Path) -> Result<(), StorageError> {
+        async fn download(
+            &self,
+            _remote_path: &str,
+            _local_path: &Path,
+        ) -> Result<(), StorageError> {
             if *self.should_fail_auth.lock().unwrap() {
-                return Err(StorageError::AuthenticationExpired("Mock expired error".to_string()));
+                return Err(StorageError::AuthenticationExpired(
+                    "Mock expired error".to_string(),
+                ));
             }
             if *self.should_fail_other.lock().unwrap() {
                 return Err(StorageError::NotFound("Not found".to_string()));
@@ -196,8 +232,9 @@ mod tests {
     #[tokio::test]
     async fn test_simulated_fallback_routing() {
         let temp_dir = tempdir().unwrap();
-        let local_sim = LocalSimulation::new(temp_dir.path().to_path_buf(), "MockLocal".to_string());
-        
+        let local_sim =
+            LocalSimulation::new(temp_dir.path().to_path_buf(), "MockLocal".to_string());
+
         let should_fail_auth = Arc::new(Mutex::new(false));
         let should_fail_other = Arc::new(Mutex::new(false));
         let mock = MockBackend {
@@ -205,7 +242,12 @@ mod tests {
             should_fail_other: should_fail_other.clone(),
         };
 
-        let fallback = SimulatedFallback::new(Some(mock), local_sim, "FallbackTest", crate::providers::SyncMode::TwoWay);
+        let fallback = SimulatedFallback::new(
+            Some(mock),
+            local_sim,
+            "FallbackTest",
+            crate::providers::SyncMode::TwoWay,
+        );
         assert_eq!(fallback.name(), "FallbackTest");
 
         let local_file = temp_dir.path().join("test.txt");
@@ -240,7 +282,8 @@ mod tests {
     #[tokio::test]
     async fn test_simulated_fallback_no_inner() {
         let temp_dir = tempdir().unwrap();
-        let local_sim = LocalSimulation::new(temp_dir.path().to_path_buf(), "MockLocal".to_string());
+        let local_sim =
+            LocalSimulation::new(temp_dir.path().to_path_buf(), "MockLocal".to_string());
 
         let fallback: SimulatedFallback<MockBackend> = SimulatedFallback::new(
             None,

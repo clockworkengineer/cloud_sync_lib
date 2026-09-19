@@ -26,7 +26,8 @@ impl<'a> FileFilter<'a> {
         path == ".sync_state.json"
             || path == ".sync_state.bin"
             || path == ".syncignore"
-            || (path.starts_with(".sync_state_") && (path.ends_with(".json") || path.ends_with(".bin")))
+            || (path.starts_with(".sync_state_")
+                && (path.ends_with(".json") || path.ends_with(".bin")))
     }
 
     /// Checks if a given path is ignored by gitignore/syncignore rules.

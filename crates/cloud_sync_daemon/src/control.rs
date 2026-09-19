@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{error, info};
 
-use crate::DaemonState;
 use crate::config::load_or_create_config;
+use crate::DaemonState;
 
 /// Handles a string command sent from the daemon controller via TCP.
 ///
@@ -28,55 +28,144 @@ pub async fn handle_control_command(
     match parts[0] {
         "status" => {
             let s = state.lock().await;
-            let backend_names: Vec<String> = s.backends.iter().map(|ab| ab.backend.name().to_string()).collect();
-            
-            let mut failed_backends: Vec<String> = s.connection_errors.keys().map(|k| {
-                if k.starts_with("Encrypted(") && k.ends_with(')') {
-                    k["Encrypted(".len()..k.len() - 1].to_string()
-                } else {
-                    k.clone()
-                }
-            }).collect();
+            let backend_names: Vec<String> = s
+                .backends
+                .iter()
+                .map(|ab| ab.backend.name().to_string())
+                .collect();
+
+            let mut failed_backends: Vec<String> = s
+                .connection_errors
+                .keys()
+                .map(|k| {
+                    if k.starts_with("Encrypted(") && k.ends_with(')') {
+                        k["Encrypted(".len()..k.len() - 1].to_string()
+                    } else {
+                        k.clone()
+                    }
+                })
+                .collect();
 
             if let Ok(config) = load_or_create_config(&s.config_file).await {
                 let is_placeholder = |val: &str| -> bool {
-                    val.is_empty() || val.contains("PLACEHOLDER") || val.contains("your_") || val.contains("your-")
+                    val.is_empty()
+                        || val.contains("PLACEHOLDER")
+                        || val.contains("your_")
+                        || val.contains("your-")
                 };
 
                 macro_rules! add_if_placeholder_enabled {
                     ($name:expr, $creds:expr, $token:expr) => {
-                        if crate::config::is_provider_enabled($creds) && is_placeholder($token) && !failed_backends.contains(&$name.to_string()) {
+                        if crate::config::is_provider_enabled($creds)
+                            && is_placeholder($token)
+                            && !failed_backends.contains(&$name.to_string())
+                        {
                             failed_backends.push($name.to_string());
                         }
                     };
                 }
 
-                if let Some(ref creds) = config.google_credentials { add_if_placeholder_enabled!("Google Drive", &config.google_credentials, &creds.refresh_token); }
-                if let Some(ref creds) = config.dropbox_credentials { add_if_placeholder_enabled!("Dropbox", &config.dropbox_credentials, &creds.refresh_token); }
-                if let Some(ref creds) = config.onedrive_credentials { add_if_placeholder_enabled!("OneDrive", &config.onedrive_credentials, &creds.refresh_token); }
-                if let Some(ref creds) = config.box_credentials { add_if_placeholder_enabled!("Box", &config.box_credentials, &creds.refresh_token); }
-                if let Some(ref creds) = config.mega_credentials { add_if_placeholder_enabled!("MEGA", &config.mega_credentials, &creds.password); }
-                if let Some(ref creds) = config.webdav_credentials { add_if_placeholder_enabled!("WebDAV", &config.webdav_credentials, &creds.password); }
-                if let Some(ref creds) = config.s3_credentials { add_if_placeholder_enabled!("S3", &config.s3_credentials, &creds.secret_access_key); }
+                if let Some(ref creds) = config.google_credentials {
+                    add_if_placeholder_enabled!(
+                        "Google Drive",
+                        &config.google_credentials,
+                        &creds.refresh_token
+                    );
+                }
+                if let Some(ref creds) = config.dropbox_credentials {
+                    add_if_placeholder_enabled!(
+                        "Dropbox",
+                        &config.dropbox_credentials,
+                        &creds.refresh_token
+                    );
+                }
+                if let Some(ref creds) = config.onedrive_credentials {
+                    add_if_placeholder_enabled!(
+                        "OneDrive",
+                        &config.onedrive_credentials,
+                        &creds.refresh_token
+                    );
+                }
+                if let Some(ref creds) = config.box_credentials {
+                    add_if_placeholder_enabled!(
+                        "Box",
+                        &config.box_credentials,
+                        &creds.refresh_token
+                    );
+                }
+                if let Some(ref creds) = config.mega_credentials {
+                    add_if_placeholder_enabled!("MEGA", &config.mega_credentials, &creds.password);
+                }
+                if let Some(ref creds) = config.webdav_credentials {
+                    add_if_placeholder_enabled!(
+                        "WebDAV",
+                        &config.webdav_credentials,
+                        &creds.password
+                    );
+                }
+                if let Some(ref creds) = config.s3_credentials {
+                    add_if_placeholder_enabled!(
+                        "S3",
+                        &config.s3_credentials,
+                        &creds.secret_access_key
+                    );
+                }
                 if let Some(ref creds) = config.sftp_credentials {
                     if crate::config::is_provider_enabled(&config.sftp_credentials) {
-                        let pw_placeholder = creds.password.as_ref().is_some_and(|p| is_placeholder(p));
-                        let key_placeholder = creds.private_key_path.as_ref().is_none_or(|k| is_placeholder(k));
-                        if pw_placeholder && key_placeholder && !failed_backends.contains(&"SFTP".to_string()) {
+                        let pw_placeholder =
+                            creds.password.as_ref().is_some_and(|p| is_placeholder(p));
+                        let key_placeholder = creds
+                            .private_key_path
+                            .as_ref()
+                            .map_or(true, |k| is_placeholder(k));
+                        if pw_placeholder
+                            && key_placeholder
+                            && !failed_backends.contains(&"SFTP".to_string())
+                        {
                             failed_backends.push("SFTP".to_string());
                         }
                     }
                 }
-                if let Some(ref creds) = config.nextcloud_credentials { add_if_placeholder_enabled!("Nextcloud", &config.nextcloud_credentials, &creds.app_password); }
+                if let Some(ref creds) = config.nextcloud_credentials {
+                    add_if_placeholder_enabled!(
+                        "Nextcloud",
+                        &config.nextcloud_credentials,
+                        &creds.app_password
+                    );
+                }
                 if let Some(ref creds) = config.azure_blob_credentials {
-                    if crate::config::is_provider_enabled(&config.azure_blob_credentials) && (is_placeholder(&creds.account_key) || creds.account_key == "devstoreaccount1") && !failed_backends.contains(&"Azure Blob".to_string()) {
+                    if crate::config::is_provider_enabled(&config.azure_blob_credentials)
+                        && (is_placeholder(&creds.account_key)
+                            || creds.account_key == "devstoreaccount1")
+                        && !failed_backends.contains(&"Azure Blob".to_string())
+                    {
                         failed_backends.push("Azure Blob".to_string());
                     }
                 }
-                if let Some(ref creds) = config.gcs_credentials { add_if_placeholder_enabled!("Google Cloud Storage", &config.gcs_credentials, &creds.service_account_key_path); }
-                if let Some(ref creds) = config.b2_credentials { add_if_placeholder_enabled!("Backblaze B2", &config.b2_credentials, &creds.application_key); }
-                if let Some(ref creds) = config.pcloud_credentials { add_if_placeholder_enabled!("pCloud", &config.pcloud_credentials, &creds.access_token); }
-                if let Some(ref creds) = config.ipfs_credentials { add_if_placeholder_enabled!("IPFS", &config.ipfs_credentials, &creds.jwt_token); }
+                if let Some(ref creds) = config.gcs_credentials {
+                    add_if_placeholder_enabled!(
+                        "Google Cloud Storage",
+                        &config.gcs_credentials,
+                        &creds.service_account_key_path
+                    );
+                }
+                if let Some(ref creds) = config.b2_credentials {
+                    add_if_placeholder_enabled!(
+                        "Backblaze B2",
+                        &config.b2_credentials,
+                        &creds.application_key
+                    );
+                }
+                if let Some(ref creds) = config.pcloud_credentials {
+                    add_if_placeholder_enabled!(
+                        "pCloud",
+                        &config.pcloud_credentials,
+                        &creds.access_token
+                    );
+                }
+                if let Some(ref creds) = config.ipfs_credentials {
+                    add_if_placeholder_enabled!("IPFS", &config.ipfs_credentials, &creds.jwt_token);
+                }
             }
 
             let watch_dir_str = s.watch_dir.to_string_lossy().to_string();
@@ -108,13 +197,17 @@ pub async fn handle_control_command(
             info!("Reloading configuration file: {}...", s.config_file);
             match load_or_create_config(&s.config_file).await {
                 Ok(config) => {
-                    let upload_limiter = config.max_upload_rate.map(|rate| {
-                        cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024)
-                    });
-                    let download_limiter = config.max_download_rate.map(|rate| {
-                        cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024)
-                    });
-                    let backends = crate::build_backends(&config, upload_limiter.clone(), download_limiter.clone());
+                    let upload_limiter = config
+                        .max_upload_rate
+                        .map(|rate| cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024));
+                    let download_limiter = config
+                        .max_download_rate
+                        .map(|rate| cloud_sync_lib::rate_limit::TokenBucket::new(rate * 1024));
+                    let backends = crate::build_backends(
+                        &config,
+                        upload_limiter.clone(),
+                        download_limiter.clone(),
+                    );
                     s.backends = backends;
                     s.upload_limiter = upload_limiter;
                     s.download_limiter = download_limiter;
@@ -146,9 +239,15 @@ pub async fn handle_control_command(
                 let event_tx = s.event_tx.clone();
                 let state_clone = state.clone();
                 tokio::spawn(async move {
-                    info!("Manual sync triggered via control command. Starting bidirectional sync...");
+                    info!(
+                        "Manual sync triggered via control command. Starting bidirectional sync..."
+                    );
                     for active_backend in &backends {
-                        let safe_name = active_backend.backend.name().to_lowercase().replace(" ", "_");
+                        let safe_name = active_backend
+                            .backend
+                            .name()
+                            .to_lowercase()
+                            .replace(" ", "_");
                         let state_filename = format!(".sync_state_{}.bin", safe_name);
                         let state_file_path = watch_dir.join(state_filename);
                         if let Err(e) = crate::sync_engine::sync_bidirectional(
@@ -162,8 +261,14 @@ pub async fn handle_control_command(
                             dry_run,
                             active_backend.selective_sync.clone(),
                             Some(event_tx.clone()),
-                        ).await {
-                            error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
+                        )
+                        .await
+                        {
+                            error!(
+                                "Bidirectional sync failed for backend '{}': {}",
+                                active_backend.backend.name(),
+                                e
+                            );
                         }
                     }
                     info!("Manual sync completed!");
@@ -178,7 +283,10 @@ pub async fn handle_control_command(
             }
             let target_provider = parts[1..].join(" ");
             let s = state.lock().await;
-            let matching_backend = s.backends.iter().find(|ab| ab.backend.name().eq_ignore_ascii_case(&target_provider));
+            let matching_backend = s
+                .backends
+                .iter()
+                .find(|ab| ab.backend.name().eq_ignore_ascii_case(&target_provider));
             match matching_backend {
                 Some(active_backend) => {
                     let backend = active_backend.backend.clone();
@@ -193,17 +301,30 @@ pub async fn handle_control_command(
                                 }
                             }
                             info!("Successfully cleared remote provider: {}", backend.name());
-                            format!("Status: Successfully cleared remote provider: {}\n", backend.name())
+                            format!(
+                                "Status: Successfully cleared remote provider: {}\n",
+                                backend.name()
+                            )
                         }
                         Err(e) => {
-                            error!("Failed to list files on provider '{}': {}", backend.name(), e);
+                            error!(
+                                "Failed to list files on provider '{}': {}",
+                                backend.name(),
+                                e
+                            );
                             format!("Error: Failed to list files on provider: {}\n", e)
                         }
                     }
                 }
                 None => {
-                    error!("No enabled provider found matching name: '{}'", target_provider);
-                    format!("Error: No enabled provider found matching name: '{}'\n", target_provider)
+                    error!(
+                        "No enabled provider found matching name: '{}'",
+                        target_provider
+                    );
+                    format!(
+                        "Error: No enabled provider found matching name: '{}'\n",
+                        target_provider
+                    )
                 }
             }
         }
@@ -211,7 +332,10 @@ pub async fn handle_control_command(
             let _ = shutdown_tx.send(()).await;
             "Status: Stopping daemon...\n".to_string()
         }
-        _ => "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, stop\n".to_string(),
+        _ => {
+            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, stop\n"
+                .to_string()
+        }
     }
 }
 
@@ -237,8 +361,8 @@ impl DaemonControlServer {
         shutdown_tx: mpsc::Sender<()>,
         mut shutdown_rx: mpsc::Receiver<()>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        use tokio::net::TcpListener;
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        use tokio::net::TcpListener;
 
         let listener = TcpListener::bind(&self.bind_addr).await?;
         info!("Daemon TCP control server listening on {}", self.bind_addr);
@@ -274,4 +398,3 @@ impl DaemonControlServer {
         Ok(())
     }
 }
-

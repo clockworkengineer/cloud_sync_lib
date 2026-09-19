@@ -1,8 +1,8 @@
 //! Client-side zero-knowledge encryption backend provider implementation.
 
 use crate::traits::{StorageBackend, StorageError, StorageItem};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
 use async_trait::async_trait;
 use rand::RngCore;
 use std::path::Path;
@@ -33,11 +33,7 @@ impl<B: StorageBackend> EncryptedBackend<B> {
         key_bytes.zeroize();
 
         let name = format!("Encrypted({})", inner.name());
-        Self {
-            inner,
-            key,
-            name,
-        }
+        Self { inner, key, name }
     }
 }
 
@@ -59,8 +55,13 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
 
         // 3. Encrypt
         let cipher = Aes256Gcm::new(&self.key);
-        let ciphertext = cipher.encrypt(nonce, plaintext.as_slice())
-            .map_err(|e| StorageError::Provider { message: format!("Encryption failed: {}", e), status: None })?;
+        let ciphertext =
+            cipher
+                .encrypt(nonce, plaintext.as_slice())
+                .map_err(|e| StorageError::Provider {
+                    message: format!("Encryption failed: {}", e),
+                    status: None,
+                })?;
 
         // Clean up plaintext memory
         plaintext.zeroize();
@@ -128,7 +129,10 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
 
         if payload.len() < 12 {
             payload.zeroize();
-            return Err(StorageError::Provider { message: "Invalid encrypted file: too short".to_string(), status: None });
+            return Err(StorageError::Provider {
+                message: "Invalid encrypted file: too short".to_string(),
+                status: None,
+            });
         }
 
         // 4. Split nonce and ciphertext
@@ -137,8 +141,13 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
 
         // 5. Decrypt
         let cipher = Aes256Gcm::new(&self.key);
-        let mut plaintext = cipher.decrypt(nonce, ciphertext)
-            .map_err(|e| StorageError::Provider { message: format!("Decryption failed: {}", e), status: None })?;
+        let mut plaintext =
+            cipher
+                .decrypt(nonce, ciphertext)
+                .map_err(|e| StorageError::Provider {
+                    message: format!("Decryption failed: {}", e),
+                    status: None,
+                })?;
 
         // Clean up payload memory
         payload.zeroize();
@@ -208,7 +217,10 @@ mod tests {
         let content = b"Hello, Zero-Knowledge Sync World!";
         fs::write(&local_file, content).await.unwrap();
 
-        enc_backend.upload(&local_file, "remote_test.txt").await.unwrap();
+        enc_backend
+            .upload(&local_file, "remote_test.txt")
+            .await
+            .unwrap();
 
         // Verify the file stored on the remote is encrypted and different
         let remote_stored_file = remote_root.join("remote_test.txt");
@@ -223,7 +235,10 @@ mod tests {
 
         // 2. Download and decrypt
         let downloaded_file = local_root.join("downloaded.txt");
-        enc_backend.download("remote_test.txt", &downloaded_file).await.unwrap();
+        enc_backend
+            .download("remote_test.txt", &downloaded_file)
+            .await
+            .unwrap();
 
         let decrypted_content = fs::read(&downloaded_file).await.unwrap();
         assert_eq!(decrypted_content, content);

@@ -3,15 +3,15 @@
 //! Handles interaction with the Pinata Pinning API. Supports file upload (pinning),
 //! gateway-based file download, unpinning on deletion, and pinList querying.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::IPFSCredentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::IPFSCredentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
+use serde::Deserialize;
 use std::path::Path;
 use std::time::SystemTime;
 use tokio::fs;
 use tracing::info;
-use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
 struct PinataMetadata {
@@ -53,7 +53,6 @@ pub struct IPFSProvider {
 crate::impl_provider_builder!(IPFSProvider, IPFSProviderBuilder, IPFSCredentials, relative);
 
 impl IPFSProvider {
-
     /// Creates a new `IPFSProvider` with custom HTTP client options.
     pub fn with_client_options(
         credentials: IPFSCredentials,
@@ -80,25 +79,28 @@ impl IPFSProvider {
         }
     }
 
-
     /// Helper to query the Pinata PinList to find the CID (IpfsHash) for a given remote filename.
     async fn resolve_cid(&self, remote_path: &str) -> Result<String, StorageError> {
         let query_url = format!("{}/data/pinList", self.api_url);
-        let res = super::utils::apply_bearer_auth(self.client.get(&query_url), &self.credentials.jwt_token)
-            .query(&[
-                ("status", "pinned"),
-                ("metadata[name]", remote_path),
-            ])
-            .send()
-            .await?;
+        let res = super::utils::apply_bearer_auth(
+            self.client.get(&query_url),
+            &self.credentials.jwt_token,
+        )
+        .query(&[("status", "pinned"), ("metadata[name]", remote_path)])
+        .send()
+        .await?;
 
         if !res.status().is_success() {
             return Err(translate_http_error(res, self.name(), "resolve_cid").await);
         }
 
         let body: PinataPinListResponse = res.json().await?;
-        let row = body.rows.first()
-            .ok_or_else(|| StorageError::NotFound(format!("File '{}' not found in IPFS pinned index", remote_path)))?;
+        let row = body.rows.first().ok_or_else(|| {
+            StorageError::NotFound(format!(
+                "File '{}' not found in IPFS pinned index",
+                remote_path
+            ))
+        })?;
 
         Ok(row.ipfs_pin_hash.clone())
     }
@@ -113,7 +115,11 @@ impl StorageBackend for IPFSProvider {
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
             let clean_path = self.format_path(remote_path);
-            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
+            info!(
+                "[{}] Real upload starting for '{}'",
+                self.name(),
+                clean_path
+            );
 
             let file_content = fs::read(local_path).await?;
             let file_name = Path::new(clean_path.as_ref())
@@ -127,17 +133,24 @@ impl StorageBackend for IPFSProvider {
             // Build pinataMetadata JSON string
             let metadata_json = serde_json::json!({
                 "name": clean_path
-            }).to_string();
+            })
+            .to_string();
 
             // Build multipart body
             let form = reqwest::multipart::Form::new()
-                .part("file", reqwest::multipart::Part::bytes(file_content).file_name(file_name))
+                .part(
+                    "file",
+                    reqwest::multipart::Part::bytes(file_content).file_name(file_name),
+                )
                 .text("pinataMetadata", metadata_json);
 
-            let res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &self.credentials.jwt_token)
-                .multipart(form)
-                .send()
-                .await?;
+            let res = super::utils::apply_bearer_auth(
+                self.client.post(&upload_url),
+                &self.credentials.jwt_token,
+            )
+            .multipart(form)
+            .send()
+            .await?;
 
             if !res.status().is_success() {
                 return Err(translate_http_error(res, self.name(), "upload").await);
@@ -145,7 +158,8 @@ impl StorageBackend for IPFSProvider {
 
             let _body: PinataPinFileResponse = res.json().await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -171,7 +185,8 @@ impl StorageBackend for IPFSProvider {
             let bytes = dl_res.bytes().await?;
             fs::write(local_path, bytes).await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -180,16 +195,20 @@ impl StorageBackend for IPFSProvider {
             let cid = self.resolve_cid(&clean_path).await?;
 
             let unpin_url = format!("{}/pinning/unpin/{}", self.api_url, cid);
-            let res = super::utils::apply_bearer_auth(self.client.delete(&unpin_url), &self.credentials.jwt_token)
-                .send()
-                .await?;
+            let res = super::utils::apply_bearer_auth(
+                self.client.delete(&unpin_url),
+                &self.credentials.jwt_token,
+            )
+            .send()
+            .await?;
 
             if !res.status().is_success() {
                 return Err(translate_http_error(res, self.name(), "delete").await);
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -197,8 +216,11 @@ impl StorageBackend for IPFSProvider {
             let clean_path = self.format_path(remote_path);
             let list_url = format!("{}/data/pinList", self.api_url);
 
-            let mut req = super::utils::apply_bearer_auth(self.client.get(&list_url), &self.credentials.jwt_token)
-                .query(&[("status", "pinned")]);
+            let mut req = super::utils::apply_bearer_auth(
+                self.client.get(&list_url),
+                &self.credentials.jwt_token,
+            )
+            .query(&[("status", "pinned")]);
 
             if !clean_path.is_empty() {
                 req = req.query(&[("metadata[name]", &clean_path)]);
@@ -214,11 +236,21 @@ impl StorageBackend for IPFSProvider {
             let mut items = Vec::new();
 
             for row in list_response.rows {
-                let item_path = super::utils::strip_destination_prefix(Path::new(&row.metadata.name), self.credentials.common.destination_folder.as_deref());
+                let item_path = super::utils::strip_destination_prefix(
+                    Path::new(&row.metadata.name),
+                    self.credentials.common.destination_folder.as_deref(),
+                );
 
-                let modified = row.date_pinned
+                let modified = row
+                    .date_pinned
                     .as_ref()
-                    .and_then(|t| time::OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339).ok())
+                    .and_then(|t| {
+                        time::OffsetDateTime::parse(
+                            t,
+                            &time::format_description::well_known::Rfc3339,
+                        )
+                        .ok()
+                    })
                     .map(SystemTime::from)
                     .unwrap_or(SystemTime::now());
 
@@ -233,11 +265,10 @@ impl StorageBackend for IPFSProvider {
             }
 
             Ok(items)
-        }).await
+        })
+        .await
     }
-
 }
-
 
 /// Builder for [`IPFSProvider`].
 pub struct IPFSProviderBuilder {

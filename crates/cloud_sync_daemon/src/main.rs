@@ -6,13 +6,12 @@
 
 pub mod config;
 pub mod control;
-pub mod watcher;
-pub mod sync_engine;
 pub mod engine;
+pub mod sync_engine;
 pub mod utils;
+pub mod watcher;
 
-
-use cloud_sync_lib::{StorageBackend, BackendRegistry, BackendCredentials};
+use cloud_sync_lib::{BackendCredentials, BackendRegistry, StorageBackend};
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -24,8 +23,8 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[allow(unused_imports)]
 use config::{is_provider_enabled, load_or_create_config, DEFAULT_CONFIG_FILE};
-use watcher::handle_event;
 use control::handle_control_command;
+use watcher::handle_event;
 
 pub const DAEMON_BIND_ADDR: &str = "127.0.0.1:8081";
 pub const DEBOUNCE_DELAY_MS: u64 = 150;
@@ -85,12 +84,8 @@ fn try_add_backend(
         let sync_mode = creds.sync_mode();
         let selective_sync = creds.selective_sync();
 
-        let backend = BackendRegistry::build_wrapped(
-            creds,
-            sim_root,
-            upload_limiter,
-            download_limiter,
-        );
+        let backend =
+            BackendRegistry::build_wrapped(creds, sim_root, upload_limiter, download_limiter);
 
         backends.push(ActiveBackend {
             backend,
@@ -113,46 +108,58 @@ pub fn build_backends(
     if is_provider_enabled(&config.google_credentials) {
         try_add_backend(
             &mut backends,
-            config.google_credentials.clone().map(BackendCredentials::GoogleDrive),
+            config
+                .google_credentials
+                .clone()
+                .map(BackendCredentials::GoogleDrive),
             config.google_drive_root.clone(),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "dropbox")]
     if is_provider_enabled(&config.dropbox_credentials) {
         try_add_backend(
             &mut backends,
-            config.dropbox_credentials.clone().map(BackendCredentials::Dropbox),
+            config
+                .dropbox_credentials
+                .clone()
+                .map(BackendCredentials::Dropbox),
             config.dropbox_root.clone(),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "onedrive")]
     if is_provider_enabled(&config.onedrive_credentials) {
         try_add_backend(
             &mut backends,
-            config.onedrive_credentials.clone().map(BackendCredentials::OneDrive),
+            config
+                .onedrive_credentials
+                .clone()
+                .map(BackendCredentials::OneDrive),
             config.onedrive_root.clone(),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "webdav")]
     if is_provider_enabled(&config.webdav_credentials) {
         try_add_backend(
             &mut backends,
-            config.webdav_credentials.clone().map(BackendCredentials::WebDAV),
+            config
+                .webdav_credentials
+                .clone()
+                .map(BackendCredentials::WebDAV),
             config.webdav_root.clone(),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "s3")]
     if is_provider_enabled(&config.s3_credentials) {
         try_add_backend(
@@ -163,106 +170,145 @@ pub fn build_backends(
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "sftp")]
     if is_provider_enabled(&config.sftp_credentials) {
         try_add_backend(
             &mut backends,
-            config.sftp_credentials.clone().map(BackendCredentials::SFTP),
+            config
+                .sftp_credentials
+                .clone()
+                .map(BackendCredentials::SFTP),
             config.sftp_root.clone(),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "nextcloud")]
     if is_provider_enabled(&config.nextcloud_credentials) {
         try_add_backend(
             &mut backends,
-            config.nextcloud_credentials.clone().map(BackendCredentials::Nextcloud),
+            config
+                .nextcloud_credentials
+                .clone()
+                .map(BackendCredentials::Nextcloud),
             config.nextcloud_root.clone(),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "box")]
     if is_provider_enabled(&config.box_credentials) {
         try_add_backend(
             &mut backends,
             config.box_credentials.clone().map(BackendCredentials::Box),
-            config.box_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_BOX_ROOT)),
+            config
+                .box_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_BOX_ROOT)),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "mega")]
     if is_provider_enabled(&config.mega_credentials) {
         try_add_backend(
             &mut backends,
-            config.mega_credentials.clone().map(BackendCredentials::Mega),
-            config.mega_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_MEGA_ROOT)),
+            config
+                .mega_credentials
+                .clone()
+                .map(BackendCredentials::Mega),
+            config
+                .mega_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_MEGA_ROOT)),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "azure_blob")]
     if is_provider_enabled(&config.azure_blob_credentials) {
         try_add_backend(
             &mut backends,
-            config.azure_blob_credentials.clone().map(BackendCredentials::AzureBlob),
-            config.azure_blob_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_AZURE_BLOB_ROOT)),
+            config
+                .azure_blob_credentials
+                .clone()
+                .map(BackendCredentials::AzureBlob),
+            config
+                .azure_blob_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_AZURE_BLOB_ROOT)),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "gcs")]
     if is_provider_enabled(&config.gcs_credentials) {
         try_add_backend(
             &mut backends,
             config.gcs_credentials.clone().map(BackendCredentials::GCS),
-            config.gcs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_GCS_ROOT)),
+            config
+                .gcs_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_GCS_ROOT)),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "b2")]
     if is_provider_enabled(&config.b2_credentials) {
         try_add_backend(
             &mut backends,
             config.b2_credentials.clone().map(BackendCredentials::B2),
-            config.b2_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_B2_ROOT)),
+            config
+                .b2_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_B2_ROOT)),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "pcloud")]
     if is_provider_enabled(&config.pcloud_credentials) {
         try_add_backend(
             &mut backends,
-            config.pcloud_credentials.clone().map(BackendCredentials::PCloud),
-            config.pcloud_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_PCLOUD_ROOT)),
+            config
+                .pcloud_credentials
+                .clone()
+                .map(BackendCredentials::PCloud),
+            config
+                .pcloud_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_PCLOUD_ROOT)),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     #[cfg(feature = "ipfs")]
     if is_provider_enabled(&config.ipfs_credentials) {
         try_add_backend(
             &mut backends,
-            config.ipfs_credentials.clone().map(BackendCredentials::IPFS),
-            config.ipfs_root.clone().unwrap_or_else(|| PathBuf::from(config::DEFAULT_IPFS_ROOT)),
+            config
+                .ipfs_credentials
+                .clone()
+                .map(BackendCredentials::IPFS),
+            config
+                .ipfs_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_IPFS_ROOT)),
             upload_limiter.clone(),
             download_limiter.clone(),
         );
     }
- 
+
     backends
 }
 
@@ -293,7 +339,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = log_file_path {
         let path = std::path::PathBuf::from(path);
         let directory = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-        let file_name = path.file_name().unwrap_or_else(|| std::ffi::OsStr::new("daemon.log")).to_string_lossy().to_string();
+        let file_name = path
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("daemon.log"))
+            .to_string_lossy()
+            .to_string();
         let file_appender = tracing_appender::rolling::daily(directory, file_name);
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
         _log_guard = Some(guard);
@@ -314,7 +364,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if std::path::Path::new("config.toml").exists() {
         "config.toml".to_string()
     } else {
-        config::get_default_config_path().to_string_lossy().to_string()
+        config::get_default_config_path()
+            .to_string_lossy()
+            .to_string()
     };
     let mut ui_addr = None;
     let mut control_addr = DAEMON_BIND_ADDR.to_string();
@@ -354,7 +406,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "keep-local" => cloud_sync_lib::ConflictPolicy::KeepLocal,
                 "keep-remote" => cloud_sync_lib::ConflictPolicy::KeepRemote,
                 _ => {
-                    error!("Unknown conflict policy: '{}'. Using RenameLocal.", policy_str);
+                    error!(
+                        "Unknown conflict policy: '{}'. Using RenameLocal.",
+                        policy_str
+                    );
                     cloud_sync_lib::ConflictPolicy::RenameLocal
                 }
             };
@@ -369,7 +424,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    info!("Starting Cloud Sync Daemon using config: {}...", config_file);
+    info!(
+        "Starting Cloud Sync Daemon using config: {}...",
+        config_file
+    );
     if let Some(ref addr) = ui_addr {
         info!("Web UI server address: {}", addr);
     }
@@ -391,7 +449,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             retry_config.multiplier = mult;
         }
         cloud_sync_lib::set_global_retry_config(retry_config);
-        info!("Applied global error recovery configuration: {:?}", retry_config);
+        info!(
+            "Applied global error recovery configuration: {:?}",
+            retry_config
+        );
     }
 
     // Ensure the directories exist
@@ -416,18 +477,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Initialize rate limiters
-    let upload_limiter = if config.max_upload_rate.is_some() || config.bandwidth_schedule.is_some() {
+    let upload_limiter = if config.max_upload_rate.is_some() || config.bandwidth_schedule.is_some()
+    {
         let initial_rate = config.max_upload_rate.unwrap_or(0);
-        Some(cloud_sync_lib::rate_limit::TokenBucket::new(initial_rate * 1024))
+        Some(cloud_sync_lib::rate_limit::TokenBucket::new(
+            initial_rate * 1024,
+        ))
     } else {
         None
     };
-    let download_limiter = if config.max_download_rate.is_some() || config.bandwidth_schedule.is_some() {
-        let initial_rate = config.max_download_rate.unwrap_or(0);
-        Some(cloud_sync_lib::rate_limit::TokenBucket::new(initial_rate * 1024))
-    } else {
-        None
-    };
+    let download_limiter =
+        if config.max_download_rate.is_some() || config.bandwidth_schedule.is_some() {
+            let initial_rate = config.max_download_rate.unwrap_or(0);
+            Some(cloud_sync_lib::rate_limit::TokenBucket::new(
+                initial_rate * 1024,
+            ))
+        } else {
+            None
+        };
 
     // Initialize Providers
     let backends = build_backends(&config, upload_limiter.clone(), download_limiter.clone());
@@ -437,7 +504,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if single_shot {
         info!("Running single-shot bidirectional synchronization...");
         for active_backend in &backends {
-            let safe_name = active_backend.backend.name().to_lowercase().replace(" ", "_");
+            let safe_name = active_backend
+                .backend
+                .name()
+                .to_lowercase()
+                .replace(" ", "_");
             let state_filename = format!(".sync_state_{}.bin", safe_name);
             let state_file_path = watch_dir.join(state_filename);
             info!("Syncing backend: {}", active_backend.backend.name());
@@ -452,8 +523,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 dry_run,
                 active_backend.selective_sync.clone(),
                 Some(event_tx.clone()),
-            ).await {
-                error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
+            )
+            .await
+            {
+                error!(
+                    "Bidirectional sync failed for backend '{}': {}",
+                    active_backend.backend.name(),
+                    e
+                );
             }
         }
         info!("Single-shot synchronization completed.");
@@ -464,12 +541,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(target_os = "windows")]
             let mut cmd = std::process::Command::new("cmd");
             #[cfg(target_os = "windows")]
-            cmd.args(&["/C", &hook]);
+            cmd.args(["/C", &hook]);
 
             #[cfg(not(target_os = "windows"))]
             let mut cmd = std::process::Command::new("sh");
             #[cfg(not(target_os = "windows"))]
-            cmd.args(&["-c", &hook]);
+            cmd.args(["-c", &hook]);
 
             match cmd.status() {
                 Ok(status) => info!("PMU hook exited with status: {}", status),
@@ -480,7 +557,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(target_provider) = clear_remote {
-        let matching_backend = backends.iter().find(|ab| ab.backend.name().eq_ignore_ascii_case(&target_provider));
+        let matching_backend = backends
+            .iter()
+            .find(|ab| ab.backend.name().eq_ignore_ascii_case(&target_provider));
         match matching_backend {
             Some(active_backend) => {
                 let backend = active_backend.backend.clone();
@@ -497,7 +576,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
             None => {
-                error!("No enabled provider found matching name: '{}'", target_provider);
+                error!(
+                    "No enabled provider found matching name: '{}'",
+                    target_provider
+                );
                 return Err("Provider not found or disabled".into());
             }
         }
@@ -538,7 +620,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 let now = chrono::Local::now().time();
-                
+
                 // Find matching schedule
                 let mut active_upload = None;
                 let mut active_download = None;
@@ -581,14 +663,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(ref limiter) = s.upload_limiter {
                     let cur_rate = limiter.rate() / 1024;
                     if cur_rate != target_upload {
-                        info!("Dynamic Scheduler: Adjusting upload limit to {} KB/s", target_upload);
+                        info!(
+                            "Dynamic Scheduler: Adjusting upload limit to {} KB/s",
+                            target_upload
+                        );
                         limiter.set_rate(target_upload * 1024);
                     }
                 }
                 if let Some(ref limiter) = s.download_limiter {
                     let cur_rate = limiter.rate() / 1024;
                     if cur_rate != target_download {
-                        info!("Dynamic Scheduler: Adjusting download limit to {} KB/s", target_download);
+                        info!(
+                            "Dynamic Scheduler: Adjusting download limit to {} KB/s",
+                            target_download
+                        );
                         limiter.set_rate(target_download * 1024);
                     }
                 }
@@ -651,9 +739,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(pull_interval)).await;
 
-            let (paused, backends, watch_dir, gitignore, max_concurrency, conflict_policy, dry_run, event_tx_pull) = {
+            let (
+                paused,
+                backends,
+                watch_dir,
+                gitignore,
+                max_concurrency,
+                conflict_policy,
+                dry_run,
+                event_tx_pull,
+            ) = {
                 let s = state_pull.lock().await;
-                (s.paused, s.backends.clone(), s.watch_dir.clone(), s.gitignore.clone(), s.max_concurrency, s.conflict_policy, s.dry_run, s.event_tx.clone())
+                (
+                    s.paused,
+                    s.backends.clone(),
+                    s.watch_dir.clone(),
+                    s.gitignore.clone(),
+                    s.max_concurrency,
+                    s.conflict_policy,
+                    s.dry_run,
+                    s.event_tx.clone(),
+                )
             };
 
             if paused {
@@ -662,7 +768,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             info!("Periodic bidirectional sync started...");
             for active_backend in &backends {
-                let safe_name = active_backend.backend.name().to_lowercase().replace(" ", "_");
+                let safe_name = active_backend
+                    .backend
+                    .name()
+                    .to_lowercase()
+                    .replace(" ", "_");
                 let state_filename = format!(".sync_state_{}.bin", safe_name);
                 let state_file_path = watch_dir.join(state_filename);
                 if let Err(e) = sync_engine::sync_bidirectional(
@@ -676,8 +786,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dry_run,
                     active_backend.selective_sync.clone(),
                     Some(event_tx_pull.clone()),
-                ).await {
-                    error!("Bidirectional sync failed for backend '{}': {}", active_backend.backend.name(), e);
+                )
+                .await
+                {
+                    error!(
+                        "Bidirectional sync failed for backend '{}': {}",
+                        active_backend.backend.name(),
+                        e
+                    );
                 }
             }
             info!("Periodic bidirectional sync completed.");
@@ -697,11 +813,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let listener = match tokio::net::TcpListener::bind(&control_addr_clone).await {
             Ok(l) => l,
             Err(e) => {
-                error!("Failed to bind TCP control socket on {}: {}", control_addr_clone, e);
+                error!(
+                    "Failed to bind TCP control socket on {}: {}",
+                    control_addr_clone, e
+                );
                 return;
             }
         };
-        info!("Control command TCP socket listening on {}", control_addr_clone);
+        info!(
+            "Control command TCP socket listening on {}",
+            control_addr_clone
+        );
 
         loop {
             tokio::select! {

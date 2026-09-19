@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize LocalSimulation mock backend
     let local_sim = LocalSimulation::new(temp_dir.clone(), "MockProvider".to_string());
-    
+
     // Wrap it in SimulatedFallback (here simulating with no actual cloud connection)
     let backend = SimulatedFallback::new(
         None::<LocalSimulation>, // No real remote provider
@@ -49,9 +49,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 4. Download the file back to a new local path
     let download_file_path = std::env::temp_dir().join("hello_downloaded.txt");
-    println!("Downloading remote 'docs/hello.txt' to {:?}", download_file_path);
-    backend.download("docs/hello.txt", &download_file_path).await?;
-    
+    println!(
+        "Downloading remote 'docs/hello.txt' to {:?}",
+        download_file_path
+    );
+    backend
+        .download("docs/hello.txt", &download_file_path)
+        .await?;
+
     let content = std::fs::read_to_string(&download_file_path)?;
     println!("Downloaded content matches: '{}'", content.trim());
 

@@ -1,4 +1,6 @@
-use cloud_sync_lib::{EncryptedBackend, LocalSimulation, SimulatedFallback, StorageBackend, SyncMode};
+use cloud_sync_lib::{
+    EncryptedBackend, LocalSimulation, SimulatedFallback, StorageBackend, SyncMode,
+};
 use std::fs::File;
 use std::io::Write;
 
@@ -35,7 +37,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Upload through encrypted backend (should encrypt data on the fly)
     println!("Uploading to remote 'secrets/confidential.txt'...");
-    encrypted_backend.upload(&local_file_path, "secrets/confidential.txt").await?;
+    encrypted_backend
+        .upload(&local_file_path, "secrets/confidential.txt")
+        .await?;
     println!("Upload completed.");
 
     // 3. Let's inspect the file directly in the mock remote folder (it should be encrypted)
@@ -52,7 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Download through encrypted backend (should decrypt back to original text)
     let decrypted_file_path = std::env::temp_dir().join("decrypted.txt");
     println!("Downloading and decrypting remote file...");
-    encrypted_backend.download("secrets/confidential.txt", &decrypted_file_path).await?;
+    encrypted_backend
+        .download("secrets/confidential.txt", &decrypted_file_path)
+        .await?;
 
     let content = std::fs::read_to_string(&decrypted_file_path)?;
     println!("Decrypted content: '{}'", content.trim());

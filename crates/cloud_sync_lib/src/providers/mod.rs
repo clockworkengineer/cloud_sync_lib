@@ -11,7 +11,6 @@ pub mod factory;
 pub use cloud_sync_core::SyncMode;
 pub use factory::{BackendFactory, DynamicBackendRegistry};
 
-
 /// Common configuration settings shared by all storage providers.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Zeroize, ZeroizeOnDrop)]
 pub struct CommonProviderSettings {
@@ -299,74 +298,73 @@ impl ProviderConfig for IPFSCredentials {
     }
 }
 
-#[cfg(feature = "google_drive")]
-pub mod google_drive;
+#[cfg(feature = "azure_blob")]
+pub mod azure_blob;
+#[cfg(feature = "b2")]
+pub mod b2;
+#[cfg(feature = "box")]
+pub mod box_provider;
 #[cfg(feature = "dropbox")]
 pub mod dropbox;
+pub mod encryption;
+pub mod fallback;
+#[cfg(feature = "gcs")]
+pub mod gcs;
+#[cfg(feature = "google_drive")]
+pub mod google_drive;
+#[cfg(feature = "ipfs")]
+pub mod ipfs;
+pub mod local_sim;
+#[cfg(feature = "mega")]
+pub mod mega_provider;
+#[cfg(feature = "nextcloud")]
+pub mod nextcloud;
 #[cfg(feature = "onedrive")]
 pub mod onedrive;
-#[cfg(feature = "webdav")]
-pub mod webdav;
+#[cfg(feature = "pcloud")]
+pub mod pcloud;
 #[cfg(feature = "s3")]
 pub mod s3;
 #[cfg(feature = "sftp")]
 pub mod sftp;
-#[cfg(feature = "nextcloud")]
-pub mod nextcloud;
-#[cfg(feature = "box")]
-pub mod box_provider;
-#[cfg(feature = "mega")]
-pub mod mega_provider;
-#[cfg(feature = "azure_blob")]
-pub mod azure_blob;
-#[cfg(feature = "gcs")]
-pub mod gcs;
-#[cfg(feature = "b2")]
-pub mod b2;
-#[cfg(feature = "pcloud")]
-pub mod pcloud;
-#[cfg(feature = "ipfs")]
-pub mod ipfs;
-pub mod local_sim;
 pub mod utils;
-pub mod fallback;
-pub mod encryption;
+#[cfg(feature = "webdav")]
+pub mod webdav;
 
-
-#[cfg(feature = "google_drive")]
-pub use google_drive::{GoogleDriveProvider, GoogleDriveProviderBuilder};
+#[cfg(feature = "azure_blob")]
+pub use azure_blob::{AzureBlobProvider, AzureBlobProviderBuilder};
+#[cfg(feature = "b2")]
+pub use b2::{B2Provider, B2ProviderBuilder};
+#[cfg(feature = "box")]
+pub use box_provider::{BoxProvider, BoxProviderBuilder};
 #[cfg(feature = "dropbox")]
 pub use dropbox::{DropboxProvider, DropboxProviderBuilder};
+pub use encryption::EncryptedBackend;
+pub use fallback::SimulatedFallback;
+#[cfg(feature = "gcs")]
+pub use gcs::{GCSProvider, GCSProviderBuilder};
+#[cfg(feature = "google_drive")]
+pub use google_drive::{GoogleDriveProvider, GoogleDriveProviderBuilder};
+#[cfg(feature = "ipfs")]
+pub use ipfs::{IPFSProvider, IPFSProviderBuilder};
+#[cfg(feature = "mega")]
+pub use mega_provider::{MegaProvider, MegaProviderBuilder};
+#[cfg(feature = "nextcloud")]
+pub use nextcloud::{NextcloudProvider, NextcloudProviderBuilder};
 #[cfg(feature = "onedrive")]
 pub use onedrive::{OneDriveProvider, OneDriveProviderBuilder};
-#[cfg(feature = "webdav")]
-pub use webdav::{WebDAVProvider, WebDAVProviderBuilder};
+#[cfg(feature = "pcloud")]
+pub use pcloud::{PCloudProvider, PCloudProviderBuilder};
 #[cfg(feature = "s3")]
 pub use s3::{S3Provider, S3ProviderBuilder};
 #[cfg(feature = "sftp")]
 pub use sftp::{SFTPProvider, SFTPProviderBuilder};
-#[cfg(feature = "nextcloud")]
-pub use nextcloud::{NextcloudProvider, NextcloudProviderBuilder};
-#[cfg(feature = "box")]
-pub use box_provider::{BoxProvider, BoxProviderBuilder};
-#[cfg(feature = "mega")]
-pub use mega_provider::{MegaProvider, MegaProviderBuilder};
-#[cfg(feature = "azure_blob")]
-pub use azure_blob::{AzureBlobProvider, AzureBlobProviderBuilder};
-#[cfg(feature = "gcs")]
-pub use gcs::{GCSProvider, GCSProviderBuilder};
-#[cfg(feature = "b2")]
-pub use b2::{B2Provider, B2ProviderBuilder};
-#[cfg(feature = "pcloud")]
-pub use pcloud::{PCloudProvider, PCloudProviderBuilder};
-#[cfg(feature = "ipfs")]
-pub use ipfs::{IPFSProvider, IPFSProviderBuilder};
-pub use fallback::SimulatedFallback;
-pub use encryption::EncryptedBackend;
 pub use utils::OAuthTokenManager;
+#[cfg(feature = "webdav")]
+pub use webdav::{WebDAVProvider, WebDAVProviderBuilder};
 
-use std::sync::Arc;
 use crate::traits::StorageBackend;
+use std::sync::Arc;
 
 /// Enum wrapping credentials for any compiled backend.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, zeroize::Zeroize)]
@@ -458,18 +456,24 @@ impl BackendRegistry {
         match &mut creds {
             #[cfg(feature = "google_drive")]
             BackendCredentials::GoogleDrive(ref mut c) => {
-                c.client_secret = utils::get_secure_credential("google_drive", "client_secret", &c.client_secret);
-                c.refresh_token = utils::get_secure_credential("google_drive", "refresh_token", &c.refresh_token);
+                c.client_secret =
+                    utils::get_secure_credential("google_drive", "client_secret", &c.client_secret);
+                c.refresh_token =
+                    utils::get_secure_credential("google_drive", "refresh_token", &c.refresh_token);
             }
             #[cfg(feature = "dropbox")]
             BackendCredentials::Dropbox(ref mut c) => {
-                c.client_secret = utils::get_secure_credential("dropbox", "client_secret", &c.client_secret);
-                c.refresh_token = utils::get_secure_credential("dropbox", "refresh_token", &c.refresh_token);
+                c.client_secret =
+                    utils::get_secure_credential("dropbox", "client_secret", &c.client_secret);
+                c.refresh_token =
+                    utils::get_secure_credential("dropbox", "refresh_token", &c.refresh_token);
             }
             #[cfg(feature = "onedrive")]
             BackendCredentials::OneDrive(ref mut c) => {
-                c.client_secret = utils::get_secure_credential("onedrive", "client_secret", &c.client_secret);
-                c.refresh_token = utils::get_secure_credential("onedrive", "refresh_token", &c.refresh_token);
+                c.client_secret =
+                    utils::get_secure_credential("onedrive", "client_secret", &c.client_secret);
+                c.refresh_token =
+                    utils::get_secure_credential("onedrive", "refresh_token", &c.refresh_token);
             }
             #[cfg(feature = "webdav")]
             BackendCredentials::WebDAV(ref mut c) => {
@@ -477,7 +481,8 @@ impl BackendRegistry {
             }
             #[cfg(feature = "s3")]
             BackendCredentials::S3(ref mut c) => {
-                c.secret_access_key = utils::get_secure_credential("s3", "secret_access_key", &c.secret_access_key);
+                c.secret_access_key =
+                    utils::get_secure_credential("s3", "secret_access_key", &c.secret_access_key);
             }
             #[cfg(feature = "sftp")]
             BackendCredentials::SFTP(ref mut c) => {
@@ -487,12 +492,15 @@ impl BackendRegistry {
             }
             #[cfg(feature = "nextcloud")]
             BackendCredentials::Nextcloud(ref mut c) => {
-                c.app_password = utils::get_secure_credential("nextcloud", "app_password", &c.app_password);
+                c.app_password =
+                    utils::get_secure_credential("nextcloud", "app_password", &c.app_password);
             }
             #[cfg(feature = "box")]
             BackendCredentials::Box(ref mut c) => {
-                c.client_secret = utils::get_secure_credential("box", "client_secret", &c.client_secret);
-                c.refresh_token = utils::get_secure_credential("box", "refresh_token", &c.refresh_token);
+                c.client_secret =
+                    utils::get_secure_credential("box", "client_secret", &c.client_secret);
+                c.refresh_token =
+                    utils::get_secure_credential("box", "refresh_token", &c.refresh_token);
             }
             #[cfg(feature = "mega")]
             BackendCredentials::Mega(ref mut c) => {
@@ -500,15 +508,18 @@ impl BackendRegistry {
             }
             #[cfg(feature = "azure_blob")]
             BackendCredentials::AzureBlob(ref mut c) => {
-                c.account_key = utils::get_secure_credential("azure_blob", "account_key", &c.account_key);
+                c.account_key =
+                    utils::get_secure_credential("azure_blob", "account_key", &c.account_key);
             }
             #[cfg(feature = "b2")]
             BackendCredentials::B2(ref mut c) => {
-                c.application_key = utils::get_secure_credential("b2", "application_key", &c.application_key);
+                c.application_key =
+                    utils::get_secure_credential("b2", "application_key", &c.application_key);
             }
             #[cfg(feature = "pcloud")]
             BackendCredentials::PCloud(ref mut c) => {
-                c.access_token = utils::get_secure_credential("pcloud", "access_token", &c.access_token);
+                c.access_token =
+                    utils::get_secure_credential("pcloud", "access_token", &c.access_token);
             }
             #[cfg(feature = "ipfs")]
             BackendCredentials::IPFS(ref mut c) => {
@@ -605,13 +616,11 @@ impl BackendRegistry {
 
         let local_sim = local_sim::LocalSimulation::new(sim_root, provider_name.to_string())
             .with_limiters(upload_limiter.clone(), download_limiter.clone());
-        let fallback = fallback::SimulatedFallback::new(Some(inner), local_sim, provider_name, sync_mode);
+        let fallback =
+            fallback::SimulatedFallback::new(Some(inner), local_sim, provider_name, sync_mode);
 
-        let rate_limited = crate::rate_limit::RateLimitingBackend::new(
-            fallback,
-            upload_limiter,
-            download_limiter,
-        );
+        let rate_limited =
+            crate::rate_limit::RateLimitingBackend::new(fallback, upload_limiter, download_limiter);
 
         if let Some(password) = encryption_password {
             Arc::new(encryption::EncryptedBackend::new(rate_limited, password))
@@ -628,4 +637,3 @@ impl BackendRegistry {
         Self::build_wrapped(creds, sim_root, None, None)
     }
 }
-

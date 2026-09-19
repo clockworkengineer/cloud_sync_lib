@@ -1,6 +1,6 @@
-use std::path::Path;
-use std::io;
 use ring::digest;
+use std::io;
+use std::path::Path;
 
 fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
@@ -30,7 +30,7 @@ pub async fn compute_sha256(path: &Path) -> io::Result<String> {
         Ok(hex_encode(context.finish().as_ref()))
     })
     .await
-    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+    .map_err(io::Error::other)?
 }
 
 /// Computes the MD5 checksum of a file at the specified path.
@@ -52,7 +52,7 @@ pub async fn compute_md5(path: &Path) -> io::Result<String> {
         Ok(format!("{:x}", context.compute()))
     })
     .await
-    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+    .map_err(io::Error::other)?
 }
 
 /// Computes the Dropbox-specific content_hash of a file at the specified path.
@@ -86,7 +86,7 @@ pub async fn compute_dropbox_hash(path: &Path) -> io::Result<String> {
         Ok(hex_encode(digest.as_ref()))
     })
     .await
-    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+    .map_err(io::Error::other)?
 }
 
 /// Computes the SHA-1 checksum of a file at the specified path.
@@ -108,7 +108,7 @@ pub async fn compute_sha1(path: &Path) -> io::Result<String> {
         Ok(hex_encode(context.finish().as_ref()))
     })
     .await
-    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+    .map_err(io::Error::other)?
 }
 
 #[cfg(test)]
@@ -132,7 +132,10 @@ mod tests {
 
         // Test SHA-256
         let sha256_val = compute_sha256(&file_path).await.unwrap();
-        assert_eq!(sha256_val, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+        assert_eq!(
+            sha256_val,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
 
         // Test SHA-1
         let sha1_val = compute_sha1(&file_path).await.unwrap();
@@ -141,7 +144,8 @@ mod tests {
         // Test Dropbox hash
         let dbx_val = compute_dropbox_hash(&file_path).await.unwrap();
         let block_hash = ring::digest::digest(&ring::digest::SHA256, b"hello");
-        let expected_dbx = hex_encode(ring::digest::digest(&ring::digest::SHA256, block_hash.as_ref()).as_ref());
+        let expected_dbx =
+            hex_encode(ring::digest::digest(&ring::digest::SHA256, block_hash.as_ref()).as_ref());
         assert_eq!(dbx_val, expected_dbx);
     }
 }

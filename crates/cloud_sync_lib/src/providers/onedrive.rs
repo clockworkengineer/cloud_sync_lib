@@ -3,9 +3,9 @@
 //! Handles interaction with the Microsoft Graph REST API for OneDrive. Supports full OAuth2-based
 //! upload, download, delete, and list operations.
 
-use crate::traits::{StorageBackend, StorageError, StorageItem};
-use crate::providers::OAuthCredentials;
 use crate::providers::utils::translate_http_error;
+use crate::providers::OAuthCredentials;
+use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -26,11 +26,15 @@ pub struct OneDriveProvider {
     download_limiter: Option<crate::rate_limit::TokenBucket>,
 }
 
-crate::impl_provider_builder!(OneDriveProvider, OneDriveProviderBuilder, OAuthCredentials, relative);
+crate::impl_provider_builder!(
+    OneDriveProvider,
+    OneDriveProviderBuilder,
+    OAuthCredentials,
+    relative
+);
 crate::impl_oauth_token_helper!(OneDriveProvider);
 
 impl OneDriveProvider {
-
     /// Creates a new `OneDriveProvider` with custom HTTP client options.
     pub fn with_client_options(
         credentials: OAuthCredentials,
@@ -93,9 +97,6 @@ impl OneDriveProvider {
         ));
         self
     }
-
-
-
 }
 
 #[async_trait]
@@ -104,14 +105,18 @@ impl StorageBackend for OneDriveProvider {
         "OneDrive"
     }
 
-
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
             let token = self.get_access_token().await?;
             let clean_path = self.format_path(remote_path);
 
-            info!("[{}] Real upload starting for '{}'", self.name(), clean_path);
-            let (body, size) = super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
+            info!(
+                "[{}] Real upload starting for '{}'",
+                self.name(),
+                clean_path
+            );
+            let (body, size) =
+                super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
             let upload_url = format!("{}/me/drive/root:/{}:/content", self.api_url, clean_path);
             let res = super::utils::apply_bearer_auth(self.client.put(&upload_url), &token)
@@ -126,7 +131,8 @@ impl StorageBackend for OneDriveProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
@@ -143,9 +149,11 @@ impl StorageBackend for OneDriveProvider {
                 return Err(translate_http_error(res, self.name(), "download").await);
             }
 
-            super::utils::download_rate_limited(res, local_path, self.download_limiter.clone()).await?;
+            super::utils::download_rate_limited(res, local_path, self.download_limiter.clone())
+                .await?;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -163,7 +171,8 @@ impl StorageBackend for OneDriveProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     /// Creates a directory folder on OneDrive.
@@ -179,7 +188,7 @@ impl StorageBackend for OneDriveProvider {
             }
 
             let (parent_path, folder_name) = match clean_path.rfind('/') {
-                Some(idx) => (&clean_path[..idx], &clean_path[idx+1..]),
+                Some(idx) => (&clean_path[..idx], &clean_path[idx + 1..]),
                 None => ("", clean_path.as_ref()),
             };
 
@@ -203,7 +212,8 @@ impl StorageBackend for OneDriveProvider {
             let status = res.status();
             if !status.is_success() {
                 let err_text = res.text().await.unwrap_or_default();
-                if err_text.contains("nameAlreadyExists") || err_text.contains("itemAlreadyExists") {
+                if err_text.contains("nameAlreadyExists") || err_text.contains("itemAlreadyExists")
+                {
                     return Ok(());
                 }
                 return Err(StorageError::Provider {
@@ -213,7 +223,8 @@ impl StorageBackend for OneDriveProvider {
             }
 
             Ok(())
-        }).await
+        })
+        .await
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -254,7 +265,7 @@ impl StorageBackend for OneDriveProvider {
                             is_dir,
                             checksum: None,
                             permissions: None,
-                });
+                        });
                     }
                 }
 
@@ -266,12 +277,10 @@ impl StorageBackend for OneDriveProvider {
             }
 
             Ok(items)
-        }).await
+        })
+        .await
     }
-
 }
-
-
 
 /// Builder for [`OneDriveProvider`].
 pub struct OneDriveProviderBuilder {
