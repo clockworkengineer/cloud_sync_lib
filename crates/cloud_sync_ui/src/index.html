@@ -240,21 +240,33 @@
         }
 
         .backend-pill.active {
-            background: rgba(99, 102, 241, 0.08);
-            border-color: rgba(99, 102, 241, 0.3);
-            color: #c7d2fe;
+            background: rgba(20, 184, 166, 0.08);
+            border-color: rgba(20, 184, 166, 0.35);
+            color: #ccfbf1;
+        }
+
+        .backend-pill.simulated {
+            background: rgba(245, 158, 11, 0.08);
+            border-color: rgba(245, 158, 11, 0.35);
+            color: #fef3c7;
         }
 
         .backend-indicator {
-            width: 6px;
-            height: 6px;
+            width: 7px;
+            height: 7px;
             border-radius: 50%;
             background: var(--text-secondary);
+            flex-shrink: 0;
         }
 
         .backend-pill.active .backend-indicator {
             background: var(--accent-teal);
             box-shadow: 0 0 6px var(--accent-teal);
+        }
+
+        .backend-pill.simulated .backend-indicator {
+            background: #f59e0b;
+            box-shadow: 0 0 6px #f59e0b;
         }
 
         .backend-pill.failed {
@@ -268,9 +280,37 @@
             box-shadow: 0 0 6px var(--accent-rose);
         }
 
+        .backend-pill .backend-badge {
+            font-size: 0.65rem;
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-left: 0.35rem;
+        }
+
+        .backend-pill.active .backend-badge {
+            background: rgba(20, 184, 166, 0.18);
+            color: #5eead4;
+            border: 1px solid rgba(20, 184, 166, 0.35);
+        }
+
+        .backend-pill.simulated .backend-badge {
+            background: rgba(245, 158, 11, 0.18);
+            color: #fde68a;
+            border: 1px solid rgba(245, 158, 11, 0.35);
+        }
+
+        .backend-pill.failed .backend-badge {
+            background: rgba(244, 63, 94, 0.18);
+            color: #fca5a5;
+            border: 1px solid rgba(244, 63, 94, 0.35);
+        }
+
         .backend-pill.syncing-now {
-            background: rgba(20, 184, 166, 0.15) !important;
-            border-color: rgba(20, 184, 166, 0.5) !important;
+            background: rgba(20, 184, 166, 0.2) !important;
+            border-color: rgba(20, 184, 166, 0.6) !important;
             color: #99f6e4 !important;
             animation: pulse-sync-pill 1.5s infinite ease-in-out;
         }
@@ -562,6 +602,10 @@
                     <div class="backends-container" id="backends-list">
                         <!-- Populated dynamically -->
                     </div>
+                    <div id="simulated-notice" style="display:none; margin-top: 0.75rem; padding: 0.75rem 1rem; border-radius: 8px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); font-size: 0.825rem; color: #fde68a; line-height: 1.45;">
+                        <strong style="color: #fbbf24;">ℹ Simulation Fallback Active:</strong>
+                        <span id="simulated-notice-text">Providers with expired credentials or local configuration are operating in local simulation fallback mode under <code>./cloud_simulation/</code>.</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -779,11 +823,20 @@
                     'Google Drive', 'Dropbox', 'OneDrive', 'WebDAV', 'S3', 'SFTP', 'Nextcloud', 
                     'Box', 'MEGA', 'Azure Blob', 'Google Cloud Storage', 'Backblaze B2', 'pCloud', 'IPFS'
                 ];
+                let simulatedCount = 0;
+                let simulatedNames = [];
+
                 allProviders.forEach(prov => {
-                    const isActive = data.active_backends.includes(prov);
+                    const isActive = data.active_backends && data.active_backends.includes(prov);
                     if (!isActive) return;
                     
                     const isFailed = data.failed_backends && data.failed_backends.includes(prov);
+                    const isSimulated = !isFailed && data.simulated_backends && data.simulated_backends.includes(prov);
+
+                    if (isSimulated) {
+                        simulatedCount++;
+                        simulatedNames.push(prov);
+                    }
                     
                     if (isFailed && isActive) {
                         if (!loggedFailedBackends.has(prov)) {
@@ -796,10 +849,40 @@
 
                     const isSyncingThis = activeSyncingBackend === prov;
                     const pill = document.createElement('div');
-                    pill.className = `backend-pill ${isActive ? 'active' : ''} ${isFailed ? 'failed' : ''} ${isSyncingThis ? 'syncing-now' : ''}`;
-                    pill.innerHTML = `<span class="backend-indicator"></span> ${prov}`;
+                    let statusClass = 'active';
+                    let badgeLabel = 'Live Cloud';
+                    let titleText = `${prov}: Connected to live cloud storage`;
+
+                    if (isFailed) {
+                        statusClass = 'failed';
+                        badgeLabel = 'Failed';
+                        titleText = `${prov}: Connection failed`;
+                    } else if (isSimulated) {
+                        statusClass = 'simulated';
+                        badgeLabel = 'Simulated';
+                        titleText = `${prov}: Operating in local directory simulation (credentials unverified or fallback triggered)`;
+                    }
+
+                    pill.className = `backend-pill ${statusClass} ${isSyncingThis ? 'syncing-now' : ''}`;
+                    pill.title = titleText;
+                    pill.innerHTML = `
+                        <span class="backend-indicator"></span>
+                        <span style="font-weight: 500;">${prov}</span>
+                        <span class="backend-badge">${badgeLabel}</span>
+                    `;
                     backendsList.appendChild(pill);
                 });
+
+                const simNotice = document.getElementById('simulated-notice');
+                const simNoticeText = document.getElementById('simulated-notice-text');
+                if (simNotice && simNoticeText) {
+                    if (simulatedCount > 0) {
+                        simNotice.style.display = 'block';
+                        simNoticeText.innerHTML = `<strong>${simulatedNames.join(', ')}</strong> ${simulatedCount === 1 ? 'is' : 'are'} currently operating in <strong>Local Simulation Fallback</strong> mode under <code>./cloud_simulation/</code>. Real cloud storage is active for all other connected providers.`;
+                    } else {
+                        simNotice.style.display = 'none';
+                    }
+                }
             } else {
                 if (isStartingDaemon) return;
                 // Daemon is offline/stopped

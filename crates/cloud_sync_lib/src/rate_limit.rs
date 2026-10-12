@@ -91,6 +91,25 @@ impl<B: StorageBackend> StorageBackend for RateLimitingBackend<B> {
     ) -> Result<Option<String>, StorageError> {
         self.inner.compute_local_checksum(local_path).await
     }
+
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        self.inner.get_latest_cursor().await
+    }
+
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<cloud_sync_core::RemoteChange>, String)>, StorageError> {
+        self.inner.fetch_changes(cursor).await
+    }
+
+    fn is_simulated(&self) -> bool {
+        self.inner.is_simulated()
+    }
+
+    fn simulation_reason(&self) -> Option<String> {
+        self.inner.simulation_reason()
+    }
 }
 
 #[derive(Debug)]

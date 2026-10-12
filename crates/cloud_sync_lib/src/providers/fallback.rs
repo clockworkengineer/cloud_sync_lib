@@ -19,6 +19,8 @@ pub struct SimulatedFallback<B: StorageBackend> {
     name: String,
     /// The sync mode for this connection.
     _sync_mode: super::SyncMode,
+    /// Active fallback reason if simulation fallback was triggered.
+    fallback_reason: std::sync::Arc<std::sync::RwLock<Option<String>>>,
 }
 
 impl<B: StorageBackend> SimulatedFallback<B> {
@@ -38,11 +40,17 @@ impl<B: StorageBackend> SimulatedFallback<B> {
         name: &str,
         sync_mode: super::SyncMode,
     ) -> Self {
+        let initial_reason = if inner.is_none() {
+            Some("No cloud credentials configured; using local directory simulation".to_string())
+        } else {
+            None
+        };
         Self {
             inner,
             local_sim,
             name: name.to_string(),
             _sync_mode: sync_mode,
+            fallback_reason: std::sync::Arc::new(std::sync::RwLock::new(initial_reason)),
         }
     }
 }
@@ -56,7 +64,10 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         if let Some(ref inner) = self.inner {
             match inner.upload(local_path, remote_path).await {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    *self.fallback_reason.write().unwrap() = None;
+                    Ok(())
+                }
                 Err(StorageError::Authentication(e))
                 | Err(StorageError::AuthenticationExpired(e)) => {
                     tracing::warn!(
@@ -64,6 +75,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
+                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
                     self.local_sim.upload(local_path, remote_path).await
                 }
                 Err(e) => Err(e),
@@ -76,7 +88,10 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         if let Some(ref inner) = self.inner {
             match inner.download(remote_path, local_path).await {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    *self.fallback_reason.write().unwrap() = None;
+                    Ok(())
+                }
                 Err(StorageError::Authentication(e))
                 | Err(StorageError::AuthenticationExpired(e)) => {
                     tracing::warn!(
@@ -84,6 +99,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
+                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
                     self.local_sim.download(remote_path, local_path).await
                 }
                 Err(e) => Err(e),
@@ -96,7 +112,10 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         if let Some(ref inner) = self.inner {
             match inner.delete(remote_path).await {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    *self.fallback_reason.write().unwrap() = None;
+                    Ok(())
+                }
                 Err(StorageError::Authentication(e))
                 | Err(StorageError::AuthenticationExpired(e)) => {
                     tracing::warn!(
@@ -104,6 +123,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
+                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
                     self.local_sim.delete(remote_path).await
                 }
                 Err(e) => Err(e),
@@ -116,7 +136,10 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
         if let Some(ref inner) = self.inner {
             match inner.list(remote_path).await {
-                Ok(items) => Ok(items),
+                Ok(items) => {
+                    *self.fallback_reason.write().unwrap() = None;
+                    Ok(items)
+                }
                 Err(StorageError::Authentication(e))
                 | Err(StorageError::AuthenticationExpired(e)) => {
                     tracing::warn!(
@@ -124,6 +147,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
+                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
                     self.local_sim.list(remote_path).await
                 }
                 Err(e) => Err(e),
@@ -136,7 +160,10 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         if let Some(ref inner) = self.inner {
             match inner.create_folder(remote_path).await {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    *self.fallback_reason.write().unwrap() = None;
+                    Ok(())
+                }
                 Err(StorageError::Authentication(e))
                 | Err(StorageError::AuthenticationExpired(e)) => {
                     tracing::warn!(
@@ -144,6 +171,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
+                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
                     self.local_sim.create_folder(remote_path).await
                 }
                 Err(e) => Err(e),
@@ -153,11 +181,51 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         }
     }
 
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        if let Some(ref inner) = self.inner {
+            match inner.rename(from, to).await {
+                Ok(()) => {
+                    *self.fallback_reason.write().unwrap() = None;
+                    Ok(())
+                }
+                Err(StorageError::Authentication(e))
+                | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!(
+                        "[{}] Authentication failed, falling back to local simulation: {}",
+                        self.name,
+                        e
+                    );
+                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    self.local_sim.rename(from, to).await
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            self.local_sim.rename(from, to).await
+        }
+    }
+
     async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
         if let Some(ref inner) = self.inner {
-            inner.get_latest_cursor().await
+            match inner.get_latest_cursor().await {
+                Ok(cursor) => {
+                    *self.fallback_reason.write().unwrap() = None;
+                    Ok(cursor)
+                }
+                Err(StorageError::Authentication(e))
+                | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!(
+                        "[{}] Authentication failed, falling back to local simulation for cursor: {}",
+                        self.name,
+                        e
+                    );
+                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    self.local_sim.get_latest_cursor().await
+                }
+                Err(e) => Err(e),
+            }
         } else {
-            Ok(None)
+            self.local_sim.get_latest_cursor().await
         }
     }
 
@@ -166,10 +234,34 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         cursor: &str,
     ) -> Result<Option<(Vec<cloud_sync_core::RemoteChange>, String)>, StorageError> {
         if let Some(ref inner) = self.inner {
-            inner.fetch_changes(cursor).await
+            match inner.fetch_changes(cursor).await {
+                Ok(changes) => {
+                    *self.fallback_reason.write().unwrap() = None;
+                    Ok(changes)
+                }
+                Err(StorageError::Authentication(e))
+                | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!(
+                        "[{}] Authentication failed, falling back to local simulation for changes: {}",
+                        self.name,
+                        e
+                    );
+                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    self.local_sim.fetch_changes(cursor).await
+                }
+                Err(e) => Err(e),
+            }
         } else {
-            Ok(None)
+            self.local_sim.fetch_changes(cursor).await
         }
+    }
+
+    fn is_simulated(&self) -> bool {
+        self.inner.is_none() || self.fallback_reason.read().unwrap().is_some()
+    }
+
+    fn simulation_reason(&self) -> Option<String> {
+        self.fallback_reason.read().unwrap().clone()
     }
 }
 

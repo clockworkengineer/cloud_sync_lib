@@ -279,12 +279,9 @@ pub async fn handle_event(event: Event, state: Arc<Mutex<DaemonState>>, active_l
                         continue;
                     }
                 };
-                if remote_path_str == ".sync_state.json"
-                    || remote_path_str == ".sync_state.bin"
-                    || remote_path_str == ".syncignore"
-                    || (remote_path_str.starts_with(".sync_state_")
-                        && (remote_path_str.ends_with(".json")
-                            || remote_path_str.ends_with(".bin")))
+                if remote_path_str == ".syncignore"
+                    || remote_path_str.starts_with(".sync_state")
+                    || remote_path_str.starts_with("..sync_state")
                 {
                     continue;
                 }

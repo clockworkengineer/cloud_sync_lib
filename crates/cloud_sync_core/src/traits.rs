@@ -182,6 +182,16 @@ pub trait StorageBackend: Send + Sync {
     ) -> Result<Option<(Vec<RemoteChange>, String)>, StorageError> {
         Ok(None)
     }
+
+    /// Returns true if this backend is currently operating in local simulated mode or fallback.
+    fn is_simulated(&self) -> bool {
+        false
+    }
+
+    /// Returns the reason or description if operating in simulated mode.
+    fn simulation_reason(&self) -> Option<String> {
+        None
+    }
 }
 
 #[cfg(feature = "std")]
@@ -223,6 +233,12 @@ impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
     ) -> Result<Option<(Vec<RemoteChange>, String)>, StorageError> {
         (**self).fetch_changes(cursor).await
     }
+    fn is_simulated(&self) -> bool {
+        (**self).is_simulated()
+    }
+    fn simulation_reason(&self) -> Option<String> {
+        (**self).simulation_reason()
+    }
 }
 
 #[cfg(feature = "std")]
@@ -263,6 +279,12 @@ impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
         cursor: &str,
     ) -> Result<Option<(Vec<RemoteChange>, String)>, StorageError> {
         (**self).fetch_changes(cursor).await
+    }
+    fn is_simulated(&self) -> bool {
+        (**self).is_simulated()
+    }
+    fn simulation_reason(&self) -> Option<String> {
+        (**self).simulation_reason()
     }
 }
 

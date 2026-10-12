@@ -48,6 +48,9 @@ pub async fn api_status() -> impl IntoResponse {
             "watch_directory": "-",
             "config_file": "-",
             "active_backends": [],
+            "failed_backends": [],
+            "simulated_backends": [],
+            "backend_details": [],
             "syncing": false,
             "daemon_running": false,
             "web_ui_address": "-",
@@ -321,3 +324,4 @@ mod tests {
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
     }
 }
+

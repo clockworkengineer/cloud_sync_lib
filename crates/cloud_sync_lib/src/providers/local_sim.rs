@@ -34,6 +34,7 @@ impl LocalSimulation {
     /// # Returns
     /// A new instance of `LocalSimulation`.
     pub fn new(root_dir: PathBuf, provider_name: String) -> Self {
+        let _ = std::fs::create_dir_all(&root_dir);
         Self {
             root_dir,
             provider_name,
@@ -187,7 +188,11 @@ impl LocalSimulation {
             self.provider_name, remote_path
         );
         if !target.exists() {
-            return Err(StorageError::NotFound(remote_path.to_string()));
+            if remote_path.trim_matches('/').is_empty() {
+                let _ = fs::create_dir_all(&target).await;
+            } else {
+                return Err(StorageError::NotFound(remote_path.to_string()));
+            }
         }
         let mut items = Vec::new();
         let mut entries = fs::read_dir(&target).await?;
@@ -251,6 +256,14 @@ impl StorageBackend for LocalSimulation {
         local_path: &Path,
     ) -> Result<Option<String>, StorageError> {
         Ok(crate::checksum::compute_sha256(local_path).await.ok())
+    }
+
+    fn is_simulated(&self) -> bool {
+        true
+    }
+
+    fn simulation_reason(&self) -> Option<String> {
+        Some(format!("Local directory simulation ({})", self.root_dir.display()))
     }
 }
 

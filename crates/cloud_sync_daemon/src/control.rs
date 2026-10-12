@@ -175,9 +175,47 @@ pub async fn handle_control_command(
                 watch_dir_str
             };
 
+            let mut simulated_backends: Vec<String> = Vec::new();
+            let mut backend_details: Vec<serde_json::Value> = Vec::new();
+
+            for ab in &s.backends {
+                let raw_name = ab.backend.name().to_string();
+                let clean_name = if raw_name.starts_with("Encrypted(") && raw_name.ends_with(')') {
+                    raw_name["Encrypted(".len()..raw_name.len() - 1].to_string()
+                } else {
+                    raw_name.clone()
+                };
+
+                let is_failed = failed_backends.contains(&clean_name);
+                let is_sim = ab.backend.is_simulated();
+                let sim_reason = ab.backend.simulation_reason();
+
+                if is_sim && !simulated_backends.contains(&clean_name) {
+                    simulated_backends.push(clean_name.clone());
+                }
+
+                let mode = if is_failed {
+                    "failed"
+                } else if is_sim {
+                    "simulated"
+                } else {
+                    "cloud"
+                };
+
+                backend_details.push(serde_json::json!({
+                    "name": clean_name,
+                    "mode": mode,
+                    "is_simulated": is_sim,
+                    "simulation_reason": sim_reason,
+                    "is_failed": is_failed,
+                }));
+            }
+
+            let backend_details_json = serde_json::to_string(&backend_details).unwrap_or_else(|_| "[]".to_string());
+
             format!(
-                "Status: OK\nPaused: {}\nWatch Directory: \"{}\"\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSyncing: {}\nWeb UI Address: {}\n",
-                s.paused, clean_watch_dir, s.config_file, backend_names, failed_backends, s.syncing, s.ui_addr.as_deref().unwrap_or("-")
+                "Status: OK\nPaused: {}\nWatch Directory: \"{}\"\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSimulated Backends: {:?}\nBackend Details: {}\nSyncing: {}\nWeb UI Address: {}\n",
+                s.paused, clean_watch_dir, s.config_file, backend_names, failed_backends, simulated_backends, backend_details_json, s.syncing, s.ui_addr.as_deref().unwrap_or("-")
             )
         }
         "pause" => {

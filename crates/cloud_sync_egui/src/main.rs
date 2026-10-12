@@ -461,86 +461,187 @@ impl eframe::App for CloudSyncApp {
                             );
                             ui.add_space(8.0);
 
-                            // Active Providers Section
+                            // Separate active into live cloud vs simulated fallback
+                            let active_list: Vec<String> = status["active_backends"]
+                                .as_array()
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+
+                            let failed_list: Vec<String> = status["failed_backends"]
+                                .as_array()
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+
+                            let simulated_list: Vec<String> = status["simulated_backends"]
+                                .as_array()
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+
+                            let live_cloud: Vec<String> = active_list
+                                .iter()
+                                .filter(|name| !failed_list.contains(name) && !simulated_list.contains(name))
+                                .cloned()
+                                .collect();
+
+                            let sim_active: Vec<String> = active_list
+                                .iter()
+                                .filter(|name| !failed_list.contains(name) && simulated_list.contains(name))
+                                .cloned()
+                                .collect();
+
+                            // 1. Live Cloud Providers Section
                             ui.label(
-                                egui::RichText::new("🟢 Active")
+                                egui::RichText::new("🟢 Live Cloud (Connected)")
                                     .strong()
                                     .color(egui::Color32::from_rgb(46, 204, 113)),
                             );
                             ui.add_space(4.0);
-                            if let Some(active) = status["active_backends"].as_array() {
-                                if active.is_empty() {
-                                    ui.label(
-                                        egui::RichText::new("None active")
-                                            .italics()
-                                            .color(egui::Color32::from_rgb(100, 110, 120)),
-                                    );
-                                } else {
-                                    ui.horizontal_wrapped(|ui| {
-                                        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-                                        for backend in active {
-                                            let name = backend.as_str().unwrap_or("");
-                                            egui::Frame::none()
-                                                .fill(egui::Color32::from_rgb(35, 45, 38))
-                                                .stroke(egui::Stroke::new(
-                                                    1.0_f32,
-                                                    egui::Color32::from_rgb(46, 113, 60),
-                                                ))
-                                                .rounding(4.0)
-                                                .inner_margin(egui::Margin::symmetric(8.0, 4.0))
-                                                .show(ui, |ui| {
+                            if live_cloud.is_empty() {
+                                ui.label(
+                                    egui::RichText::new("None currently connected to live cloud")
+                                        .italics()
+                                        .color(egui::Color32::from_rgb(100, 110, 120)),
+                                );
+                            } else {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                                    for name in &live_cloud {
+                                        egui::Frame::none()
+                                            .fill(egui::Color32::from_rgb(35, 48, 40))
+                                            .stroke(egui::Stroke::new(
+                                                1.0_f32,
+                                                egui::Color32::from_rgb(46, 160, 80),
+                                            ))
+                                            .rounding(4.0)
+                                            .inner_margin(egui::Margin::symmetric(8.0, 5.0))
+                                            .show(ui, |ui| {
+                                                ui.horizontal(|ui| {
                                                     ui.label(
                                                         egui::RichText::new(name).strong().color(
-                                                            egui::Color32::from_rgb(200, 240, 210),
+                                                            egui::Color32::from_rgb(200, 250, 215),
                                                         ),
                                                     );
+                                                    ui.label(
+                                                        egui::RichText::new("[Live Cloud]")
+                                                            .size(10.0)
+                                                            .color(egui::Color32::from_rgb(90, 200, 130)),
+                                                    );
                                                 });
-                                        }
-                                    });
-                                }
+                                            });
+                                    }
+                                });
                             }
 
                             ui.add_space(10.0);
                             ui.separator();
                             ui.add_space(10.0);
 
-                            // Failed Providers Section
+                            // 2. Simulated / Fallback Providers Section
+                            ui.label(
+                                egui::RichText::new("🟡 Simulated Fallback (Local Mock)")
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(243, 156, 18)),
+                            );
+                            ui.add_space(4.0);
+                            if sim_active.is_empty() {
+                                ui.label(
+                                    egui::RichText::new("No providers in simulation fallback")
+                                        .italics()
+                                        .color(egui::Color32::from_rgb(100, 110, 120)),
+                                );
+                            } else {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                                    for name in &sim_active {
+                                        egui::Frame::none()
+                                            .fill(egui::Color32::from_rgb(52, 44, 25))
+                                            .stroke(egui::Stroke::new(
+                                                1.0_f32,
+                                                egui::Color32::from_rgb(215, 140, 30),
+                                            ))
+                                            .rounding(4.0)
+                                            .inner_margin(egui::Margin::symmetric(8.0, 5.0))
+                                            .show(ui, |ui| {
+                                                ui.horizontal(|ui| {
+                                                    ui.label(
+                                                        egui::RichText::new(name).strong().color(
+                                                            egui::Color32::from_rgb(255, 235, 180),
+                                                        ),
+                                                    );
+                                                    ui.label(
+                                                        egui::RichText::new("[Simulated]")
+                                                            .size(10.0)
+                                                            .color(egui::Color32::from_rgb(243, 156, 18)),
+                                                    );
+                                                });
+                                            });
+                                    }
+                                });
+                                ui.add_space(2.0);
+                                ui.label(
+                                    egui::RichText::new("ℹ Active in local simulation fallback folder (./cloud_simulation/)")
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(190, 160, 100)),
+                                );
+                            }
+
+                            ui.add_space(10.0);
+                            ui.separator();
+                            ui.add_space(10.0);
+
+                            // 3. Failed Providers Section
                             ui.label(
                                 egui::RichText::new("🔴 Failed")
                                     .strong()
                                     .color(egui::Color32::from_rgb(231, 76, 60)),
                             );
                             ui.add_space(4.0);
-                            if let Some(failed) = status["failed_backends"].as_array() {
-                                if failed.is_empty() {
-                                    ui.label(
-                                        egui::RichText::new("No failures")
-                                            .italics()
-                                            .color(egui::Color32::from_rgb(100, 110, 120)),
-                                    );
-                                } else {
-                                    ui.horizontal_wrapped(|ui| {
-                                        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-                                        for backend in failed {
-                                            let name = backend.as_str().unwrap_or("");
-                                            egui::Frame::none()
-                                                .fill(egui::Color32::from_rgb(50, 35, 35))
-                                                .stroke(egui::Stroke::new(
-                                                    1.0_f32,
-                                                    egui::Color32::from_rgb(180, 50, 50),
-                                                ))
-                                                .rounding(4.0)
-                                                .inner_margin(egui::Margin::symmetric(8.0, 4.0))
-                                                .show(ui, |ui| {
+                            if failed_list.is_empty() {
+                                ui.label(
+                                    egui::RichText::new("No failures")
+                                        .italics()
+                                        .color(egui::Color32::from_rgb(100, 110, 120)),
+                                );
+                            } else {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                                    for name in &failed_list {
+                                        egui::Frame::none()
+                                            .fill(egui::Color32::from_rgb(50, 35, 35))
+                                            .stroke(egui::Stroke::new(
+                                                1.0_f32,
+                                                egui::Color32::from_rgb(180, 50, 50),
+                                            ))
+                                            .rounding(4.0)
+                                            .inner_margin(egui::Margin::symmetric(8.0, 5.0))
+                                            .show(ui, |ui| {
+                                                ui.horizontal(|ui| {
                                                     ui.label(
                                                         egui::RichText::new(name).strong().color(
                                                             egui::Color32::from_rgb(250, 200, 200),
                                                         ),
                                                     );
+                                                    ui.label(
+                                                        egui::RichText::new("[Failed]")
+                                                            .size(10.0)
+                                                            .color(egui::Color32::from_rgb(231, 76, 60)),
+                                                    );
                                                 });
-                                        }
-                                    });
-                                }
+                                            });
+                                    }
+                                });
                             }
                         });
                     });

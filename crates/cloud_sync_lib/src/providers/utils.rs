@@ -192,6 +192,19 @@ pub fn translate_status_code_error(
         _ => format!("HTTP status {}", status_code),
     };
 
+    if action == "refresh_oauth2_token"
+        || action == "authenticate"
+        || msg.contains("invalid_grant")
+        || msg.contains("invalid_client")
+        || msg.contains("unauthorized_client")
+        || msg.contains("invalid_token")
+    {
+        return StorageError::Authentication(format!(
+            "Failed to authenticate on {}: {}",
+            provider_name, msg
+        ));
+    }
+
     match status_code {
         429 => StorageError::RateLimit {
             message: format!("Rate limit exceeded on {}: {}", provider_name, msg),
