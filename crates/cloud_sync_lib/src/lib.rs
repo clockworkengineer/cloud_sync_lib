@@ -272,6 +272,78 @@ mod tests {
 
     #[tokio::test]
     #[cfg(feature = "google_drive")]
+    async fn test_google_drive_cursor_change_feed() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        mount_oauth_mock(&server, "mocked-token-123").await;
+
+        Mock::given(method("GET"))
+            .and(path("/files/changes/startPageToken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "startPageToken": "token_100"
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/files/changes"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "newStartPageToken": "token_101",
+                "changes": [
+                    {
+                        "removed": false,
+                        "file": {
+                            "name": "gdrive_change.txt",
+                            "mimeType": "text/plain",
+                            "size": "256",
+                            "modifiedTime": "2026-10-12T12:00:00Z"
+                        }
+                    },
+                    {
+                        "removed": true,
+                        "file": {
+                            "name": "gdrive_deleted.txt"
+                        }
+                    }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let creds = OAuthCredentials {
+            client_id: "mock_client".to_string(),
+            client_secret: "mock_secret".to_string(),
+            refresh_token: "mock_refresh".to_string(),
+            common: CommonProviderSettings::default(),
+        };
+
+        let provider = GoogleDriveProvider::new(creds).with_endpoints(
+            format!("{}/oauth", server.uri()),
+            format!("{}/files", server.uri()),
+            format!("{}/upload", server.uri()),
+        );
+
+        let initial_token = provider.get_latest_cursor().await.unwrap();
+        assert_eq!(initial_token, Some("token_100".to_string()));
+
+        let (changes, next_token) = provider
+            .fetch_changes(&initial_token.unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(next_token, "token_101");
+        assert_eq!(changes.len(), 2);
+        assert!(!changes[0].is_deleted);
+        assert_eq!(changes[0].path.to_string_lossy(), "gdrive_change.txt");
+        assert!(changes[1].is_deleted);
+        assert_eq!(changes[1].path.to_string_lossy(), "gdrive_deleted.txt");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "google_drive")]
     async fn test_google_drive_real_flow() {
         // Try to load private_config.toml first, then fall back to config.toml
         let mut config_path = std::path::Path::new("../private_config.toml");
@@ -507,6 +579,76 @@ mod tests {
 
     #[tokio::test]
     #[cfg(feature = "dropbox")]
+    async fn test_dropbox_cursor_change_feed() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        mount_oauth_mock(&server, "mocked-token-123").await;
+
+        Mock::given(method("POST"))
+            .and(path("/files/list_folder/get_latest_cursor"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "cursor": "cursor_v1"
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/files/list_folder/continue"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "cursor": "cursor_v2",
+                "has_more": false,
+                "entries": [
+                    {
+                        ".tag": "file",
+                        "name": "updated.txt",
+                        "path_display": "/updated.txt",
+                        "size": 128,
+                        "client_modified": "2026-10-12T12:00:00Z"
+                    },
+                    {
+                        ".tag": "deleted",
+                        "name": "removed.txt",
+                        "path_display": "/removed.txt"
+                    }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let creds = OAuthCredentials {
+            client_id: "mock_client".to_string(),
+            client_secret: "mock_secret".to_string(),
+            refresh_token: "mock_refresh".to_string(),
+            common: CommonProviderSettings::default(),
+        };
+
+        let provider = DropboxProvider::new(creds).with_endpoints(
+            format!("{}/oauth", server.uri()),
+            format!("{}/files", server.uri()),
+            format!("{}/content", server.uri()),
+        );
+
+        let initial_cursor = provider.get_latest_cursor().await.unwrap();
+        assert_eq!(initial_cursor, Some("cursor_v1".to_string()));
+
+        let (changes, next_cursor) = provider
+            .fetch_changes(&initial_cursor.unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(next_cursor, "cursor_v2");
+        assert_eq!(changes.len(), 2);
+        assert!(!changes[0].is_deleted);
+        assert_eq!(changes[0].path.to_string_lossy(), "updated.txt");
+        assert!(changes[1].is_deleted);
+        assert_eq!(changes[1].path.to_string_lossy(), "removed.txt");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "dropbox")]
     async fn test_dropbox_real_flow() {
         // Try to load private_config.toml first, then fall back to config.toml
         let mut config_path = std::path::Path::new("../private_config.toml");
@@ -723,6 +865,75 @@ mod tests {
 
         // Delete
         provider.delete("hello.txt").await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "onedrive")]
+    async fn test_onedrive_cursor_change_feed() {
+        use wiremock::matchers::{method, path, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        mount_oauth_mock(&server, "mocked-onedrive-token-123").await;
+
+        Mock::given(method("GET"))
+            .and(path("/me/drive/root/delta"))
+            .and(query_param("token", "latest"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "@odata.deltaLink": format!("{}/me/drive/root/delta?token=delta_token_1", server.uri()),
+                "value": []
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/me/drive/root/delta"))
+            .and(query_param("token", "delta_token_1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "@odata.deltaLink": format!("{}/me/drive/root/delta?token=delta_token_2", server.uri()),
+                "value": [
+                    {
+                        "name": "onedrive_file.txt",
+                        "size": 512,
+                        "file": {}
+                    },
+                    {
+                        "name": "deleted_onedrive.txt",
+                        "deleted": { "state": "deleted" }
+                    }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let creds = OAuthCredentials {
+            client_id: "mock_client".to_string(),
+            client_secret: "mock_secret".to_string(),
+            refresh_token: "mock_refresh".to_string(),
+            common: CommonProviderSettings::default(),
+        };
+
+        let provider = OneDriveProvider::new(creds).with_endpoints(
+            format!("{}/oauth", server.uri()),
+            server.uri(),
+        );
+
+        let initial_cursor = provider.get_latest_cursor().await.unwrap();
+        assert!(initial_cursor.is_some());
+        let cur = initial_cursor.unwrap();
+
+        let (changes, next_cursor) = provider
+            .fetch_changes(&cur)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(next_cursor.contains("delta_token_2"));
+        assert_eq!(changes.len(), 2);
+        assert!(!changes[0].is_deleted);
+        assert_eq!(changes[0].path.to_string_lossy(), "onedrive_file.txt");
+        assert!(changes[1].is_deleted);
+        assert_eq!(changes[1].path.to_string_lossy(), "deleted_onedrive.txt");
     }
 
     #[tokio::test]

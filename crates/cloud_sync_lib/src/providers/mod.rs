@@ -453,6 +453,7 @@ pub struct BackendRegistry;
 impl BackendRegistry {
     /// Dynamically instantiates a provider using its config credentials.
     pub fn build(mut creds: BackendCredentials) -> Arc<dyn StorageBackend> {
+        #[allow(unreachable_patterns)]
         match &mut creds {
             #[cfg(feature = "google_drive")]
             BackendCredentials::GoogleDrive(ref mut c) => {

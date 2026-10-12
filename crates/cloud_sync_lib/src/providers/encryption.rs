@@ -320,6 +320,17 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
         self.inner.create_folder(remote_path).await
     }
+
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        self.inner.get_latest_cursor().await
+    }
+
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<cloud_sync_core::RemoteChange>, String)>, StorageError> {
+        self.inner.fetch_changes(cursor).await
+    }
 }
 
 impl<B: StorageBackend> Drop for EncryptedBackend<B> {

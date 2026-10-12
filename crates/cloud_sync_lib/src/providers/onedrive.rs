@@ -299,6 +299,96 @@ impl StorageBackend for OneDriveProvider {
         })
         .await
     }
+
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        super::utils::execute_with_retry(self.name(), "get_latest_cursor", || async {
+            let token = self.get_access_token().await?;
+            let url = format!("{}/me/drive/root/delta?token=latest", self.api_url);
+            let res = super::utils::apply_bearer_auth(self.client.get(&url), &token)
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "get_latest_cursor").await);
+            }
+
+            let val = res.json::<serde_json::Value>().await?;
+            let delta_link = val["@odata.deltaLink"].as_str().map(|s| s.to_string());
+            Ok(delta_link)
+        })
+        .await
+    }
+
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<cloud_sync_core::RemoteChange>, String)>, StorageError> {
+        super::utils::execute_with_retry(self.name(), "fetch_changes", || async {
+            let token = self.get_access_token().await?;
+            let mut next_url = if cursor.starts_with("http") {
+                cursor.to_string()
+            } else {
+                format!("{}/me/drive/root/delta?token={}", self.api_url, cursor)
+            };
+
+            let mut changes = Vec::new();
+            let mut final_cursor = cursor.to_string();
+
+            loop {
+                let res = super::utils::apply_bearer_auth(self.client.get(&next_url), &token)
+                    .send()
+                    .await?;
+
+                if !res.status().is_success() {
+                    return Err(translate_http_error(res, self.name(), "fetch_changes").await);
+                }
+
+                let val = res.json::<serde_json::Value>().await?;
+                if let Some(entries) = val["value"].as_array() {
+                    for entry in entries {
+                        let name = entry["name"].as_str().unwrap_or("").to_string();
+                        if name.is_empty() {
+                            continue;
+                        }
+                        let is_deleted = entry.get("deleted").is_some();
+                        let is_dir = entry.get("folder").is_some();
+                        let size = entry["size"].as_u64().unwrap_or(0);
+
+                        let item = if is_deleted {
+                            None
+                        } else {
+                            Some(StorageItem {
+                                path: PathBuf::from(&name),
+                                size,
+                                modified: std::time::SystemTime::now(),
+                                is_dir,
+                                checksum: None,
+                                permissions: None,
+                            })
+                        };
+
+                        changes.push(cloud_sync_core::RemoteChange {
+                            path: PathBuf::from(name),
+                            is_deleted,
+                            item,
+                        });
+                    }
+                }
+
+                if let Some(delta) = val["@odata.deltaLink"].as_str() {
+                    final_cursor = delta.to_string();
+                    break;
+                } else if let Some(next) = val["@odata.nextLink"].as_str() {
+                    next_url = next.to_string();
+                } else {
+                    break;
+                }
+            }
+
+            Ok(Some((changes, final_cursor)))
+        })
+        .await
+    }
 }
 
 /// Builder for [`OneDriveProvider`].

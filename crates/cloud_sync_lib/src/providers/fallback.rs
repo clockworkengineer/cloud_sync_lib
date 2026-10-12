@@ -152,6 +152,25 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
             self.local_sim.create_folder(remote_path).await
         }
     }
+
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        if let Some(ref inner) = self.inner {
+            inner.get_latest_cursor().await
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<cloud_sync_core::RemoteChange>, String)>, StorageError> {
+        if let Some(ref inner) = self.inner {
+            inner.fetch_changes(cursor).await
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]

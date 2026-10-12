@@ -365,6 +365,109 @@ impl StorageBackend for DropboxProvider {
         .await
     }
 
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        super::utils::execute_with_retry(self.name(), "get_latest_cursor", || async {
+            let token = self.get_access_token().await?;
+            let dbx_path = self.format_path("");
+
+            let body = serde_json::json!({
+                "path": dbx_path,
+                "recursive": true,
+                "include_deleted": true
+            });
+
+            let cursor_url = format!("{}/list_folder/get_latest_cursor", self.api_url);
+            let res = super::utils::apply_bearer_auth(self.client.post(&cursor_url), &token)
+                .json(&body)
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "get_latest_cursor").await);
+            }
+
+            let json = res.json::<serde_json::Value>().await?;
+            let cursor = json["cursor"].as_str().map(|s| s.to_string());
+            Ok(cursor)
+        })
+        .await
+    }
+
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<cloud_sync_core::RemoteChange>, String)>, StorageError> {
+        super::utils::execute_with_retry(self.name(), "fetch_changes", || async {
+            let token = self.get_access_token().await?;
+            let continue_url = format!("{}/list_folder/continue", self.api_url);
+            let body = serde_json::json!({ "cursor": cursor });
+
+            let res = super::utils::apply_bearer_auth(self.client.post(&continue_url), &token)
+                .json(&body)
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "fetch_changes").await);
+            }
+
+            let json = res.json::<serde_json::Value>().await?;
+            let next_cursor = json["cursor"].as_str().unwrap_or(cursor).to_string();
+
+            let mut changes = Vec::new();
+            if let Some(entries) = json["entries"].as_array() {
+                for entry in entries {
+                    let tag = entry[".tag"].as_str().unwrap_or("");
+                    let path_display = entry["path_display"]
+                        .as_str()
+                        .or_else(|| entry["path_lower"].as_str())
+                        .unwrap_or("");
+
+                    let rel_path = path_display.trim_start_matches('/');
+
+                    if tag == "deleted" {
+                        changes.push(cloud_sync_core::RemoteChange {
+                            path: PathBuf::from(rel_path),
+                            is_deleted: true,
+                            item: None,
+                        });
+                    } else if tag == "file" || tag == "folder" {
+                        let is_dir = tag == "folder";
+                        let size = entry["size"].as_u64().unwrap_or(0);
+                        let checksum = entry["content_hash"].as_str().map(|s| s.to_string());
+                        let modified = entry["client_modified"]
+                            .as_str()
+                            .and_then(|t| {
+                                time::OffsetDateTime::parse(
+                                    t,
+                                    &time::format_description::well_known::Rfc3339,
+                                )
+                                .ok()
+                            })
+                            .map(std::time::SystemTime::from)
+                            .unwrap_or_else(std::time::SystemTime::now);
+
+                        changes.push(cloud_sync_core::RemoteChange {
+                            path: PathBuf::from(rel_path),
+                            is_deleted: false,
+                            item: Some(StorageItem {
+                                path: PathBuf::from(rel_path),
+                                size,
+                                modified,
+                                is_dir,
+                                checksum,
+                                permissions: None,
+                            }),
+                        });
+                    }
+                }
+            }
+
+            Ok(Some((changes, next_cursor)))
+        })
+        .await
+    }
+
     async fn compute_local_checksum(
         &self,
         local_path: &Path,

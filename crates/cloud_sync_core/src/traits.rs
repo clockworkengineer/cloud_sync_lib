@@ -78,6 +78,17 @@ impl core::fmt::Display for StorageError {
 impl std::error::Error for StorageError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteChange {
+    #[cfg(feature = "std")]
+    pub path: PathBuf,
+    #[cfg(not(feature = "std"))]
+    pub path: String,
+
+    pub is_deleted: bool,
+    pub item: Option<StorageItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageItem {
     #[cfg(feature = "std")]
     pub path: PathBuf,
@@ -158,6 +169,19 @@ pub trait StorageBackend: Send + Sync {
     ) -> Result<Option<String>, StorageError> {
         Ok(None)
     }
+
+    /// Fetches the latest change-feed cursor token for incremental change detection, if supported.
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        Ok(None)
+    }
+
+    /// Fetches remote changes since the provided cursor token, if supported.
+    async fn fetch_changes(
+        &self,
+        _cursor: &str,
+    ) -> Result<Option<(Vec<RemoteChange>, String)>, StorageError> {
+        Ok(None)
+    }
 }
 
 #[cfg(feature = "std")]
@@ -190,6 +214,15 @@ impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
     ) -> Result<Option<String>, StorageError> {
         (**self).compute_local_checksum(local_path).await
     }
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        (**self).get_latest_cursor().await
+    }
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<RemoteChange>, String)>, StorageError> {
+        (**self).fetch_changes(cursor).await
+    }
 }
 
 #[cfg(feature = "std")]
@@ -221,6 +254,15 @@ impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
         local_path: &Path,
     ) -> Result<Option<String>, StorageError> {
         (**self).compute_local_checksum(local_path).await
+    }
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        (**self).get_latest_cursor().await
+    }
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<RemoteChange>, String)>, StorageError> {
+        (**self).fetch_changes(cursor).await
     }
 }
 

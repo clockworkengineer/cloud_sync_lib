@@ -458,6 +458,110 @@ impl StorageBackend for GoogleDriveProvider {
         .await
     }
 
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        super::utils::execute_with_retry(self.name(), "get_latest_cursor", || async {
+            let token = self.get_access_token().await?;
+            let token_url = format!("{}/changes/startPageToken", self.api_url);
+
+            let res = super::utils::apply_bearer_auth(self.client.get(&token_url), &token)
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "get_latest_cursor").await);
+            }
+
+            let json = res.json::<serde_json::Value>().await?;
+            let token = json["startPageToken"].as_str().map(|s| s.to_string());
+            Ok(token)
+        })
+        .await
+    }
+
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<cloud_sync_core::RemoteChange>, String)>, StorageError> {
+        super::utils::execute_with_retry(self.name(), "fetch_changes", || async {
+            let token = self.get_access_token().await?;
+            let changes_url = format!("{}/changes", self.api_url);
+
+            let res = super::utils::apply_bearer_auth(self.client.get(&changes_url), &token)
+                .query(&[
+                    ("pageToken", cursor),
+                    (
+                        "fields",
+                        "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,size,modifiedTime,trashed))",
+                    ),
+                ])
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "fetch_changes").await);
+            }
+
+            let json = res.json::<serde_json::Value>().await?;
+            let next_cursor = json["newStartPageToken"]
+                .as_str()
+                .or_else(|| json["nextPageToken"].as_str())
+                .unwrap_or(cursor)
+                .to_string();
+
+            let mut changes = Vec::new();
+            if let Some(change_list) = json["changes"].as_array() {
+                for chg in change_list {
+                    let removed = chg["removed"].as_bool().unwrap_or(false);
+                    let file_obj = &chg["file"];
+                    let trashed = file_obj["trashed"].as_bool().unwrap_or(false);
+                    let name = file_obj["name"].as_str().unwrap_or("");
+
+                    if removed || trashed {
+                        changes.push(cloud_sync_core::RemoteChange {
+                            path: PathBuf::from(name),
+                            is_deleted: true,
+                            item: None,
+                        });
+                    } else if !name.is_empty() {
+                        let is_dir =
+                            file_obj["mimeType"].as_str() == Some("application/vnd.google-apps.folder");
+                        let size = file_obj["size"]
+                            .as_str()
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .unwrap_or(0);
+                        let modified = file_obj["modifiedTime"]
+                            .as_str()
+                            .and_then(|t| {
+                                time::OffsetDateTime::parse(
+                                    t,
+                                    &time::format_description::well_known::Rfc3339,
+                                )
+                                .ok()
+                            })
+                            .map(std::time::SystemTime::from)
+                            .unwrap_or_else(std::time::SystemTime::now);
+
+                        changes.push(cloud_sync_core::RemoteChange {
+                            path: PathBuf::from(name),
+                            is_deleted: false,
+                            item: Some(StorageItem {
+                                path: PathBuf::from(name),
+                                size,
+                                modified,
+                                is_dir,
+                                checksum: None,
+                                permissions: None,
+                            }),
+                        });
+                    }
+                }
+            }
+
+            Ok(Some((changes, next_cursor)))
+        })
+        .await
+    }
+
     async fn compute_local_checksum(
         &self,
         local_path: &Path,

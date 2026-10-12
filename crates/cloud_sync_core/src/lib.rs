@@ -18,6 +18,6 @@ pub use state::{FileState, SyncState};
 #[cfg(feature = "std")]
 pub use sys::{Clock, FileSystem, RealFileSystem, SystemClock};
 pub use traits::{
-    ChecksumOps, ConflictPolicy, DirectoryLister, FolderOps, StorageBackend, StorageError,
-    StorageItem, StorageReader, StorageWriter, SyncMode, SyncPolicy,
+    ChecksumOps, ConflictPolicy, DirectoryLister, FolderOps, RemoteChange, StorageBackend,
+    StorageError, StorageItem, StorageReader, StorageWriter, SyncMode, SyncPolicy,
 };
