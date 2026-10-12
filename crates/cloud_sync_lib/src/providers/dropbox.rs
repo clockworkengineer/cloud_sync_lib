@@ -121,11 +121,11 @@ impl StorageBackend for DropboxProvider {
             let dbx_path = self.format_path(remote_path);
 
             info!("[{}] Real upload starting for '{}'", self.name(), dbx_path);
-            let (body, size) =
-                super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
+            let metadata = tokio::fs::metadata(local_path).await?;
+            let size = metadata.len();
 
-            let client_modified = std::fs::metadata(local_path)
-                .and_then(|m| m.modified())
+            let client_modified = metadata
+                .modified()
                 .ok()
                 .map(|t| {
                     let datetime = time::OffsetDateTime::from(t);
@@ -140,34 +140,53 @@ impl StorageBackend for DropboxProvider {
                     )
                 });
 
-            let mut api_arg = serde_json::json!({
-                "path": dbx_path,
-                "mode": "overwrite",
-                "autorename": false,
-                "mute": false,
-                "strict_conflict": false
-            });
-
-            if let Some(ref cm) = client_modified {
-                if let Some(obj) = api_arg.as_object_mut() {
-                    obj.insert(
-                        "client_modified".to_string(),
-                        serde_json::Value::String(cm.clone()),
-                    );
-                }
-            }
-
-            let upload_url = format!("{}/upload", self.content_url);
-            let res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &token)
-                .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
-                .header("Content-Type", "application/octet-stream")
-                .header("Content-Length", size.to_string())
-                .body(body)
-                .send()
+            // Dropbox single-call /upload endpoint is limited to 150 MB.
+            // Files larger than 150 MB must use upload_session endpoints.
+            if size > 150 * 1024 * 1024 {
+                super::utils::upload_dropbox_session(
+                    &self.client,
+                    &token,
+                    &self.content_url,
+                    &dbx_path,
+                    client_modified.as_deref(),
+                    local_path,
+                    size,
+                    self.upload_limiter.as_ref(),
+                )
                 .await?;
+            } else {
+                let (body, _) =
+                    super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
-            if !res.status().is_success() {
-                return Err(translate_http_error(res, self.name(), "upload").await);
+                let mut api_arg = serde_json::json!({
+                    "path": dbx_path,
+                    "mode": "overwrite",
+                    "autorename": false,
+                    "mute": false,
+                    "strict_conflict": false
+                });
+
+                if let Some(ref cm) = client_modified {
+                    if let Some(obj) = api_arg.as_object_mut() {
+                        obj.insert(
+                            "client_modified".to_string(),
+                            serde_json::Value::String(cm.clone()),
+                        );
+                    }
+                }
+
+                let upload_url = format!("{}/upload", self.content_url);
+                let res = super::utils::apply_bearer_auth(self.client.post(&upload_url), &token)
+                    .header("Dropbox-API-Arg", serde_json::to_string(&api_arg).unwrap())
+                    .header("Content-Type", "application/octet-stream")
+                    .header("Content-Length", size.to_string())
+                    .body(body)
+                    .send()
+                    .await?;
+
+                if !res.status().is_success() {
+                    return Err(translate_http_error(res, self.name(), "upload").await);
+                }
             }
 
             Ok(())

@@ -417,6 +417,269 @@ pub async fn download_rate_limited(
     Ok(())
 }
 
+/// Reads a specific slice of a local file into memory for chunked / multipart upload sessions.
+/// Optionally rate-limits the read via TokenBucket.
+pub async fn read_file_chunk(
+    local_path: &std::path::Path,
+    offset: u64,
+    chunk_size: usize,
+    limiter: Option<&crate::rate_limit::TokenBucket>,
+) -> Result<Vec<u8>, StorageError> {
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+    let mut file = tokio::fs::File::open(local_path).await?;
+    file.seek(std::io::SeekFrom::Start(offset)).await?;
+
+    let mut buf = vec![0u8; chunk_size];
+    let bytes_read = file.read(&mut buf).await?;
+    buf.truncate(bytes_read);
+
+    if let Some(limiter) = limiter {
+        if let Some(delay) = limiter.consume(bytes_read as u64) {
+            tokio::time::sleep(delay).await;
+        }
+    }
+
+    Ok(buf)
+}
+
+/// Uploads large files to Microsoft OneDrive via `createUploadSession` in chunks.
+pub async fn upload_onedrive_session(
+    client: &reqwest::Client,
+    token: &str,
+    create_session_url: &str,
+    local_path: &std::path::Path,
+    total_size: u64,
+    limiter: Option<&crate::rate_limit::TokenBucket>,
+) -> Result<(), StorageError> {
+    // 1. Create upload session
+    let body = serde_json::json!({
+        "item": {
+            "@microsoft.graph.conflictBehavior": "replace"
+        }
+    });
+
+    let res = apply_bearer_auth(client.post(create_session_url), token)
+        .json(&body)
+        .send()
+        .await?;
+
+    if !res.status().is_success() {
+        return Err(translate_http_error(res, "OneDrive", "create_upload_session").await);
+    }
+
+    let session_info = res.json::<serde_json::Value>().await?;
+    let upload_url = session_info["uploadUrl"]
+        .as_str()
+        .ok_or_else(|| StorageError::Provider {
+            message: "OneDrive upload session response missing uploadUrl".to_string(),
+            status: None,
+        })?;
+
+    // 2. Upload chunks in multiples of 320 KiB (5 MiB = 16 * 320 KiB)
+    let chunk_size = 16 * 320 * 1024;
+    let mut offset = 0u64;
+
+    while offset < total_size {
+        let chunk_len = ((total_size - offset) as usize).min(chunk_size);
+        let chunk_data = read_file_chunk(local_path, offset, chunk_len, limiter).await?;
+        let end_byte = offset + chunk_data.len() as u64 - 1;
+
+        let content_range = format!("bytes {}-{}/{}", offset, end_byte, total_size);
+        let put_res = client
+            .put(upload_url)
+            .header("Content-Length", chunk_data.len().to_string())
+            .header("Content-Range", content_range)
+            .body(chunk_data)
+            .send()
+            .await?;
+
+        let status = put_res.status();
+        if !status.is_success() {
+            return Err(translate_http_error(put_res, "OneDrive", "upload_chunk").await);
+        }
+
+        offset += chunk_len as u64;
+    }
+
+    Ok(())
+}
+
+/// Uploads large files to Google Drive via resumable upload session in chunks.
+pub async fn upload_google_drive_resumable(
+    client: &reqwest::Client,
+    token: &str,
+    init_resumable_url: &str,
+    local_path: &std::path::Path,
+    total_size: u64,
+    limiter: Option<&crate::rate_limit::TokenBucket>,
+) -> Result<(), StorageError> {
+    // 1. Initiate resumable upload session
+    let res = apply_bearer_auth(client.patch(init_resumable_url), token)
+        .header("X-Upload-Content-Type", "application/octet-stream")
+        .header("X-Upload-Content-Length", total_size.to_string())
+        .header("Content-Length", "0")
+        .send()
+        .await?;
+
+    if !res.status().is_success() {
+        return Err(translate_http_error(res, "Google Drive", "init_resumable_upload").await);
+    }
+
+    let session_url = res
+        .headers()
+        .get("Location")
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| StorageError::Provider {
+            message: "Google Drive resumable upload missing Location header".to_string(),
+            status: None,
+        })?
+        .to_string();
+
+    // 2. Upload chunks in multiples of 256 KiB (2 MiB = 8 * 256 KiB)
+    let chunk_size = 8 * 256 * 1024;
+    let mut offset = 0u64;
+
+    while offset < total_size {
+        let chunk_len = ((total_size - offset) as usize).min(chunk_size);
+        let chunk_data = read_file_chunk(local_path, offset, chunk_len, limiter).await?;
+        let end_byte = offset + chunk_data.len() as u64 - 1;
+
+        let content_range = format!("bytes {}-{}/{}", offset, end_byte, total_size);
+        let put_res = client
+            .put(&session_url)
+            .header("Content-Length", chunk_data.len().to_string())
+            .header("Content-Range", content_range)
+            .body(chunk_data)
+            .send()
+            .await?;
+
+        let status = put_res.status();
+        // Google Drive returns 308 (Resume Incomplete) for intermediate chunks, 200/201 for final
+        if status.as_u16() != 308 && !status.is_success() {
+            return Err(translate_http_error(put_res, "Google Drive", "upload_chunk").await);
+        }
+
+        offset += chunk_len as u64;
+    }
+
+    Ok(())
+}
+
+/// Uploads large files to Dropbox via multi-part upload sessions (/upload_session/start, append_v2, finish).
+pub async fn upload_dropbox_session(
+    client: &reqwest::Client,
+    token: &str,
+    content_url: &str,
+    dbx_path: &str,
+    client_modified: Option<&str>,
+    local_path: &std::path::Path,
+    total_size: u64,
+    limiter: Option<&crate::rate_limit::TokenBucket>,
+) -> Result<(), StorageError> {
+    let chunk_size = 10 * 1024 * 1024; // 10 MiB
+    let mut offset = 0u64;
+
+    // Step 1: Start session
+    let chunk_len = ((total_size - offset) as usize).min(chunk_size);
+    let chunk_data = read_file_chunk(local_path, offset, chunk_len, limiter).await?;
+
+    let start_url = format!("{}/upload_session/start", content_url);
+    let start_res = apply_bearer_auth(client.post(&start_url), token)
+        .header("Dropbox-API-Arg", serde_json::to_string(&serde_json::json!({"close": false})).unwrap())
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", chunk_data.len().to_string())
+        .body(chunk_data)
+        .send()
+        .await?;
+
+    if !start_res.status().is_success() {
+        return Err(translate_http_error(start_res, "Dropbox", "upload_session_start").await);
+    }
+
+    let start_json = start_res.json::<serde_json::Value>().await?;
+    let session_id = start_json["session_id"]
+        .as_str()
+        .ok_or_else(|| StorageError::Provider {
+            message: "Dropbox start session response missing session_id".to_string(),
+            status: None,
+        })?
+        .to_string();
+
+    offset += chunk_len as u64;
+
+    // Step 2: Append intermediate chunks
+    while offset + (chunk_size as u64) < total_size {
+        let current_chunk_len = ((total_size - offset) as usize).min(chunk_size);
+        let current_data = read_file_chunk(local_path, offset, current_chunk_len, limiter).await?;
+
+        let append_url = format!("{}/upload_session/append_v2", content_url);
+        let arg = serde_json::json!({
+            "cursor": {
+                "session_id": &session_id,
+                "offset": offset
+            },
+            "close": false
+        });
+
+        let append_res = apply_bearer_auth(client.post(&append_url), token)
+            .header("Dropbox-API-Arg", serde_json::to_string(&arg).unwrap())
+            .header("Content-Type", "application/octet-stream")
+            .header("Content-Length", current_data.len().to_string())
+            .body(current_data)
+            .send()
+            .await?;
+
+        if !append_res.status().is_success() {
+            return Err(translate_http_error(append_res, "Dropbox", "upload_session_append").await);
+        }
+
+        offset += current_chunk_len as u64;
+    }
+
+    // Step 3: Finish session
+    let final_chunk_len = (total_size - offset) as usize;
+    let final_data = if final_chunk_len > 0 {
+        read_file_chunk(local_path, offset, final_chunk_len, limiter).await?
+    } else {
+        Vec::new()
+    };
+
+    let finish_url = format!("{}/upload_session/finish", content_url);
+    let mut commit = serde_json::json!({
+        "path": dbx_path,
+        "mode": "overwrite",
+        "autorename": false,
+        "mute": false
+    });
+    if let Some(cm) = client_modified {
+        if let Some(obj) = commit.as_object_mut() {
+            obj.insert("client_modified".to_string(), serde_json::Value::String(cm.to_string()));
+        }
+    }
+
+    let finish_arg = serde_json::json!({
+        "cursor": {
+            "session_id": &session_id,
+            "offset": offset
+        },
+        "commit": commit
+    });
+
+    let finish_res = apply_bearer_auth(client.post(&finish_url), token)
+        .header("Dropbox-API-Arg", serde_json::to_string(&finish_arg).unwrap())
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", final_data.len().to_string())
+        .body(final_data)
+        .send()
+        .await?;
+
+    if !finish_res.status().is_success() {
+        return Err(translate_http_error(finish_res, "Dropbox", "upload_session_finish").await);
+    }
+
+    Ok(())
+}
+
 use crate::rate_limit::{RateLimitedReader, RateLimitedStream};
 use tokio_util::io::ReaderStream;
 
@@ -823,5 +1086,128 @@ mod tests {
             std::fs::read_to_string(download_path).unwrap(),
             "hello rate limited download body"
         );
+    }
+
+    #[tokio::test]
+    async fn test_read_file_chunk_slices() {
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("slice_test.bin");
+        std::fs::write(&file_path, b"0123456789ABCDEF").unwrap();
+
+        let chunk1 = read_file_chunk(&file_path, 0, 8, None).await.unwrap();
+        assert_eq!(chunk1, b"01234567");
+
+        let chunk2 = read_file_chunk(&file_path, 8, 8, None).await.unwrap();
+        assert_eq!(chunk2, b"89ABCDEF");
+
+        let chunk3 = read_file_chunk(&file_path, 12, 10, None).await.unwrap();
+        assert_eq!(chunk3, b"CDEF");
+    }
+
+    #[tokio::test]
+    async fn test_onedrive_chunked_session_mock() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/createUploadSession"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "uploadUrl": format!("{}/upload_target", server.uri())
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("PUT"))
+            .and(path("/upload_target"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("onedrive_large.bin");
+        let payload = vec![0x42u8; 1024];
+        std::fs::write(&file_path, &payload).unwrap();
+
+        let client = reqwest::Client::new();
+        let session_url = format!("{}/createUploadSession", server.uri());
+
+        let res = upload_onedrive_session(&client, "token123", &session_url, &file_path, 1024, None).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_google_drive_resumable_mock() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+
+        Mock::given(method("PATCH"))
+            .and(path("/init_resumable"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("Location", format!("{}/resumable_target", server.uri())),
+            )
+            .mount(&server)
+            .await;
+
+        Mock::given(method("PUT"))
+            .and(path("/resumable_target"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("gdrive_large.bin");
+        std::fs::write(&file_path, vec![0xAA; 2048]).unwrap();
+
+        let client = reqwest::Client::new();
+        let init_url = format!("{}/init_resumable", server.uri());
+
+        let res = upload_google_drive_resumable(&client, "token123", &init_url, &file_path, 2048, None).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_dropbox_session_mock() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/upload_session/start"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "session_id": "dbx_sess_999"
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/upload_session/finish"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "id:dbx_finished"
+            })))
+            .mount(&server)
+            .await;
+
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("dbx_large.bin");
+        std::fs::write(&file_path, vec![0x55; 512]).unwrap();
+
+        let client = reqwest::Client::new();
+        let res = upload_dropbox_session(
+            &client,
+            "token123",
+            &server.uri(),
+            "/dbx_large.bin",
+            None,
+            &file_path,
+            512,
+            None,
+        ).await;
+        assert!(res.is_ok());
     }
 }

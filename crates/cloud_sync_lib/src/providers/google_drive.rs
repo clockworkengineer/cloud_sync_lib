@@ -273,19 +273,37 @@ impl StorageBackend for GoogleDriveProvider {
                 remote_path,
                 file_id
             );
-            let (body, size) =
-                super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
+            let metadata = tokio::fs::metadata(local_path).await?;
+            let size = metadata.len();
 
-            let upload_url = format!("{}/{}?uploadType=media", self.upload_url, file_id);
-            let res = super::utils::apply_bearer_auth(self.client.patch(&upload_url), &token)
-                .header("Content-Type", "application/octet-stream")
-                .header("Content-Length", size.to_string())
-                .body(body)
-                .send()
+            // Google Drive recommends resumable upload for files > 5 MB
+            if size > 5 * 1024 * 1024 {
+                let resumable_init_url =
+                    format!("{}/{}?uploadType=resumable", self.upload_url, file_id);
+                super::utils::upload_google_drive_resumable(
+                    &self.client,
+                    &token,
+                    &resumable_init_url,
+                    local_path,
+                    size,
+                    self.upload_limiter.as_ref(),
+                )
                 .await?;
+            } else {
+                let (body, _) =
+                    super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
-            if !res.status().is_success() {
-                return Err(translate_http_error(res, self.name(), "upload").await);
+                let upload_url = format!("{}/{}?uploadType=media", self.upload_url, file_id);
+                let res = super::utils::apply_bearer_auth(self.client.patch(&upload_url), &token)
+                    .header("Content-Type", "application/octet-stream")
+                    .header("Content-Length", size.to_string())
+                    .body(body)
+                    .send()
+                    .await?;
+
+                if !res.status().is_success() {
+                    return Err(translate_http_error(res, self.name(), "upload").await);
+                }
             }
 
             Ok(())

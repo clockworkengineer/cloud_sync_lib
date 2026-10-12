@@ -115,19 +115,38 @@ impl StorageBackend for OneDriveProvider {
                 self.name(),
                 clean_path
             );
-            let (body, size) =
-                super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
+            let metadata = tokio::fs::metadata(local_path).await?;
+            let size = metadata.len();
 
-            let upload_url = format!("{}/me/drive/root:/{}:/content", self.api_url, clean_path);
-            let res = super::utils::apply_bearer_auth(self.client.put(&upload_url), &token)
-                .header("Content-Type", "application/octet-stream")
-                .header("Content-Length", size.to_string())
-                .body(body)
-                .send()
+            // Microsoft Graph restricts simple PUT /content to <= 4 MB.
+            // Files larger than 4 MB must use createUploadSession.
+            if size > 4 * 1024 * 1024 {
+                let session_url =
+                    format!("{}/me/drive/root:/{}:/createUploadSession", self.api_url, clean_path);
+                super::utils::upload_onedrive_session(
+                    &self.client,
+                    &token,
+                    &session_url,
+                    local_path,
+                    size,
+                    self.upload_limiter.as_ref(),
+                )
                 .await?;
+            } else {
+                let (body, _) =
+                    super::utils::get_upload_body(local_path, self.upload_limiter.clone()).await?;
 
-            if !res.status().is_success() {
-                return Err(translate_http_error(res, self.name(), "upload").await);
+                let upload_url = format!("{}/me/drive/root:/{}:/content", self.api_url, clean_path);
+                let res = super::utils::apply_bearer_auth(self.client.put(&upload_url), &token)
+                    .header("Content-Type", "application/octet-stream")
+                    .header("Content-Length", size.to_string())
+                    .body(body)
+                    .send()
+                    .await?;
+
+                if !res.status().is_success() {
+                    return Err(translate_http_error(res, self.name(), "upload").await);
+                }
             }
 
             Ok(())

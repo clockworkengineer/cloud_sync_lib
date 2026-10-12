@@ -102,10 +102,10 @@ impl StorageBackend for S3Provider {
             clean_path
         );
 
-        let file_content = fs::read(local_path).await?;
-        let res = self
+        let mut file = fs::File::open(local_path).await?;
+        let status_code = self
             .bucket
-            .put_object(&clean_path, &file_content)
+            .put_object_stream(&mut file, &clean_path)
             .await
             .map_err(|e| StorageError::Provider {
                 message: format!("S3 upload error: {}", e),
@@ -113,7 +113,6 @@ impl StorageBackend for S3Provider {
             })?;
 
         // HTTP status 200 or 201 indicates success
-        let status_code = res.status_code();
         if status_code != 200 && status_code != 201 {
             return Err(crate::providers::utils::translate_status_code_error(
                 status_code,
@@ -129,31 +128,29 @@ impl StorageBackend for S3Provider {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         let clean_path = self.format_path(remote_path);
 
-        let res =
-            self.bucket
-                .get_object(&clean_path)
-                .await
-                .map_err(|e| StorageError::Provider {
-                    message: format!("S3 download error: {}", e),
-                    status: None,
-                })?;
+        if let Some(parent) = local_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
 
-        let status_code = res.status_code();
-        if status_code != 200 {
+        let mut file = fs::File::create(local_path).await?;
+        let status = self
+            .bucket
+            .get_object_to_writer(&clean_path, &mut file)
+            .await
+            .map_err(|e| StorageError::Provider {
+                message: format!("S3 download error: {}", e),
+                status: None,
+            })?;
+
+        if status != 200 {
             return Err(crate::providers::utils::translate_status_code_error(
-                status_code,
+                status,
                 "S3",
                 "download",
                 None,
             ));
         }
 
-        if let Some(parent) = local_path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-
-        let bytes = res.bytes();
-        fs::write(local_path, bytes).await?;
         Ok(())
     }
 
