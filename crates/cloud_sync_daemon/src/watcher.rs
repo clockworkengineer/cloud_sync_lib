@@ -92,7 +92,11 @@ impl<'a> DirectoryScanner<'a> {
                                     || rel_str == ".syncignore"
                                     || (rel_str.starts_with(".sync_state_")
                                         && (rel_str.ends_with(".json")
-                                            || rel_str.ends_with(".bin")))
+                                            || rel_str.ends_with(".bin")
+                                            || rel_str.ends_with(".tmp")
+                                            || rel_str.ends_with(".bak")
+                                            || rel_str.ends_with(".wal")
+                                            || rel_str.ends_with(".db")))
                                 {
                                     continue;
                                 }

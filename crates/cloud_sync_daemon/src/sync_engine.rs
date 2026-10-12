@@ -41,7 +41,12 @@ async fn scan_remote_dir(
                         || path_str == ".sync_state.bin"
                         || path_str == ".syncignore"
                         || (path_str.starts_with(".sync_state_")
-                            && (path_str.ends_with(".json") || path_str.ends_with(".bin")))
+                            && (path_str.ends_with(".json")
+                                || path_str.ends_with(".bin")
+                                || path_str.ends_with(".tmp")
+                                || path_str.ends_with(".bak")
+                                || path_str.ends_with(".wal")
+                                || path_str.ends_with(".db")))
                     {
                         continue;
                     }
