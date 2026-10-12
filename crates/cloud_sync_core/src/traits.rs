@@ -309,6 +309,7 @@ pub enum ConflictPolicy {
     KeepNewer,
     KeepLocal,
     KeepRemote,
+    Manual,
 }
 
 #[cfg(test)]

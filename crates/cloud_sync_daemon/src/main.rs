@@ -70,6 +70,8 @@ pub struct DaemonState {
     pub dry_run: bool,
     /// Event transmitter for real-time SSE updates.
     pub event_tx: tokio::sync::broadcast::Sender<String>,
+    /// Manager for tracking and resolving pending conflicts interactively.
+    pub conflict_manager: crate::engine::conflict::ConflictManager,
 }
 
 #[allow(dead_code)]
@@ -405,6 +407,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "keep-newer" => cloud_sync_lib::ConflictPolicy::KeepNewer,
                 "keep-local" => cloud_sync_lib::ConflictPolicy::KeepLocal,
                 "keep-remote" => cloud_sync_lib::ConflictPolicy::KeepRemote,
+                "manual" => cloud_sync_lib::ConflictPolicy::Manual,
                 _ => {
                     error!(
                         "Unknown conflict policy: '{}'. Using RenameLocal.",
@@ -607,6 +610,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         conflict_policy,
         dry_run,
         event_tx,
+        conflict_manager: crate::engine::conflict::ConflictManager::new(),
     }));
 
     // Spawn background dynamic rate limiter task if a schedule is defined

@@ -272,6 +272,29 @@ async fn sync_single_file(
                     && remote.checksum != state.checksum);
 
             if local_changed && remote_changed {
+                let same_content = match (&local.checksum, &remote.checksum) {
+                    (Some(lc), Some(rc)) => lc == rc,
+                    _ => local.size == remote.size && local.size == 0,
+                };
+                if same_content {
+                    info!(
+                        "Bidirectional: local and remote changed to identical content for '{}'. Converging state without transfer.",
+                        rel_path
+                    );
+                    updates.push((
+                        rel_path.clone(),
+                        FileState {
+                            permissions: current_permissions,
+                            size: local.size,
+                            local_modified: local.modified,
+                            remote_modified: remote.modified,
+                            is_dir: Some(false),
+                            checksum: local.checksum.or(remote.checksum),
+                        },
+                    ));
+                    return Ok((updates, false));
+                }
+
                 let resolved_policy = if sync_both {
                     conflict_policy
                 } else {
@@ -279,6 +302,13 @@ async fn sync_single_file(
                 };
 
                 match resolved_policy {
+                    cloud_sync_lib::ConflictPolicy::Manual => {
+                        info!(
+                            "Conflict Policy (Manual): Concurrent modification detected on '{}'. Deferring to interactive resolution.",
+                            rel_path
+                        );
+                        updates.push((rel_path.clone(), state.clone()));
+                    }
                     cloud_sync_lib::ConflictPolicy::RenameLocal => {
                         let conflict_rel_path = format!("{}.local-conflict", rel_path);
                         let conflict_local_path = watch_dir.join(&conflict_rel_path);
@@ -696,6 +726,12 @@ async fn sync_single_file(
                 };
 
                 match resolved_policy {
+                    cloud_sync_lib::ConflictPolicy::Manual => {
+                        info!(
+                            "Conflict Policy (Manual): Concurrent addition detected on '{}'. Deferring to interactive resolution.",
+                            rel_path
+                        );
+                    }
                     cloud_sync_lib::ConflictPolicy::RenameLocal => {
                         let conflict_rel_path = format!("{}.local-conflict", rel_path);
                         let conflict_local_path = watch_dir.join(&conflict_rel_path);
@@ -1090,34 +1126,62 @@ async fn sync_single_file(
                     && state.checksum.is_some()
                     && local.checksum != state.checksum);
             if local_changed {
-                info!("Bidirectional: re-uploading modified local file '{}' that was deleted remotely", rel_path);
-                let remote_checksum = if !dry_run {
-                    upload_file!(backend.as_ref(), &local_file_path, &rel_path)
+                let resolved_policy = if sync_both {
+                    conflict_policy
                 } else {
-                    info!(
-                        "[DRY-RUN] Would upload local path {:?} to remote path '{}'",
-                        local_file_path, rel_path
-                    );
-                    None
+                    cloud_sync_lib::ConflictPolicy::KeepLocal
                 };
-                let remote_mtime = if !dry_run {
-                    get_remote_mtime(backend.as_ref(), &rel_path)
-                        .await
-                        .unwrap_or(SystemTime::now())
-                } else {
-                    SystemTime::now()
-                };
-                updates.push((
-                    rel_path.clone(),
-                    FileState {
-                        permissions: current_permissions,
-                        size: local.size,
-                        local_modified: local.modified,
-                        remote_modified: remote_mtime,
-                        is_dir: Some(false),
-                        checksum: remote_checksum.or(local.checksum),
-                    },
-                ));
+
+                match resolved_policy {
+                    cloud_sync_lib::ConflictPolicy::Manual => {
+                        info!(
+                            "Conflict Policy (Manual): Local modified but remote deleted on '{}' (LocalModifiedRemoteDeleted). Deferring to interactive resolution.",
+                            rel_path
+                        );
+                        updates.push((rel_path.clone(), state.clone()));
+                    }
+                    cloud_sync_lib::ConflictPolicy::KeepRemote => {
+                        info!(
+                            "Conflict Policy (KeepRemote): deleting local file '{}' since it was deleted remotely",
+                            rel_path
+                        );
+                        if !dry_run {
+                            let _ = tokio::fs::remove_file(local_file_path).await;
+                        } else {
+                            info!("[DRY-RUN] Would delete local file '{:?}'", local_file_path);
+                        }
+                    }
+                    _ => {
+                        info!("Bidirectional: re-uploading modified local file '{}' that was deleted remotely", rel_path);
+                        let remote_checksum = if !dry_run {
+                            upload_file!(backend.as_ref(), &local_file_path, &rel_path)
+                        } else {
+                            info!(
+                                "[DRY-RUN] Would upload local path {:?} to remote path '{}'",
+                                local_file_path, rel_path
+                            );
+                            None
+                        };
+                        let remote_mtime = if !dry_run {
+                            get_remote_mtime(backend.as_ref(), &rel_path)
+                                .await
+                                .unwrap_or(SystemTime::now())
+                        } else {
+                            SystemTime::now()
+                        };
+                        updates.push((
+                            rel_path.clone(),
+                            FileState {
+                                permissions: current_permissions,
+                                size: local.size,
+                                local_modified: local.modified,
+                                remote_modified: remote_mtime,
+                                is_dir: Some(false),
+                                checksum: remote_checksum.or(local.checksum),
+                            },
+                        ));
+                    }
+                }
             } else {
                 if sync_both {
                     info!(
@@ -1172,49 +1236,66 @@ async fn sync_single_file(
                     && state.checksum.is_some()
                     && remote.checksum != state.checksum);
             if remote_changed {
-                if sync_both {
-                    info!("Bidirectional: re-downloading modified remote file '{}' that was deleted locally", rel_path);
-                    let local_checksum = if !dry_run {
-                        download_file!(
-                            backend.as_ref(),
-                            &rel_path,
-                            &local_file_path,
-                            remote.checksum.as_deref(),
-                            remote.permissions
-                        )
-                    } else {
-                        info!(
-                            "[DRY-RUN] Would download remote path '{}' to local path {:?}",
-                            rel_path, local_file_path
-                        );
-                        None
-                    };
-                    let new_local_mtime = if !dry_run {
-                        get_local_mtime(&local_file_path)
-                            .await
-                            .unwrap_or(remote.modified)
-                    } else {
-                        remote.modified
-                    };
-                    updates.push((
-                        rel_path.clone(),
-                        FileState {
-                            permissions: current_permissions,
-                            size: remote.size,
-                            local_modified: new_local_mtime,
-                            remote_modified: remote.modified,
-                            is_dir: Some(false),
-                            checksum: local_checksum.or(remote.checksum),
-                        },
-                    ));
+                let resolved_policy = if sync_both {
+                    conflict_policy
                 } else {
-                    if sync_deletions {
-                        info!("Unidirectional: deleting remote file '{}' since it was deleted locally", rel_path);
+                    cloud_sync_lib::ConflictPolicy::KeepRemote
+                };
+
+                match resolved_policy {
+                    cloud_sync_lib::ConflictPolicy::Manual => {
+                        info!(
+                            "Conflict Policy (Manual): Remote modified but local deleted on '{}' (RemoteModifiedLocalDeleted). Deferring to interactive resolution.",
+                            rel_path
+                        );
+                        updates.push((rel_path.clone(), state.clone()));
+                    }
+                    cloud_sync_lib::ConflictPolicy::KeepLocal => {
+                        info!(
+                            "Conflict Policy (KeepLocal): deleting remote file '{}' since it was deleted locally",
+                            rel_path
+                        );
                         if !dry_run {
                             let _ = backend.delete(&rel_path).await;
                         } else {
                             info!("[DRY-RUN] Would delete remote file '{}'", rel_path);
                         }
+                    }
+                    _ => {
+                        info!("Bidirectional: re-downloading modified remote file '{}' that was deleted locally", rel_path);
+                        let local_checksum = if !dry_run {
+                            download_file!(
+                                backend.as_ref(),
+                                &rel_path,
+                                &local_file_path,
+                                remote.checksum.as_deref(),
+                                remote.permissions
+                            )
+                        } else {
+                            info!(
+                                "[DRY-RUN] Would download remote path '{}' to local path {:?}",
+                                rel_path, local_file_path
+                            );
+                            None
+                        };
+                        let new_local_mtime = if !dry_run {
+                            get_local_mtime(&local_file_path)
+                                .await
+                                .unwrap_or(remote.modified)
+                        } else {
+                            remote.modified
+                        };
+                        updates.push((
+                            rel_path.clone(),
+                            FileState {
+                                permissions: current_permissions,
+                                size: remote.size,
+                                local_modified: new_local_mtime,
+                                remote_modified: remote.modified,
+                                is_dir: Some(false),
+                                checksum: local_checksum.or(remote.checksum),
+                            },
+                        ));
                     }
                 }
             } else {
@@ -1754,6 +1835,12 @@ mod tests {
         async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
             self.sim.create_folder(remote_path).await
         }
+        async fn compute_local_checksum(
+            &self,
+            local_path: &Path,
+        ) -> Result<Option<String>, StorageError> {
+            self.sim.compute_local_checksum(local_path).await
+        }
     }
 
     async fn sync_bidirectional(
@@ -2151,6 +2238,95 @@ mod tests {
                 .await
                 .unwrap(),
             "remote modified"
+        );
+
+        let (local, remote, _) = run_sync(cloud_sync_lib::ConflictPolicy::Manual, false).await;
+        assert_eq!(
+            tokio::fs::read_to_string(local.join("conflict.txt"))
+                .await
+                .unwrap(),
+            "local modified"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(remote.join("conflict.txt"))
+                .await
+                .unwrap(),
+            "remote modified"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_three_way_identical_content_convergence() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        let temp_base = std::env::temp_dir();
+        let local_dir = temp_base.join(format!("local_conv_{}", unique_id));
+        let remote_dir = temp_base.join(format!("remote_conv_{}", unique_id));
+        tokio::fs::create_dir_all(&local_dir).await.unwrap();
+        tokio::fs::create_dir_all(&remote_dir).await.unwrap();
+
+        let local_file = local_dir.join("shared.txt");
+        let remote_file = remote_dir.join("shared.txt");
+        tokio::fs::write(&local_file, "initial text").await.unwrap();
+        tokio::fs::write(&remote_file, "initial text").await.unwrap();
+
+        let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
+        let remote_sim = Arc::new(TestBackendWrapper { sim });
+        let state_file = local_dir.join(".sync_state.bin");
+        let gitignore = SyncIgnore::empty();
+
+        super::sync_bidirectional(
+            &local_dir,
+            remote_sim.clone(),
+            SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+            &state_file,
+            &gitignore,
+            4,
+            cloud_sync_lib::ConflictPolicy::RenameLocal,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Concurrently modify both sides to the EXACT SAME new content
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        tokio::fs::write(&local_file, "converged content identical")
+            .await
+            .unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        tokio::fs::write(&remote_file, "converged content identical")
+            .await
+            .unwrap();
+
+        // Run sync with RenameLocal policy: because content converged, no .local-conflict must be produced!
+        super::sync_bidirectional(
+            &local_dir,
+            remote_sim.clone(),
+            SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+            &state_file,
+            &gitignore,
+            4,
+            cloud_sync_lib::ConflictPolicy::RenameLocal,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(!local_dir.join("shared.txt.local-conflict").exists());
+        assert_eq!(
+            tokio::fs::read_to_string(&local_file).await.unwrap(),
+            "converged content identical"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(&remote_file).await.unwrap(),
+            "converged content identical"
         );
     }
 

@@ -593,8 +593,39 @@
             </div>
         </div>
 
-        <!-- Card 3: Activity Logs -->
-        <div class="card logs-card">
+        <!-- Card 3: 3-Way Conflicts Resolution Center -->
+        <div class="card conflicts-card" id="conflicts-card" style="grid-column: 1 / -1;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 class="card-title" style="margin: 0; display: flex; align-items: center; gap: 0.75rem;">
+                    ⚖ Sync Conflicts & Reconciliation
+                    <span id="conflict-badge" style="background: rgba(244, 63, 94, 0.2); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.4); font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 20px; display: none;">0 Conflicts</span>
+                </h2>
+                <button class="btn-mini" onclick="pollConflicts()">Refresh Conflicts</button>
+            </div>
+            
+            <div id="conflicts-empty" style="color: var(--text-secondary); font-size: 0.95rem; padding: 1rem 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span style="color: var(--accent-teal); font-weight: bold;">✔</span> All files cleanly reconciled. No pending conflicts detected.
+            </div>
+
+            <div id="conflicts-table-container" style="display: none; overflow-x: auto; margin-top: 0.5rem;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.875rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--card-border); color: var(--text-secondary);">
+                            <th style="padding: 0.75rem 0.5rem;">File Path</th>
+                            <th style="padding: 0.75rem 0.5rem;">Conflict Type</th>
+                            <th style="padding: 0.75rem 0.5rem;">Local / Remote Metadata</th>
+                            <th style="padding: 0.75rem 0.5rem; text-align: right;">Resolution Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="conflicts-body">
+                        <!-- Populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Card 4: Activity Logs -->
+        <div class="card logs-card" style="grid-column: 1 / -1;">
             <div class="logs-header">
                 <div class="logs-header-left">
                     <span>🗎 Command Execution Logs</span>
@@ -965,6 +996,94 @@
             }
         }
 
+        async function pollConflicts() {
+            try {
+                const res = await fetch('/api/conflicts');
+                if (!res.ok) return;
+                const conflicts = await res.json();
+                renderConflicts(conflicts);
+            } catch (e) {
+                console.error("Failed to poll conflicts:", e);
+            }
+        }
+
+        function renderConflicts(conflicts) {
+            const badge = document.getElementById('conflict-badge');
+            const emptyEl = document.getElementById('conflicts-empty');
+            const tableContainer = document.getElementById('conflicts-table-container');
+            const tbody = document.getElementById('conflicts-body');
+
+            if (!conflicts || conflicts.length === 0) {
+                badge.style.display = 'none';
+                emptyEl.style.display = 'flex';
+                tableContainer.style.display = 'none';
+                tbody.innerHTML = '';
+                return;
+            }
+
+            badge.style.display = 'inline-block';
+            badge.textContent = `${conflicts.length} Conflict${conflicts.length > 1 ? 's' : ''}`;
+            emptyEl.style.display = 'none';
+            tableContainer.style.display = 'block';
+            tbody.innerHTML = '';
+
+            conflicts.forEach(c => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid var(--card-border)';
+
+                let typeLabel = 'Concurrent Edit';
+                if (c.conflict_type === 'local_modified_remote_deleted') typeLabel = 'Local Edit vs Remote Delete';
+                else if (c.conflict_type === 'remote_modified_local_deleted') typeLabel = 'Remote Edit vs Local Delete';
+                else if (c.conflict_type === 'concurrent_addition') typeLabel = 'Concurrent Addition';
+
+                const localInfo = c.local_size !== null ? `${c.local_size} bytes` : 'Deleted';
+                const remoteInfo = c.remote_size !== null ? `${c.remote_size} bytes` : 'Deleted';
+
+                tr.innerHTML = `
+                    <td style="padding: 0.75rem 0.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; word-break: break-all;">
+                        ${c.rel_path}
+                    </td>
+                    <td style="padding: 0.75rem 0.5rem;">
+                        <span style="background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">
+                            ${typeLabel}
+                        </span>
+                    </td>
+                    <td style="padding: 0.75rem 0.5rem; color: var(--text-secondary); font-size: 0.8rem;">
+                        Local: <span style="color: var(--text-primary);">${localInfo}</span> | 
+                        Remote: <span style="color: var(--text-primary);">${remoteInfo}</span>
+                    </td>
+                    <td style="padding: 0.75rem 0.5rem; text-align: right; white-space: nowrap;">
+                        <button class="btn-mini" onclick="resolveConflict('${c.rel_path}', 'use_local')" style="background: rgba(20, 184, 166, 0.2); color: var(--accent-teal); border: 1px solid rgba(20, 184, 166, 0.4); margin-right: 0.25rem;" title="Upload local version to remote">Keep Local</button>
+                        <button class="btn-mini" onclick="resolveConflict('${c.rel_path}', 'use_remote')" style="background: rgba(99, 102, 241, 0.2); color: var(--accent-indigo); border: 1px solid rgba(99, 102, 241, 0.4); margin-right: 0.25rem;" title="Download remote version to local">Keep Remote</button>
+                        <button class="btn-mini" onclick="resolveConflict('${c.rel_path}', 'keep_both')" style="background: rgba(139, 92, 246, 0.2); color: var(--accent-purple); border: 1px solid rgba(139, 92, 246, 0.4); margin-right: 0.25rem;" title="Preserve both files">Keep Both</button>
+                        <button class="btn-mini" onclick="resolveConflict('${c.rel_path}', 'skip')" style="background: rgba(255, 255, 255, 0.05); color: var(--text-secondary);" title="Dismiss alert">Dismiss</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function resolveConflict(relPath, resolution) {
+            addLogEntry('info', `Resolving conflict for '${relPath}' with '${resolution}'...`);
+            try {
+                const res = await fetch('/api/conflicts/resolve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rel_path: relPath, resolution: resolution })
+                });
+                const data = await res.json();
+                if (data.status) {
+                    addLogEntry('info', `Conflict resolution: ${data.status}`);
+                    await pollConflicts();
+                    await pollStatus();
+                } else if (data.error) {
+                    addLogEntry('error', `Conflict resolution failed: ${data.error}`);
+                }
+            } catch (e) {
+                addLogEntry('error', `Error sending conflict resolution: ${e}`);
+            }
+        }
+
         function initEventSource() {
             const eventSource = new EventSource('/api/events');
             eventSource.onmessage = (event) => {
@@ -987,6 +1106,9 @@
                         const backendPrefix = data.backend_name ? `[${data.backend_name}] ` : '';
                         addLogEntry('info', `[Status Update] ${backendPrefix}${data.message}`);
                         pollStatus();
+                    } else if (data.type === 'conflict' || data.type === 'conflict_resolved') {
+                        addLogEntry('info', `[Conflict Event] ${data.rel_path || ''} ${data.resolution || ''}`);
+                        pollConflicts();
                     } else if (data.type === 'error') {
                         const backendPrefix = data.backend_name ? `[${data.backend_name}] ` : '';
                         addLogEntry('error', `[Daemon Error] ${backendPrefix}${data.message}`);
@@ -1006,11 +1128,13 @@
         (async function init() {
             addLogEntry('info', "UI Client initialized. Connecting to Rust UI server...");
             await pollStatus();
+            await pollConflicts();
             initEventSource();
             
-            // Poll status every 2 seconds
+            // Poll status and conflicts every 2 seconds
             setInterval(async () => {
                 await pollStatus();
+                await pollConflicts();
             }, 2000);
         })();
     </script>

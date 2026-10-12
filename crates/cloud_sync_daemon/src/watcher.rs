@@ -517,6 +517,7 @@ mod tests {
             conflict_policy: cloud_sync_lib::ConflictPolicy::RenameLocal,
             dry_run: false,
             event_tx,
+            conflict_manager: crate::engine::conflict::ConflictManager::new(),
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));
@@ -650,6 +651,7 @@ mod tests {
             conflict_policy: cloud_sync_lib::ConflictPolicy::RenameLocal,
             dry_run: false,
             event_tx,
+            conflict_manager: crate::engine::conflict::ConflictManager::new(),
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));

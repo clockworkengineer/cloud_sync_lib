@@ -218,6 +218,49 @@ pub async fn api_clear(Json(payload): axum::Json<ClearRequest>) -> impl IntoResp
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct ResolveConflictRequest {
+    pub rel_path: String,
+    pub resolution: String,
+}
+
+/// HTTP Endpoint: Lists all pending conflicts from the daemon.
+pub async fn api_conflicts() -> impl IntoResponse {
+    match send_daemon_cmd("conflicts").await {
+        Ok(raw) => {
+            let trimmed = raw.trim();
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                Json(val).into_response()
+            } else {
+                Json(json!([])).into_response()
+            }
+        }
+        Err(_) => Json(json!([])).into_response(),
+    }
+}
+
+/// HTTP Endpoint: Resolves a conflict with a specific choice (use_local, use_remote, keep_both, skip).
+pub async fn api_resolve_conflict(
+    Json(payload): axum::Json<ResolveConflictRequest>,
+) -> impl IntoResponse {
+    let cmd = format!("resolve_conflict {} {}", payload.rel_path, payload.resolution);
+    match send_daemon_cmd(&cmd).await {
+        Ok(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.starts_with("Error:") {
+                Json(json!({ "error": trimmed })).into_response()
+            } else {
+                Json(json!({ "status": trimmed })).into_response()
+            }
+        }
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("Could not connect to daemon socket: {}", e) })),
+        )
+            .into_response(),
+    }
+}
+
 use axum::response::sse::{Event, Sse};
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
@@ -265,4 +308,16 @@ pub async fn api_events() -> impl IntoResponse {
     });
 
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_api_conflicts_disconnected() {
+        std::env::set_var("CLOUDSYNC_DAEMON_ADDR", "127.0.0.1:59999");
+        let resp = api_conflicts().await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    }
 }

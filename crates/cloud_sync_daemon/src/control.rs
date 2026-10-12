@@ -328,12 +328,123 @@ pub async fn handle_control_command(
                 }
             }
         }
+        "conflicts" => {
+            let s = state.lock().await;
+            let list = s.conflict_manager.list_conflicts().await;
+            match serde_json::to_string(&list) {
+                Ok(json) => format!("{}\n", json),
+                Err(e) => format!("Error: Failed to serialize conflicts: {}\n", e),
+            }
+        }
+        "resolve_conflict" => {
+            if parts.len() < 3 {
+                return "Error: resolve_conflict requires <path> and <resolution> (use_local, use_remote, keep_both, skip)\n".to_string();
+            }
+            let rel_path = parts[1];
+            let resolution = parts[2].to_lowercase();
+
+            let s = state.lock().await;
+            let watch_dir = s.watch_dir.clone();
+            let backends = s.backends.clone();
+            let conflict_manager = s.conflict_manager.clone();
+            let event_tx = s.event_tx.clone();
+            drop(s);
+
+            let local_path = watch_dir.join(rel_path);
+
+            match resolution.as_str() {
+                "use_local" => {
+                    info!("Resolving conflict on '{}' with 'use_local'", rel_path);
+                    for active in &backends {
+                        if let Err(e) = active.backend.upload(&local_path, rel_path).await {
+                            error!("Failed to upload local file during conflict resolution: {}", e);
+                            return format!("Error: Failed to upload file: {}\n", e);
+                        }
+                    }
+                    conflict_manager.remove_conflict(rel_path).await;
+                    let _ = event_tx.send(
+                        serde_json::json!({
+                            "type": "conflict_resolved",
+                            "rel_path": rel_path,
+                            "resolution": "use_local"
+                        })
+                        .to_string(),
+                    );
+                    "Status: Conflict resolved (use_local)\n".to_string()
+                }
+                "use_remote" => {
+                    info!("Resolving conflict on '{}' with 'use_remote'", rel_path);
+                    if let Some(active) = backends.first() {
+                        if let Err(e) = active.backend.download(rel_path, &local_path).await {
+                            error!("Failed to download remote file during conflict resolution: {}", e);
+                            return format!("Error: Failed to download file: {}\n", e);
+                        }
+                    }
+                    conflict_manager.remove_conflict(rel_path).await;
+                    let _ = event_tx.send(
+                        serde_json::json!({
+                            "type": "conflict_resolved",
+                            "rel_path": rel_path,
+                            "resolution": "use_remote"
+                        })
+                        .to_string(),
+                    );
+                    "Status: Conflict resolved (use_remote)\n".to_string()
+                }
+                "keep_both" => {
+                    info!("Resolving conflict on '{}' with 'keep_both'", rel_path);
+                    let conflict_rel = format!("{}.local-conflict", rel_path);
+                    let conflict_local = watch_dir.join(&conflict_rel);
+
+                    if let Err(e) = tokio::fs::rename(&local_path, &conflict_local).await {
+                        error!("Failed to rename local file during conflict resolution: {}", e);
+                        return format!("Error: Failed to rename local file: {}\n", e);
+                    }
+
+                    if let Some(active) = backends.first() {
+                        if let Err(e) = active.backend.download(rel_path, &local_path).await {
+                            error!("Failed to download remote file during keep_both: {}", e);
+                        }
+                        if let Err(e) = active.backend.upload(&conflict_local, &conflict_rel).await {
+                            error!("Failed to upload .local-conflict to remote: {}", e);
+                        }
+                    }
+
+                    conflict_manager.remove_conflict(rel_path).await;
+                    let _ = event_tx.send(
+                        serde_json::json!({
+                            "type": "conflict_resolved",
+                            "rel_path": rel_path,
+                            "resolution": "keep_both"
+                        })
+                        .to_string(),
+                    );
+                    "Status: Conflict resolved (keep_both)\n".to_string()
+                }
+                "skip" => {
+                    info!("Dismissing conflict on '{}'", rel_path);
+                    conflict_manager.remove_conflict(rel_path).await;
+                    let _ = event_tx.send(
+                        serde_json::json!({
+                            "type": "conflict_resolved",
+                            "rel_path": rel_path,
+                            "resolution": "skip"
+                        })
+                        .to_string(),
+                    );
+                    "Status: Conflict dismissed\n".to_string()
+                }
+                _ => {
+                    format!("Error: Unknown resolution '{}'. Supported: use_local, use_remote, keep_both, skip\n", resolution)
+                }
+            }
+        }
         "stop" => {
             let _ = shutdown_tx.send(()).await;
             "Status: Stopping daemon...\n".to_string()
         }
         _ => {
-            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, stop\n"
+            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, conflicts, resolve_conflict, stop\n"
                 .to_string()
         }
     }
