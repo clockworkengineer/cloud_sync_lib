@@ -19,20 +19,18 @@ The workspace is split into modular crates:
 
 ---
 
-## Quick Launch (Windows)
+## Quick Launch Scripts
 
-For daily desktop use on Windows, convenient launch scripts are provided in the `scripts/` directory:
+Convenient launch scripts for both desktop frontends are provided in the `scripts/` directory:
 
-* **Launch Native Desktop App**:
-  ```cmd
-  scripts\launch_egui.cmd
-  ```
-* **Launch Web UI Dashboard**:
-  ```cmd
-  scripts\launch_web_ui.cmd
-  ```
+* **Native Desktop GUI (`cloud_sync_egui`)**:
+  - Windows: `scripts\launch_egui.cmd`
+  - Linux / macOS: `./scripts/launch_egui.sh`
+* **Web UI Dashboard (`cloud_sync_ui`)**:
+  - Windows: `scripts\launch_web_ui.cmd`
+  - Linux / macOS: `./scripts/launch_web_ui.sh`
 
-These scripts run precompiled binaries windowless via `wscript.exe` without visible command prompts, falling back smoothly to `cargo run` if binaries have not been compiled yet.
+On Windows, these scripts run precompiled binaries windowless via `wscript.exe` without visible command prompts, falling back smoothly to `cargo run` if binaries have not been compiled yet. On Linux and macOS, they start background processes and open your system's default browser automatically.
 
 ---
 
@@ -134,12 +132,14 @@ cargo run --bin cloud_sync_daemon
 ```
 
 ### 2. Launch the Desktop Frontends
-```cmd
+```bash
 # Native Egui Desktop GUI
-scripts\launch_egui.cmd
+scripts\launch_egui.cmd       # Windows
+./scripts/launch_egui.sh      # Linux / macOS
 
 # Axum Web Dashboard
-scripts\launch_web_ui.cmd
+scripts\launch_web_ui.cmd     # Windows
+./scripts/launch_web_ui.sh    # Linux / macOS
 ```
 
 ### 3. Run Workspace Tests

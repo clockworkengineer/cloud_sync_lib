@@ -71,9 +71,10 @@ Launch using Cargo:
 cargo run --bin cloud_sync_ui
 ```
 
-Or using the Windows windowless batch launcher:
-```cmd
-scripts\launch_web_ui.cmd
+Or using the launcher scripts:
+```bash
+scripts\launch_web_ui.cmd     # Windows
+./scripts/launch_web_ui.sh    # Linux / macOS
 ```
 
 Once running, navigate to `http://127.0.0.1:8082` in any modern web browser.
