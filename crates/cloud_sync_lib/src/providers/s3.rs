@@ -143,13 +143,16 @@ impl StorageBackend for S3Provider {
             })?;
 
         if status != 200 {
+            let _ = fs::remove_file(local_path).await;
             return Err(crate::providers::utils::translate_status_code_error(
-                status,
-                "S3",
-                "download",
-                None,
+                status, "S3", "download", None,
             ));
         }
+
+        use tokio::io::AsyncWriteExt;
+        file.flush().await?;
+        file.sync_all().await?;
+        drop(file);
 
         Ok(())
     }

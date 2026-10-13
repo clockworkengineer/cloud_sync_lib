@@ -124,21 +124,18 @@ impl StorageBackend for DropboxProvider {
             let metadata = tokio::fs::metadata(local_path).await?;
             let size = metadata.len();
 
-            let client_modified = metadata
-                .modified()
-                .ok()
-                .map(|t| {
-                    let datetime = time::OffsetDateTime::from(t);
-                    format!(
-                        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-                        datetime.year(),
-                        datetime.month() as u8,
-                        datetime.day(),
-                        datetime.hour(),
-                        datetime.minute(),
-                        datetime.second()
-                    )
-                });
+            let client_modified = metadata.modified().ok().map(|t| {
+                let datetime = time::OffsetDateTime::from(t);
+                format!(
+                    "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                    datetime.year(),
+                    datetime.month() as u8,
+                    datetime.day(),
+                    datetime.hour(),
+                    datetime.minute(),
+                    datetime.second()
+                )
+            });
 
             // Dropbox single-call /upload endpoint is limited to 150 MB.
             // Files larger than 150 MB must use upload_session endpoints.

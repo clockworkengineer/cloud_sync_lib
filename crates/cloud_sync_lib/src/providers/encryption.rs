@@ -128,12 +128,13 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
                 aad: &aad,
             };
 
-            let ciphertext = cipher
-                .encrypt(nonce, payload)
-                .map_err(|e| StorageError::Provider {
-                    message: format!("Encryption failed: {}", e),
-                    status: None,
-                })?;
+            let ciphertext =
+                cipher
+                    .encrypt(nonce, payload)
+                    .map_err(|e| StorageError::Provider {
+                        message: format!("Encryption failed: {}", e),
+                        status: None,
+                    })?;
 
             temp_file.write_u32(ciphertext.len() as u32).await?;
             temp_file.write_u8(is_last).await?;
@@ -235,12 +236,13 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
                         aad: &aad,
                     };
 
-                    let mut plaintext = cipher
-                        .decrypt(nonce, payload)
-                        .map_err(|e| StorageError::Provider {
-                            message: format!("Decryption failed: {}", e),
-                            status: None,
-                        })?;
+                    let mut plaintext =
+                        cipher
+                            .decrypt(nonce, payload)
+                            .map_err(|e| StorageError::Provider {
+                                message: format!("Decryption failed: {}", e),
+                                status: None,
+                            })?;
 
                     dest_file.write_all(&plaintext).await?;
                     plaintext.zeroize();
@@ -475,9 +477,14 @@ mod tests {
         let enc_backend = EncryptedBackend::new(local_sim, "password123");
 
         let file = local_root.join("tamper_test.txt");
-        fs::write(&file, b"Authenticate me accurately!").await.unwrap();
+        fs::write(&file, b"Authenticate me accurately!")
+            .await
+            .unwrap();
 
-        enc_backend.upload(&file, "tamper_remote.txt").await.unwrap();
+        enc_backend
+            .upload(&file, "tamper_remote.txt")
+            .await
+            .unwrap();
 
         // Tamper with one byte in the ciphertext on remote
         let remote_file = remote_root.join("tamper_remote.txt");

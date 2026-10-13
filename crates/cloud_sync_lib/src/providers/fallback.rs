@@ -75,7 +75,8 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
-                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    *self.fallback_reason.write().unwrap() =
+                        Some(format!("Authentication failed: {}", e));
                     self.local_sim.upload(local_path, remote_path).await
                 }
                 Err(e) => Err(e),
@@ -99,7 +100,8 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
-                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    *self.fallback_reason.write().unwrap() =
+                        Some(format!("Authentication failed: {}", e));
                     self.local_sim.download(remote_path, local_path).await
                 }
                 Err(e) => Err(e),
@@ -123,7 +125,8 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
-                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    *self.fallback_reason.write().unwrap() =
+                        Some(format!("Authentication failed: {}", e));
                     self.local_sim.delete(remote_path).await
                 }
                 Err(e) => Err(e),
@@ -147,7 +150,8 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
-                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    *self.fallback_reason.write().unwrap() =
+                        Some(format!("Authentication failed: {}", e));
                     self.local_sim.list(remote_path).await
                 }
                 Err(e) => Err(e),
@@ -171,7 +175,8 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
-                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    *self.fallback_reason.write().unwrap() =
+                        Some(format!("Authentication failed: {}", e));
                     self.local_sim.create_folder(remote_path).await
                 }
                 Err(e) => Err(e),
@@ -195,7 +200,8 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
-                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    *self.fallback_reason.write().unwrap() =
+                        Some(format!("Authentication failed: {}", e));
                     self.local_sim.rename(from, to).await
                 }
                 Err(e) => Err(e),
@@ -219,7 +225,8 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
-                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    *self.fallback_reason.write().unwrap() =
+                        Some(format!("Authentication failed: {}", e));
                     self.local_sim.get_latest_cursor().await
                 }
                 Err(e) => Err(e),
@@ -246,7 +253,8 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                         self.name,
                         e
                     );
-                    *self.fallback_reason.write().unwrap() = Some(format!("Authentication failed: {}", e));
+                    *self.fallback_reason.write().unwrap() =
+                        Some(format!("Authentication failed: {}", e));
                     self.local_sim.fetch_changes(cursor).await
                 }
                 Err(e) => Err(e),

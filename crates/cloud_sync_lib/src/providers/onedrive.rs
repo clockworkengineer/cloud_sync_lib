@@ -121,8 +121,10 @@ impl StorageBackend for OneDriveProvider {
             // Microsoft Graph restricts simple PUT /content to <= 4 MB.
             // Files larger than 4 MB must use createUploadSession.
             if size > 4 * 1024 * 1024 {
-                let session_url =
-                    format!("{}/me/drive/root:/{}:/createUploadSession", self.api_url, clean_path);
+                let session_url = format!(
+                    "{}/me/drive/root:/{}:/createUploadSession",
+                    self.api_url, clean_path
+                );
                 super::utils::upload_onedrive_session(
                     &self.client,
                     &token,

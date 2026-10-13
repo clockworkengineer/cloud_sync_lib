@@ -913,20 +913,14 @@ mod tests {
             common: CommonProviderSettings::default(),
         };
 
-        let provider = OneDriveProvider::new(creds).with_endpoints(
-            format!("{}/oauth", server.uri()),
-            server.uri(),
-        );
+        let provider = OneDriveProvider::new(creds)
+            .with_endpoints(format!("{}/oauth", server.uri()), server.uri());
 
         let initial_cursor = provider.get_latest_cursor().await.unwrap();
         assert!(initial_cursor.is_some());
         let cur = initial_cursor.unwrap();
 
-        let (changes, next_cursor) = provider
-            .fetch_changes(&cur)
-            .await
-            .unwrap()
-            .unwrap();
+        let (changes, next_cursor) = provider.fetch_changes(&cur).await.unwrap().unwrap();
 
         assert!(next_cursor.contains("delta_token_2"));
         assert_eq!(changes.len(), 2);
@@ -1380,8 +1374,10 @@ mod tests {
 
         // Upload
         let local_file_path = temp_dir.path().join("test.txt");
-        let mut file = File::create(&local_file_path).unwrap();
-        writeln!(file, "Hello simulated S3 storage!").unwrap();
+        {
+            let mut file = File::create(&local_file_path).unwrap();
+            writeln!(file, "Hello simulated S3 storage!").unwrap();
+        }
 
         provider
             .upload(&local_file_path, "hello.txt")

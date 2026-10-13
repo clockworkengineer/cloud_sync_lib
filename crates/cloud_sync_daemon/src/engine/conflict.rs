@@ -286,13 +286,17 @@ mod tests {
         let rename_local = create_conflict_resolver(ConflictPolicy::RenameLocal);
         assert_eq!(
             rename_local.resolve("test.txt", now, past),
-            ConflictResolutionAction::RenameLocalAndDownloadRemote("test.txt.local-conflict".to_string())
+            ConflictResolutionAction::RenameLocalAndDownloadRemote(
+                "test.txt.local-conflict".to_string()
+            )
         );
 
         let rename_remote = create_conflict_resolver(ConflictPolicy::RenameRemote);
         assert_eq!(
             rename_remote.resolve("test.txt", now, past),
-            ConflictResolutionAction::RenameRemoteAndUploadLocal("test.txt.remote-conflict".to_string())
+            ConflictResolutionAction::RenameRemoteAndUploadLocal(
+                "test.txt.remote-conflict".to_string()
+            )
         );
 
         let keep_local = create_conflict_resolver(ConflictPolicy::KeepLocal);

@@ -84,7 +84,9 @@ mod tests {
         let mut corrupted_bytes = tokio::fs::read(&state_path).await.unwrap();
         let len = corrupted_bytes.len();
         corrupted_bytes[len - 1] ^= 0xFF;
-        tokio::fs::write(&state_path, corrupted_bytes).await.unwrap();
+        tokio::fs::write(&state_path, corrupted_bytes)
+            .await
+            .unwrap();
 
         let recovered = repo.load(&state_path).await;
         assert_eq!(recovered, state);

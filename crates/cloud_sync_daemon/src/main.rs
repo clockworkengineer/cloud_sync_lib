@@ -410,7 +410,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "daemon.log".to_string());
 
     let log_path = std::path::PathBuf::from(&resolved_log_file);
-    let directory = log_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let directory = log_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
     let directory = if directory.as_os_str().is_empty() {
         std::path::Path::new(".")
     } else {

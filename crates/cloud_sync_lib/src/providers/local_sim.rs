@@ -263,7 +263,10 @@ impl StorageBackend for LocalSimulation {
     }
 
     fn simulation_reason(&self) -> Option<String> {
-        Some(format!("Local directory simulation ({})", self.root_dir.display()))
+        Some(format!(
+            "Local directory simulation ({})",
+            self.root_dir.display()
+        ))
     }
 }
 

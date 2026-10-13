@@ -2324,7 +2324,9 @@ mod tests {
         let local_file = local_dir.join("shared.txt");
         let remote_file = remote_dir.join("shared.txt");
         tokio::fs::write(&local_file, "initial text").await.unwrap();
-        tokio::fs::write(&remote_file, "initial text").await.unwrap();
+        tokio::fs::write(&remote_file, "initial text")
+            .await
+            .unwrap();
 
         let sim = LocalSimulation::new(remote_dir.clone(), "TestSim".to_string());
         let remote_sim = Arc::new(TestBackendWrapper { sim });

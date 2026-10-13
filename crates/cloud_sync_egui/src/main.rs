@@ -274,7 +274,9 @@ impl CloudSyncApp {
                     };
                     tokio::fs::read_to_string(&file_path)
                         .await
-                        .unwrap_or_else(|e| format!("Could not read log file '{}': {}", file_path, e))
+                        .unwrap_or_else(|e| {
+                            format!("Could not read log file '{}': {}", file_path, e)
+                        })
                 }
             };
 

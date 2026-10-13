@@ -90,7 +90,10 @@ pub async fn api_logs() -> impl IntoResponse {
             if let Some(pos) = resp.find("\n\n") {
                 let body = &resp[pos + 2..];
                 return (
-                    [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                    [(
+                        axum::http::header::CONTENT_TYPE,
+                        "text/plain; charset=utf-8",
+                    )],
                     body.to_string(),
                 )
                     .into_response();
@@ -101,12 +104,18 @@ pub async fn api_logs() -> impl IntoResponse {
     let offline_path = get_offline_log_path();
     match tokio::fs::read_to_string(&offline_path).await {
         Ok(content) => (
-            [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            )],
             content,
         )
             .into_response(),
         Err(e) => (
-            [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            )],
             format!(
                 "(Daemon is offline and could not read local log file '{}': {})",
                 offline_path, e
@@ -324,7 +333,10 @@ pub async fn api_conflicts() -> impl IntoResponse {
 pub async fn api_resolve_conflict(
     Json(payload): axum::Json<ResolveConflictRequest>,
 ) -> impl IntoResponse {
-    let cmd = format!("resolve_conflict {} {}", payload.rel_path, payload.resolution);
+    let cmd = format!(
+        "resolve_conflict {} {}",
+        payload.rel_path, payload.resolution
+    );
     match send_daemon_cmd(&cmd).await {
         Ok(raw) => {
             let trimmed = raw.trim();
@@ -402,4 +414,3 @@ mod tests {
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
     }
 }
-

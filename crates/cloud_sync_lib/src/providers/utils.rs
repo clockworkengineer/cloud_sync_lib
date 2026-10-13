@@ -599,7 +599,10 @@ pub async fn upload_dropbox_session(
 
     let start_url = format!("{}/upload_session/start", content_url);
     let start_res = apply_bearer_auth(client.post(&start_url), token)
-        .header("Dropbox-API-Arg", serde_json::to_string(&serde_json::json!({"close": false})).unwrap())
+        .header(
+            "Dropbox-API-Arg",
+            serde_json::to_string(&serde_json::json!({"close": false})).unwrap(),
+        )
         .header("Content-Type", "application/octet-stream")
         .header("Content-Length", chunk_data.len().to_string())
         .body(chunk_data)
@@ -667,7 +670,10 @@ pub async fn upload_dropbox_session(
     });
     if let Some(cm) = client_modified {
         if let Some(obj) = commit.as_object_mut() {
-            obj.insert("client_modified".to_string(), serde_json::Value::String(cm.to_string()));
+            obj.insert(
+                "client_modified".to_string(),
+                serde_json::Value::String(cm.to_string()),
+            );
         }
     }
 
@@ -680,7 +686,10 @@ pub async fn upload_dropbox_session(
     });
 
     let finish_res = apply_bearer_auth(client.post(&finish_url), token)
-        .header("Dropbox-API-Arg", serde_json::to_string(&finish_arg).unwrap())
+        .header(
+            "Dropbox-API-Arg",
+            serde_json::to_string(&finish_arg).unwrap(),
+        )
         .header("Content-Type", "application/octet-stream")
         .header("Content-Length", final_data.len().to_string())
         .body(final_data)
@@ -1147,7 +1156,9 @@ mod tests {
         let client = reqwest::Client::new();
         let session_url = format!("{}/createUploadSession", server.uri());
 
-        let res = upload_onedrive_session(&client, "token123", &session_url, &file_path, 1024, None).await;
+        let res =
+            upload_onedrive_session(&client, "token123", &session_url, &file_path, 1024, None)
+                .await;
         assert!(res.is_ok());
     }
 
@@ -1180,7 +1191,9 @@ mod tests {
         let client = reqwest::Client::new();
         let init_url = format!("{}/init_resumable", server.uri());
 
-        let res = upload_google_drive_resumable(&client, "token123", &init_url, &file_path, 2048, None).await;
+        let res =
+            upload_google_drive_resumable(&client, "token123", &init_url, &file_path, 2048, None)
+                .await;
         assert!(res.is_ok());
     }
 
@@ -1221,7 +1234,8 @@ mod tests {
             &file_path,
             512,
             None,
-        ).await;
+        )
+        .await;
         assert!(res.is_ok());
     }
 }
