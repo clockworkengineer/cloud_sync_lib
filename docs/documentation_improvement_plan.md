@@ -12,7 +12,7 @@ A comprehensive source code and documentation analysis was conducted across the 
 1. **Configurable Log Destinations**: Tracing appender configurable via `config.toml`, CLI `--log-file`, exposed via TCP (`get_log`), HTTP (`GET /api/logs`), and integrated into both desktop interfaces.
 2. **State Directory Isolation (`sync_state/`)**: Relocation of `.sync_state_*.bin` and `.bak` catalog databases out of the monitored watch directory into a dedicated folder (`sync_state`), with automatic startup migration.
 3. **Dual Frontend Interfaces**: Decoupled Axum Web UI (`cloud_sync_ui`) with SSE streaming and interactive conflict resolution, alongside a native immediate-mode desktop app (`cloud_sync_egui`) with embedded log viewers and OS editor launching.
-4. **Convenience Launchers**: Zero-console helper scripts (`launch_egui.cmd` and `launch_web_ui.cmd`) on Windows.
+4. **Convenience Launchers**: Zero-console helper scripts (`scripts/launch_egui.cmd` and `scripts/launch_web_ui.cmd`) on Windows.
 
 However, existing documentation does not fully reflect these capabilities, several crate README links in the root `README.md` are broken, and multiple crates lack dedicated documentation. This plan establishes the exact documents to create and modify.
 
@@ -59,7 +59,7 @@ However, existing documentation does not fully reflect these capabilities, sever
   - Application design: Dark theme styling, non-blocking Tokio runtime bridge, and decoupled TCP socket communication.
   - Feature walkthrough: System Status card, Operations Center, Storage Providers pill list, and embedded Log Viewer modal.
   - Windows windowless launching and external editor delegation (`powershell Start-Process` with Notepad fallback).
-  - How to run: `./launch_egui` or `cargo run --bin cloud_sync_egui`.
+  - How to run: `scripts\launch_egui.cmd` or `cargo run --bin cloud_sync_egui`.
 
 ### 2.3. Crate Documentation: `crates/cloud_sync_core/README.md`
 - **Purpose**: Document the foundational zero-dependency, `no_std`-compatible layer.
@@ -119,14 +119,14 @@ However, existing documentation does not fully reflect these capabilities, sever
 ### 3.1. `README.md`
 - **Modifications**:
   1. Fix broken markdown links in the **Workspace Structure** section (`crates/cloud_sync_ui/README.md`, `crates/cloud_sync_tauri/README.md`, etc.).
-  2. Add **Quick Launch** section showcasing `./launch_web_ui` and `./launch_egui`.
+  2. Add **Quick Launch** section showcasing `scripts\launch_web_ui.cmd` and `scripts\launch_egui.cmd`.
   3. Update **Key Features** to mention configurable logging, isolated state directory, and dual GUI frontends.
   4. Update **Configuration** section to demonstrate `log_file` and `state_directory` parameters.
   5. Add links to newly created documentation guides (`docs/logging_and_diagnostics.md`, `docs/state_and_storage.md`, `docs/troubleshooting.md`).
 
 ### 3.2. `docs/USER_GUIDE.md`
 - **Modifications**:
-  1. Add quick launch batch script instructions (`./launch_web_ui` and `./launch_egui`).
+  1. Add quick launch batch script instructions (`scripts\launch_web_ui.cmd` and `scripts\launch_egui.cmd`).
   2. Expand **Daemon Command Line Interface** section:
      - Document `--log-file <PATH>`.
      - Document `--state-dir <PATH>`.

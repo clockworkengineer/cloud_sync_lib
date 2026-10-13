@@ -55,7 +55,7 @@ It interacts directly with the daemon's TCP control socket (`127.0.0.1:8081`), p
 ### 4.1 Using the Zero-Console Windows Launcher (Recommended)
 From the workspace root, run:
 ```cmd
-launch_egui.cmd
+scripts\launch_egui.cmd
 ```
 
 ### 4.2 Using Cargo

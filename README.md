@@ -21,15 +21,15 @@ The workspace is split into modular crates:
 
 ## Quick Launch (Windows)
 
-For daily desktop use on Windows, zero-console batch scripts are provided in the workspace root:
+For daily desktop use on Windows, convenient launch scripts are provided in the `scripts/` directory:
 
 * **Launch Native Desktop App**:
   ```cmd
-  launch_egui.cmd
+  scripts\launch_egui.cmd
   ```
 * **Launch Web UI Dashboard**:
   ```cmd
-  launch_web_ui.cmd
+  scripts\launch_web_ui.cmd
   ```
 
 These scripts run precompiled binaries windowless via `wscript.exe` without visible command prompts, falling back smoothly to `cargo run` if binaries have not been compiled yet.
@@ -136,10 +136,10 @@ cargo run --bin cloud_sync_daemon
 ### 2. Launch the Desktop Frontends
 ```cmd
 # Native Egui Desktop GUI
-launch_egui.cmd
+scripts\launch_egui.cmd
 
 # Axum Web Dashboard
-launch_web_ui.cmd
+scripts\launch_web_ui.cmd
 ```
 
 ### 3. Run Workspace Tests

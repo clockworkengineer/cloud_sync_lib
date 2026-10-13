@@ -15,7 +15,7 @@
 [ Provider Shows [Simulated] ] [ Daemon Fails to Start ]    [ GUI Console Window Popup ]
        │                            │                            │
        ▼                            ▼                            ▼
-Missing / expired OAuth      Port 8081 / 8082 collision   Use launch_egui.cmd /
+Missing / expired OAuth      Port 8081 / 8082 collision   Use scripts/launch_egui.cmd /
 tokens or placeholder IDs.   or lock on config file.      launch_web_ui.cmd to
 See Section 2 & 3.           See Section 5.               run windowless. See Sec 4.
 ```
@@ -137,15 +137,15 @@ On Windows, Rust binaries compiled with the default `console` subsystem automati
    ```
 
 ### 4.3 Clean Zero-Console Launch Scripts
-To launch the user interfaces without visible background consoles, use the included Windows batch scripts from the workspace root:
+To launch the user interfaces without visible background consoles, use the included Windows batch scripts from the `scripts/` directory:
 
 * **Egui Desktop Client**:
   ```cmd
-  launch_egui.cmd
+  scripts\launch_egui.cmd
   ```
 * **Web UI Dashboard**:
   ```cmd
-  launch_web_ui.cmd
+  scripts\launch_web_ui.cmd
   ```
 
 These scripts check for existing compiled binaries in `target/release` or `target/debug` and launch them windowless using VBScript (`wscript.exe`), falling back cleanly to `cargo run` if binaries have not been compiled yet.

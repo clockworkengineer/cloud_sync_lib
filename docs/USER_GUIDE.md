@@ -11,8 +11,8 @@ The CloudSync suite contains 5 primary executable programs and convenient Window
 | Component | Description | Build / Run Command | Convenience Launcher |
 | :--- | :--- | :--- | :--- |
 | **`cloud_sync_daemon`** | Background sync engine with TCP socket interface | `cargo run --bin cloud_sync_daemon` | — |
-| **`cloud_sync_ui`** | Axum Web UI server (port 8082) with SSE dashboard | `cargo run --bin cloud_sync_ui` | `./launch_web_ui` (`launch_web_ui.cmd`) |
-| **`cloud_sync_egui`** | Native immediate-mode Egui desktop client | `cargo run --bin cloud_sync_egui` | `./launch_egui` (`launch_egui.cmd`) |
+| **`cloud_sync_ui`** | Axum Web UI server (port 8082) with SSE dashboard | `cargo run --bin cloud_sync_ui` | `scripts\launch_web_ui.cmd` |
+| **`cloud_sync_egui`** | Native immediate-mode Egui desktop client | `cargo run --bin cloud_sync_egui` | `scripts\launch_egui.cmd` |
 | **`cloud_sync_tauri`** | Cross-platform Tauri desktop wrapper shell | `cargo run -p cloud_sync_tauri` | `cargo tauri dev` |
 | **`cloud_sync_backup`** | Command-line client for one-off CLI backups | `cargo run --bin cloud_sync_backup` | — |
 
@@ -20,15 +20,15 @@ The CloudSync suite contains 5 primary executable programs and convenient Window
 
 ## 1. Quick Launch (Windows)
 
-For daily desktop use on Windows, zero-console batch scripts are provided in the workspace root:
+For daily desktop use on Windows, convenient launch scripts are provided in the `scripts/` directory:
 
 * **Launch Native Desktop GUI**:
   ```cmd
-  launch_egui.cmd
+  scripts\launch_egui.cmd
   ```
 * **Launch Web Dashboard**:
   ```cmd
-  launch_web_ui.cmd
+  scripts\launch_web_ui.cmd
   ```
 
 These scripts automatically locate precompiled release/debug binaries and launch them in the background using `wscript.exe` without visible command prompts. If binaries have not been compiled yet, they fall back smoothly to `cargo run`.
@@ -100,7 +100,7 @@ A web server running on port `8082` that serves an embedded management dashboard
 1. Start the UI server:
    ```powershell
    cargo run --bin cloud_sync_ui
-   # or run: ./launch_web_ui
+   # or run: scripts\launch_web_ui.cmd
    ```
 2. Open your web browser: [http://127.0.0.1:8082](http://127.0.0.1:8082).
 3. **Log Stream**: Click **📄 View Log** in the top navigation bar or navigate directly to `http://127.0.0.1:8082/api/logs` to view raw, timestamped daemon logs in your browser.
@@ -115,7 +115,7 @@ An immediate-mode desktop client built with `egui` and `eframe` that connects di
 ### Usage
 1. Launch the application:
    ```cmd
-   launch_egui.cmd
+   scripts\launch_egui.cmd
    # or: cargo run --bin cloud_sync_egui
    ```
 2. **Operations Center**: One-click buttons to Start, Stop, Pause, Resume, or trigger an immediate Sync.
