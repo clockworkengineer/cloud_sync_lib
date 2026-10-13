@@ -70,10 +70,10 @@ On Windows, these scripts run precompiled binaries windowless via `wscript.exe` 
 | Guide | Description |
 | :--- | :--- |
 | 📖 **[User Guide](docs/USER_GUIDE.md)** | Step-by-step instructions for running the daemon, Web UI, Egui app, and CLI commands. |
-| 🏗️ **[Architecture Guide](docs/architecture.md)** | Comprehensive architectural diagram, component interactions, and state flow. |
-| 📘 **[Logging & Diagnostics Guide](docs/logging_and_diagnostics.md)** | Tracing configuration, non-blocking file sinks, TCP/HTTP log endpoints, and Windows sharing lock handling. |
-| 🗄️ **[State Catalog & Storage Guide](docs/state_and_storage.md)** | 3-way synchronization algorithm, catalog isolation in `sync_state/`, atomic `.bak` crash recovery, and migration. |
-| 🛠️ **[Troubleshooting & Operations Guide](docs/troubleshooting.md)** | OAuth 2.0 token regeneration, resolving `[Simulated]` mode, port collisions, and database recovery. |
+| 🏗️ **[Architecture Guide](docs/ARCHITECTURE.md)** | Comprehensive architectural diagram, component interactions, and state flow. |
+| 📘 **[Logging & Diagnostics Guide](docs/LOGGING_AND_DIAGNOSTICS.md)** | Tracing configuration, non-blocking file sinks, TCP/HTTP log endpoints, and Windows sharing lock handling. |
+| 🗄️ **[State Catalog & Storage Guide](docs/STATE_AND_STORAGE.md)** | 3-way synchronization algorithm, catalog isolation in `sync_state/`, atomic `.bak` crash recovery, and migration. |
+| 🛠️ **[Troubleshooting & Operations Guide](docs/TROUBLESHOOTING.md)** | OAuth 2.0 token regeneration, resolving `[Simulated]` mode, port collisions, and database recovery. |
 
 ---
 
@@ -100,20 +100,20 @@ On Windows, these scripts run precompiled binaries windowless via `wscript.exe` 
    destination_folder = "MySyncFolder"
    ```
 3. **Follow API Setup Guides**:
-   * Refer to the [Google Drive API Setup Guide](docs/setup/google_drive_setup.md)
-   * Refer to the [Dropbox API Setup Guide](docs/setup/dropbox_setup.md)
-   * Refer to the [OneDrive API Setup Guide](docs/setup/onedrive_setup.md)
-   * Refer to the [Box API Setup Guide](docs/setup/box_setup.md)
-   * Refer to the [MEGA Setup Guide](docs/setup/mega_setup.md)
-   * Refer to the [WebDAV Setup Guide](docs/setup/webdav_setup.md)
-   * Refer to the [S3 Setup Guide](docs/setup/s3_setup.md)
-   * Refer to the [SFTP Setup Guide](docs/setup/sftp_setup.md)
-   * Refer to the [Nextcloud Setup Guide](docs/setup/nextcloud_setup.md)
-   * Refer to the [Azure Blob Storage Setup Guide](docs/setup/azure_blob_storage_setup.md)
-   * Refer to the [Google Cloud Storage Setup Guide](docs/setup/google_cloud_storage_setup.md)
-   * Refer to the [Backblaze B2 Setup Guide](docs/setup/backblaze_b2_setup.md)
-   * Refer to the [pCloud Setup Guide](docs/setup/pcloud_setup.md)
-   * Refer to the [IPFS Pinning Service Setup Guide](docs/setup/ipfs_pinning_service_setup.md)
+   * Refer to the [Google Drive API Setup Guide](docs/setup/GOOGLE_DRIVE_SETUP.md)
+   * Refer to the [Dropbox API Setup Guide](docs/setup/dropBOX_SETUP.md)
+   * Refer to the [OneDrive API Setup Guide](docs/setup/ONEDRIVE_SETUP.md)
+   * Refer to the [Box API Setup Guide](docs/setup/BOX_SETUP.md)
+   * Refer to the [MEGA Setup Guide](docs/setup/MEGA_SETUP.md)
+   * Refer to the [WebDAV Setup Guide](docs/setup/WEBDAV_SETUP.md)
+   * Refer to the [S3 Setup Guide](docs/setup/S3_SETUP.md)
+   * Refer to the [SFTP Setup Guide](docs/setup/SFTP_SETUP.md)
+   * Refer to the [Nextcloud Setup Guide](docs/setup/NEXTCLOUD_SETUP.md)
+   * Refer to the [Azure Blob Storage Setup Guide](docs/setup/AZURE_BLOB_STORAGE_SETUP.md)
+   * Refer to the [Google Cloud Storage Setup Guide](docs/setup/GOOGLE_CLOUD_STORAGE_SETUP.md)
+   * Refer to the [Backblaze B2 Setup Guide](docs/setup/BACKBLAZE_B2_SETUP.md)
+   * Refer to the [pCloud Setup Guide](docs/setup/PCLOUD_SETUP.md)
+   * Refer to the [IPFS Pinning Service Setup Guide](docs/setup/IPFS_PINNING_SERVICE_SETUP.md)
 
 4. **Automated OAuth Token Retrieval**:
    Run the Python helper scripts to retrieve and save refresh tokens:

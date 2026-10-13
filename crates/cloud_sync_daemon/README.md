@@ -129,9 +129,9 @@ When running, the daemon listens on `127.0.0.1:8081` (configurable via `CLOUDSYN
 
 ## 5. Related Documentation
 
-- [Logging & Diagnostics Guide](../../docs/logging_and_diagnostics.md)
-- [State Catalog & Storage Architecture](../../docs/state_and_storage.md)
-- [Troubleshooting & Operations Guide](../../docs/troubleshooting.md)
+- [Logging & Diagnostics Guide](../../docs/LOGGING_AND_DIAGNOSTICS.md)
+- [State Catalog & Storage Architecture](../../docs/STATE_AND_STORAGE.md)
+- [Troubleshooting & Operations Guide](../../docs/TROUBLESHOOTING.md)
 - [User Guide](../../docs/USER_GUIDE.md)
 
 ---

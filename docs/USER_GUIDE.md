@@ -184,7 +184,7 @@ max_download_rate = 0
 
 ## 7. Additional Technical Documentation
 
-- 📘 [Logging, Observability & Diagnostics Guide](logging_and_diagnostics.md)
-- 🗄️ [State Catalog & Storage Architecture Guide](state_and_storage.md)
-- 🛠️ [Troubleshooting & Operations Playbook](troubleshooting.md)
-- 🏗️ [Architecture Specification](architecture.md)
+- 📘 [Logging, Observability & Diagnostics Guide](LOGGING_AND_DIAGNOSTICS.md)
+- 🗄️ [State Catalog & Storage Architecture Guide](STATE_AND_STORAGE.md)
+- 🛠️ [Troubleshooting & Operations Playbook](TROUBLESHOOTING.md)
+- 🏗️ [Architecture Specification](ARCHITECTURE.md)

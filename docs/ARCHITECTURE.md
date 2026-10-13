@@ -150,7 +150,7 @@ All storage backends implement the `StorageBackend` trait defined in [`cloud_syn
 
 ## 8. Related Architectural References
 
-- 📘 [Logging & Diagnostics Architecture](logging_and_diagnostics.md)
-- 🗄️ [State Catalog & Storage Architecture](state_and_storage.md)
-- 🛠️ [Troubleshooting & Operations Guide](troubleshooting.md)
+- 📘 [Logging & Diagnostics Architecture](LOGGING_AND_DIAGNOSTICS.md)
+- 🗄️ [State Catalog & Storage Architecture](STATE_AND_STORAGE.md)
+- 🛠️ [Troubleshooting & Operations Guide](TROUBLESHOOTING.md)
 - 📖 [User Guide](USER_GUIDE.md)
