@@ -579,6 +579,7 @@ pub async fn upload_google_drive_resumable(
 }
 
 /// Uploads large files to Dropbox via multi-part upload sessions (/upload_session/start, append_v2, finish).
+#[allow(clippy::too_many_arguments)]
 pub async fn upload_dropbox_session(
     client: &reqwest::Client,
     token: &str,

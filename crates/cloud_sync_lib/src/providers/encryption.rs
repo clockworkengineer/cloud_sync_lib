@@ -305,7 +305,7 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
                 // Deduct encryption framing overhead
                 if item.size >= 29 {
                     let body_size = item.size - 29;
-                    let num_chunks = (body_size + 65557 - 1) / 65557;
+                    let num_chunks = body_size.div_ceil(65557);
                     let overhead = 29 + num_chunks * 21;
                     item.size = item.size.saturating_sub(overhead);
                 } else {
