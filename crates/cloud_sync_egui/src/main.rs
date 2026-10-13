@@ -140,6 +140,23 @@ impl CloudSyncApp {
                 }
             }
 
+            if daemon_bin_path.is_none() {
+                let candidate = std::path::Path::new("target")
+                    .join("debug")
+                    .join(daemon_exe_name);
+                if candidate.exists() {
+                    daemon_bin_path = Some(candidate);
+                }
+            }
+            if daemon_bin_path.is_none() {
+                let candidate = std::path::Path::new("target")
+                    .join("release")
+                    .join(daemon_exe_name);
+                if candidate.exists() {
+                    daemon_bin_path = Some(candidate);
+                }
+            }
+
             let mut cmd = if let Some(bin_path) = daemon_bin_path {
                 let mut c = std::process::Command::new(bin_path);
                 c.arg(&config_file);
@@ -156,6 +173,17 @@ impl CloudSyncApp {
             if let Ok(ui_addr) = std::env::var("CLOUDSYNC_UI_ADDR") {
                 cmd.args(["--ui-addr", &ui_addr]);
             }
+
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                cmd.creation_flags(CREATE_NO_WINDOW);
+            }
+
+            cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .stdin(std::process::Stdio::null());
 
             let res = cmd.spawn();
 

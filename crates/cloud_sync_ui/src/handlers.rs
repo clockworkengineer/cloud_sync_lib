@@ -90,6 +90,22 @@ pub async fn api_start() -> impl IntoResponse {
             daemon_bin_path = Some(path.to_path_buf());
         }
     }
+    if daemon_bin_path.is_none() {
+        let candidate = std::path::Path::new("target")
+            .join("debug")
+            .join(daemon_exe_name);
+        if candidate.exists() {
+            daemon_bin_path = Some(candidate);
+        }
+    }
+    if daemon_bin_path.is_none() {
+        let candidate = std::path::Path::new("target")
+            .join("release")
+            .join(daemon_exe_name);
+        if candidate.exists() {
+            daemon_bin_path = Some(candidate);
+        }
+    }
 
     let mut cmd = if let Some(bin_path) = daemon_bin_path {
         println!("Spawning daemon binary: {:?}", bin_path);
@@ -114,6 +130,11 @@ pub async fn api_start() -> impl IntoResponse {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .stdin(Stdio::null());
+
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000);
+    }
 
     match cmd.spawn() {
         Ok(_) => {
