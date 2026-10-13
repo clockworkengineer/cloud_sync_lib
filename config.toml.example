@@ -12,6 +12,7 @@ b2_root = ""
 pcloud_root = ""
 ipfs_root = ""
 log_file = "daemon.log"
+state_directory = "sync_state"
 
 [google_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"

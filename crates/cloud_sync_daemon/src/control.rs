@@ -214,8 +214,8 @@ pub async fn handle_control_command(
             let backend_details_json = serde_json::to_string(&backend_details).unwrap_or_else(|_| "[]".to_string());
 
             format!(
-                "Status: OK\nPaused: {}\nWatch Directory: \"{}\"\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSimulated Backends: {:?}\nBackend Details: {}\nSyncing: {}\nWeb UI Address: {}\nLog File: \"{}\"\n",
-                s.paused, clean_watch_dir, s.config_file, backend_names, failed_backends, simulated_backends, backend_details_json, s.syncing, s.ui_addr.as_deref().unwrap_or("-"), s.log_file
+                "Status: OK\nPaused: {}\nWatch Directory: \"{}\"\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSimulated Backends: {:?}\nBackend Details: {}\nSyncing: {}\nWeb UI Address: {}\nLog File: \"{}\"\nState Directory: \"{}\"\n",
+                s.paused, clean_watch_dir, s.config_file, backend_names, failed_backends, simulated_backends, backend_details_json, s.syncing, s.ui_addr.as_deref().unwrap_or("-"), s.log_file, s.state_dir.display()
             )
         }
         "get_log" | "log" => {
@@ -279,6 +279,7 @@ pub async fn handle_control_command(
             } else {
                 s.syncing = true;
                 let watch_dir = s.watch_dir.clone();
+                let state_dir = s.state_dir.clone();
                 let backends = s.backends.clone();
                 let gitignore = s.gitignore.clone();
                 let max_concurrency = s.max_concurrency;
@@ -296,8 +297,12 @@ pub async fn handle_control_command(
                             .name()
                             .to_lowercase()
                             .replace(" ", "_");
-                        let state_filename = format!(".sync_state_{}.bin", safe_name);
-                        let state_file_path = watch_dir.join(state_filename);
+                        let state_file_path = crate::sync_engine::resolve_state_file_path(
+                            &state_dir,
+                            &watch_dir,
+                            &safe_name,
+                        )
+                        .await;
                         if let Err(e) = crate::sync_engine::sync_bidirectional(
                             &watch_dir,
                             active_backend.backend.clone(),

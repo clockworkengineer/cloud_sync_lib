@@ -74,6 +74,8 @@ pub struct DaemonState {
     pub conflict_manager: crate::engine::conflict::ConflictManager,
     /// Path of the active log file.
     pub log_file: String,
+    /// Directory where synchronization state databases are stored.
+    pub state_dir: PathBuf,
 }
 
 #[allow(dead_code)]
@@ -320,6 +322,7 @@ pub fn build_backends(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let raw_args: Vec<String> = std::env::args().collect();
     let mut cli_log_file = None;
+    let mut cli_state_dir: Option<PathBuf> = None;
     let mut config_file = if std::path::Path::new("private_config.toml").exists() {
         "private_config.toml".to_string()
     } else if std::path::Path::new("config.toml").exists() {
@@ -382,6 +385,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             i += 2;
         } else if raw_args[i] == "--exclude" && i + 1 < raw_args.len() {
             cli_excludes.push(raw_args[i + 1].clone());
+            i += 2;
+        } else if (raw_args[i] == "--state-dir" || raw_args[i] == "--state-directory")
+            && i + 1 < raw_args.len()
+        {
+            cli_state_dir = Some(PathBuf::from(&raw_args[i + 1]));
             i += 2;
         } else if raw_args[i].ends_with(".log") {
             cli_log_file = Some(raw_args[i].clone());
@@ -468,6 +476,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let watch_dir = fs::canonicalize(&config.watch_directory).await?;
     info!("Watching directory: {:?}", watch_dir);
 
+    // Resolve sync state directory (CLI arg > config file > default "sync_state")
+    let state_dir = cli_state_dir
+        .or_else(|| config.state_directory.clone())
+        .unwrap_or_else(|| PathBuf::from("sync_state"));
+    let _ = fs::create_dir_all(&state_dir).await;
+    info!("Sync state directory: {:?}", state_dir);
+    sync_engine::migrate_legacy_state_files(&watch_dir, &state_dir).await;
+
     // Initialize gitignore matcher
     let mut final_excludes = config.exclude.clone().unwrap_or_default();
     final_excludes.extend(cli_excludes);
@@ -517,8 +533,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .name()
                 .to_lowercase()
                 .replace(" ", "_");
-            let state_filename = format!(".sync_state_{}.bin", safe_name);
-            let state_file_path = watch_dir.join(state_filename);
+            let state_file_path =
+                sync_engine::resolve_state_file_path(&state_dir, &watch_dir, &safe_name).await;
             info!("Syncing backend: {}", active_backend.backend.name());
             if let Err(e) = sync_engine::sync_bidirectional(
                 &watch_dir,
@@ -605,6 +621,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         watch_dir: watch_dir.clone(),
         config_file: config_file.clone(),
         log_file: clean_log_path,
+        state_dir: state_dir.clone(),
         syncing: false,
         ui_addr,
         gitignore,
@@ -783,8 +800,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .name()
                     .to_lowercase()
                     .replace(" ", "_");
-                let state_filename = format!(".sync_state_{}.bin", safe_name);
-                let state_file_path = watch_dir.join(state_filename);
+                let state_file_path =
+                    sync_engine::resolve_state_file_path(&state_dir, &watch_dir, &safe_name).await;
                 if let Err(e) = sync_engine::sync_bidirectional(
                     &watch_dir,
                     active_backend.backend.clone(),

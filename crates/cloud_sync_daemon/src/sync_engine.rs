@@ -1343,6 +1343,59 @@ fn is_path_selected(rel_path: &str, selective_sync: &Option<Vec<String>>) -> boo
     }
 }
 
+/// Migrates any legacy `.sync_state` files found inside the watched directory to the dedicated `state_dir`.
+pub async fn migrate_legacy_state_files(watch_dir: &Path, state_dir: &Path) {
+    let _ = tokio::fs::create_dir_all(state_dir).await;
+    if let Ok(mut entries) = tokio::fs::read_dir(watch_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let file_name = entry.file_name();
+            let name_str = file_name.to_string_lossy();
+            if name_str.starts_with(".sync_state") {
+                let target_path = state_dir.join(&file_name);
+                if !target_path.exists() {
+                    let _ = tokio::fs::rename(entry.path(), &target_path).await;
+                } else {
+                    let _ = tokio::fs::remove_file(entry.path()).await;
+                }
+            }
+        }
+    }
+}
+
+/// Resolves the synchronization state database file path for a backend inside the designated `state_dir`.
+/// Also migrates any legacy state file found in `watch_dir`.
+pub async fn resolve_state_file_path(
+    state_dir: &Path,
+    watch_dir: &Path,
+    safe_name: &str,
+) -> std::path::PathBuf {
+    let _ = tokio::fs::create_dir_all(state_dir).await;
+    let state_filename = format!(".sync_state_{}.bin", safe_name);
+    let state_file_path = state_dir.join(&state_filename);
+    let old_state_path = watch_dir.join(&state_filename);
+
+    if old_state_path.exists() {
+        if !state_file_path.exists() {
+            let _ = tokio::fs::rename(&old_state_path, &state_file_path).await;
+        } else {
+            let _ = tokio::fs::remove_file(&old_state_path).await;
+        }
+    }
+
+    let bak_filename = format!(".sync_state_{}.bak", safe_name);
+    let old_bak_path = watch_dir.join(&bak_filename);
+    let bak_file_path = state_dir.join(&bak_filename);
+    if old_bak_path.exists() {
+        if !bak_file_path.exists() {
+            let _ = tokio::fs::rename(&old_bak_path, &bak_file_path).await;
+        } else {
+            let _ = tokio::fs::remove_file(&old_bak_path).await;
+        }
+    }
+
+    state_file_path
+}
+
 /// Main entry point for performing a bidirectional synchronization step.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub async fn sync_bidirectional(

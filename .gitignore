@@ -22,3 +22,5 @@ watched_folder/*
 cloud_simulation/*
 .vscode/settings.json
 *.log
+sync_state/
+**/sync_state/
