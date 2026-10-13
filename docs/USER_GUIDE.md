@@ -6,124 +6,167 @@ This guide describes how to configure, run, and interact with the various compon
 
 ## Workspace Executable Overview
 
-The CloudSync suite contains 5 primary executable programs:
+The CloudSync suite contains 5 primary executable programs and convenient Windows launch scripts:
 
-| Crate Name | Description | Build Command |
-| :--- | :--- | :--- |
-| **`cloud_sync_daemon`** | Background sync engine daemon with TCP control interface | `cargo build --bin cloud_sync_daemon` |
-| **`cloud_sync_ui`** | Axum Web UI server (port 8082) with SSE live dashboard | `cargo build --bin cloud_sync_ui` |
-| **`cloud_sync_tauri`** | Cross-platform Tauri desktop wrapper shell | `cargo build -p cloud_sync_tauri` |
-| **`cloud_sync_egui`** | Lightweight native Egui desktop application interface | `cargo build --bin cloud_sync_egui` |
-| **`cloud_sync_backup`** | Command-line client for executing one-off sync backups | `cargo build --bin cloud_sync_backup` |
+| Component | Description | Build / Run Command | Convenience Launcher |
+| :--- | :--- | :--- | :--- |
+| **`cloud_sync_daemon`** | Background sync engine with TCP socket interface | `cargo run --bin cloud_sync_daemon` | — |
+| **`cloud_sync_ui`** | Axum Web UI server (port 8082) with SSE dashboard | `cargo run --bin cloud_sync_ui` | `./launch_web_ui` (`launch_web_ui.cmd`) |
+| **`cloud_sync_egui`** | Native immediate-mode Egui desktop client | `cargo run --bin cloud_sync_egui` | `./launch_egui` (`launch_egui.cmd`) |
+| **`cloud_sync_tauri`** | Cross-platform Tauri desktop wrapper shell | `cargo run -p cloud_sync_tauri` | `cargo tauri dev` |
+| **`cloud_sync_backup`** | Command-line client for one-off CLI backups | `cargo run --bin cloud_sync_backup` | — |
 
 ---
 
-## 1. `cloud_sync_daemon` (Core Service)
+## 1. Quick Launch (Windows)
 
-The daemon runs continuously in the background, listening to local file changes and executing periodic pulls from remote backends.
+For daily desktop use on Windows, zero-console batch scripts are provided in the workspace root:
+
+* **Launch Native Desktop GUI**:
+  ```cmd
+  launch_egui.cmd
+  ```
+* **Launch Web Dashboard**:
+  ```cmd
+  launch_web_ui.cmd
+  ```
+
+These scripts automatically locate precompiled release/debug binaries and launch them in the background using `wscript.exe` without visible command prompts. If binaries have not been compiled yet, they fall back smoothly to `cargo run`.
+
+---
+
+## 2. `cloud_sync_daemon` (Core Service)
+
+The daemon runs continuously in the background, watching local files for modifications and executing periodic reconciliation against remote cloud backends.
 
 ### Command Line Interface
 ```powershell
-# Start the daemon using default config.toml
+# Start using default config.toml / private_config.toml
 cargo run --bin cloud_sync_daemon
 
 # Start using a custom configuration path
 cargo run --bin cloud_sync_daemon -- my_config.toml
 
-# Run in single-shot mode (synchronize once and exit immediately)
+# Specify a custom log destination
+cargo run --bin cloud_sync_daemon -- --log-file C:\Logs\cloud_sync.log
+
+# Specify a custom isolated state directory (default: sync_state)
+cargo run --bin cloud_sync_daemon -- --state-dir custom_state_dir
+
+# Run in single-shot mode (synchronize once across all backends and exit)
 cargo run --bin cloud_sync_daemon -- --single-shot
 
-# Override conflict resolution policy (choices: rename-local, rename-remote, overwrite, keep-local, keep-remote)
-cargo run --bin cloud_sync_daemon -- --conflict-policy overwrite
+# Override conflict resolution policy (newer_wins, keep_local, keep_remote, manual)
+cargo run --bin cloud_sync_daemon -- --conflict-policy newer_wins
 
 # Perform a dry-run (simulates sync without modifying local or remote files)
 cargo run --bin cloud_sync_daemon -- --dry-run
 
-# Specify directories to exclude from sync
+# Specify file patterns to exclude from synchronization
 cargo run --bin cloud_sync_daemon -- --exclude "*.tmp" --exclude "build/"
 ```
 
 ### TCP Control Protocol
-The daemon listens on TCP port `127.0.0.1:8081` for control commands. You can interact with it using `nc`, `telnet`, or custom scripts:
-- `status`: Returns status overview, active backends, current sync state, and error logs.
-- `pause`: Temporarily halts background folder monitoring.
-- `resume`: Re-enables background sync operations.
-- `sync`: Triggers an immediate full bidirectional sync.
-- `clear <ProviderName>`: Deletes all files on the specified provider (e.g. `clear MEGA`).
-- `subscribe`: Holds the connection open to stream real-time JSON sync events.
+The daemon listens on TCP port `127.0.0.1:8081` (configurable via `CLOUDSYNC_DAEMON_ADDR`). You can interact with it using text commands via PowerShell, `netcat`, or custom scripts:
+
+```powershell
+# Send a command using PowerShell
+$client = New-Object System.Net.Sockets.TcpClient("127.0.0.1", 8081)
+$stream = $client.GetStream()
+$writer = New-Object System.IO.StreamWriter($stream)
+$reader = New-Object System.IO.StreamReader($stream)
+$writer.WriteLine("status")
+$writer.Flush()
+$reader.ReadToEnd()
+$client.Close()
+```
+
+Supported TCP commands:
+- `status`: Returns running status, watch directory, log file, state directory, active backends, and current transfer activity.
+- `get_log`: Streams the full content of the active log file over the socket.
+- `sync`: Triggers an immediate bidirectional synchronization pass.
+- `pause`: Temporarily halts filesystem event monitoring and scheduled sync passes.
+- `resume`: Re-enables automated background synchronization.
+- `reload`: Hot-reloads configuration files and reinitializes storage backends.
 - `stop`: Gracefully terminates the background daemon.
 
 ---
 
-## 2. `cloud_sync_ui` (Web Dashboard)
+## 3. `cloud_sync_ui` (Web Dashboard)
 
-A web server running on port `8082` that serves a premium dashboard displaying transfer speeds, active files, and log outputs.
+A web server running on port `8082` that serves an embedded management dashboard with live transfer status, conflict resolution, and log inspection.
 
 ### Usage
 1. Start the UI server:
    ```powershell
    cargo run --bin cloud_sync_ui
+   # or run: ./launch_web_ui
    ```
-2. Open your web browser and navigate to: [http://127.0.0.1:8082](http://127.0.0.1:8082).
-3. The dashboard automatically connects to the background daemon using Server-Sent Events (SSE) to update progress bars and log streams in real-time.
+2. Open your web browser: [http://127.0.0.1:8082](http://127.0.0.1:8082).
+3. **Log Stream**: Click **📄 View Log** in the top navigation bar or navigate directly to `http://127.0.0.1:8082/api/logs` to view raw, timestamped daemon logs in your browser.
+4. **Conflicts Card**: If concurrent modifications occur, inspect file differences and click **Keep Local** or **Keep Remote** to resolve collisions interactively.
 
 ---
 
-## 3. `cloud_sync_tauri` (Desktop Application)
+## 4. `cloud_sync_egui` (Native Desktop App)
 
-An HTML/CSS/JS webview application compiled as a standalone native desktop program wrapping the `cloud_sync_ui` dashboard.
+An immediate-mode desktop client built with `egui` and `eframe` that connects directly to the daemon's TCP socket.
 
 ### Usage
-- Run in development mode:
-   ```powershell
-   cargo tauri dev
+1. Launch the application:
+   ```cmd
+   launch_egui.cmd
+   # or: cargo run --bin cloud_sync_egui
    ```
+2. **Operations Center**: One-click buttons to Start, Stop, Pause, Resume, or trigger an immediate Sync.
+3. **Log Viewer**: Click **Logs** to open the in-app log viewer modal with auto-scroll and live refresh. Click **Open in External Editor** to open the log file directly in your system's default text editor without file-locking conflicts.
+4. **Provider Pills**: View real-time provider connectivity (`Active`, `Simulated`, or `Failed`).
 
 ---
 
-## 4. `cloud_sync_egui` (Native GUI)
+## 5. `cloud_sync_tauri` (Desktop Application)
 
-A lightweight GUI interface built using `egui` and `eframe` that interacts directly with the daemon's TCP socket.
+An HTML/CSS/JS webview wrapper for the `cloud_sync_ui` dashboard compiled into an OS native application with system tray and sidecar daemon management.
 
-### Usage
-- Start the egui application:
-   ```powershell
-   cargo run --bin cloud_sync_egui
-   ```
-
----
-
-## 5. `cloud_sync_backup` (CLI Backup Client)
-
-A dedicated command-line interface helper intended for automated cron jobs or one-off CLI terminal backups.
-
-### Usage
 ```powershell
-# Perform a backup scan using default config
-cargo run --bin cloud_sync_backup
+cargo run -p cloud_sync_tauri
+# Or in development mode:
+cargo tauri dev
 ```
 
 ---
 
-## Advanced Configurations (`config.toml`)
+## 6. Configuration Guide (`config.toml` / `private_config.toml`)
 
-You can customize advanced features directly inside your `config.toml` file:
+Configure global synchronization options under the `[sync]` table:
+
+```toml
+[sync]
+watch_directory = "watched_folder"
+interval_seconds = 30
+conflict_policy = "newer_wins"
+
+# Configurable log file output path
+log_file = "daemon.log"
+
+# Dedicated directory for state catalogs (isolated from watch_directory)
+state_directory = "sync_state"
+```
 
 ### Selective Synchronization
-Sync only specific folders/paths for a backend by adding `selective_sync` to the provider credentials table:
+Sync only specific folders/paths for a backend:
 ```toml
-[mega_credentials]
+[providers.dropbox]
 enabled = true
-sync_mode = "two-way"
 destination_folder = "MySyncFolder"
-# Only sync "Photos" and "Documents/Work" sub-directories
-selective_sync = ["Photos", "Documents/Work"]
+# Only sync "Photos" and "Documents" sub-directories
+selective_sync = ["Photos", "Documents"]
 ```
 
 ### Dynamic Bandwidth Scheduler
 Schedule rate limit profiles by time of day:
 ```toml
-# Throttle bandwidth to 100KB/s during office hours
+# Throttle bandwidth during office hours (09:00 - 17:00)
 [[bandwidth_schedule]]
 start_time = "09:00"
 end_time = "17:00"
@@ -138,11 +181,11 @@ max_upload_rate = 0
 max_download_rate = 0
 ```
 
-### Exponential Backoff & Error Recovery
-Configure network retry parameters:
-```toml
-[error_recovery]
-max_retries = 5           # Max retry attempts before failing
-initial_delay_ms = 500    # Initial backoff wait in milliseconds
-multiplier = 2.0          # Wait multiplier per consecutive failure
-```
+---
+
+## 7. Additional Technical Documentation
+
+- 📘 [Logging, Observability & Diagnostics Guide](logging_and_diagnostics.md)
+- 🗄️ [State Catalog & Storage Architecture Guide](state_and_storage.md)
+- 🛠️ [Troubleshooting & Operations Playbook](troubleshooting.md)
+- 🏗️ [Architecture Specification](architecture.md)

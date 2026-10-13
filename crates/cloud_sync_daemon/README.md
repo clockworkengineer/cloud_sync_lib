@@ -1,111 +1,138 @@
 # `cloud_sync_daemon`
 
-A background CLI daemon that watches a local folder and automatically synchronizes all changes (creations, edits, deletions) to enabled cloud storage providers.
+A robust background synchronization daemon that watches local folders and orchestrates parallel 3-way synchronization across multiple cloud storage providers.
 
 ---
 
-## How It Works
+## 1. Overview & How It Works
 
-1. **Monitors Filesystem Events**: Uses the `notify` crate to watch a configured local folder.
-2. **Debounces Event Bursts**: Prevents duplicate uploads for rapid modification events.
-3. **Synchronizes Parallelly**: Spawns concurrent asynchronous tasks to upload/delete files on each active cloud backend.
-4. **Handles Offline Fallback**: Safely defaults to local directory simulation if a backend's credentials are not configured.
-5. **Path Traversal Sanitization**: Rejects and skips any remote path containing relative traversal sequences (such as `..`, `./`, or starting with `/`) to protect local folder integrity during sync cycles.
+1. **Filesystem Event Observation**: Monitors local directories using the `notify` cross-platform filesystem watcher.
+2. **Debounced Reconciliation**: Coalesces rapid filesystem event bursts to prevent duplicate transfers during large writes or unzips.
+3. **State Catalog Isolation**: Maintains 3-way state catalogs (`.sync_state_<backend>.bin` and `.bak`) inside an isolated `sync_state/` directory to prevent watcher loops and cloud pollution.
+4. **Non-Blocking Observability**: Emits tracing events to stdout and an asynchronous, non-blocking file sink (`daemon.log`), queryable via TCP `get_log` and HTTP `/api/logs`.
+5. **Decoupled TCP Control Socket**: Listens on `127.0.0.1:8081` for external orchestration by `cloud_sync_ui` and `cloud_sync_egui`.
+6. **Graceful Fallback**: Automatically switches to in-memory/disk simulation mode if provider credentials are placeholder or absent.
+7. **Security & Path Hygiene**: Rejects and sanitizes relative path traversal attempts (`..`, `./`, or absolute path injections).
 
 ---
 
-## Configuration
+## 2. Command Line Interface (CLI)
 
-The daemon reads configuration from a TOML file (e.g. `private_config.toml`):
+```bash
+cargo run --bin cloud_sync_daemon -- [CONFIG_FILE] [OPTIONS]
+```
+
+### CLI Arguments & Options
+| Argument / Flag | Description | Default |
+| :--- | :--- | :--- |
+| `[CONFIG_FILE]` | Path to configuration TOML file. | `private_config.toml` (if exists), else `config.toml` |
+| `--log-file <PATH>` | Custom path for the active log sink. | `"daemon.log"` (or config value) |
+| `--state-dir <PATH>` | Custom directory for `.sync_state` catalogs. | `"sync_state"` (or config value) |
+| `--single-shot` | Executes one complete sync cycle across all backends and exits immediately. | `false` |
+| `--dry-run` | Performs reconciliation and logs planned actions without modifying local or remote files. | `false` |
+| `--conflict-policy <POL>` | Overrides conflict resolution policy: `newer_wins`, `keep_local`, `keep_remote`, `manual`. | From config |
+| `--exclude <PATTERN>` | Additional glob patterns to exclude from synchronization. | None |
+| `--pmu-hook` | Enables low-level Hardware Performance Monitoring Unit sync telemetry. | `false` |
+
+---
+
+## 3. Configuration Reference
+
+The daemon reads configuration from TOML (e.g., `config.toml` or `private_config.toml`):
 
 ```toml
+[sync]
 watch_directory = "./watched_folder"
-google_drive_root = "./cloud_simulation/google_drive"
-dropbox_root = "./cloud_simulation/dropbox"
-onedrive_root = "./cloud_simulation/onedrive"
-webdav_root = "./cloud_simulation/webdav"
-s3_root = "./cloud_simulation/s3"
-sftp_root = "./cloud_simulation/sftp"
-nextcloud_root = "./cloud_simulation/nextcloud"
+interval_seconds = 30
+conflict_policy = "newer_wins"
 
-[google_credentials]
+# Configurable log file output path
+log_file = "daemon.log"
+
+# Dedicated directory for state catalogs (isolated from watch_directory)
+state_directory = "sync_state"
+
+# Storage provider credentials
+[providers.google_drive]
+enabled = true
 client_id = "..."
 client_secret = "..."
 refresh_token = "..."
 destination_folder = "MySyncFolder"
-enabled = true
 
-[dropbox_credentials]
+[providers.dropbox]
+enabled = true
 client_id = "..."
 client_secret = "..."
 refresh_token = "..."
 destination_folder = "MySyncFolder"
-enabled = true
 
-[onedrive_credentials]
+[providers.onedrive]
+enabled = true
 client_id = "..."
 client_secret = "..."
 refresh_token = "..."
 destination_folder = "MySyncFolder"
-enabled = true
 
-[webdav_credentials]
+[providers.box]
+enabled = true
+client_id = "..."
+client_secret = "..."
+refresh_token = "..."
+destination_folder = "MySyncFolder"
+
+[providers.webdav]
+enabled = false
 url = "http://127.0.0.1:8080"
 username = "..."
 password = "..."
-destination_folder = "MySyncFolder"
-enabled = true
 
-[s3_credentials]
-bucket = "..."
+[providers.s3]
+enabled = false
+bucket = "my-bucket"
 region = "us-east-1"
 access_key_id = "..."
 secret_access_key = "..."
 endpoint = "http://127.0.0.1:9000"
-destination_folder = "MySyncFolder"
-enabled = true
 
-[sftp_credentials]
+[providers.sftp]
+enabled = false
 host = "127.0.0.1"
 port = 22
 username = "..."
 password = "..."
-private_key_path = ""
-destination_folder = "MySyncFolder"
-enabled = true
 
-[nextcloud_credentials]
+[providers.nextcloud]
+enabled = false
 url = "http://127.0.0.1:8080"
 username = "..."
 app_password = "..."
-destination_folder = "MySyncFolder"
-enabled = true
-
-[box_credentials]
-client_id = "..."
-client_secret = "..."
-refresh_token = "..."
-destination_folder = "MySyncFolder"
-enabled = true
-
-[mega_credentials]
-email = "..."
-password = "..."
-destination_folder = "MySyncFolder"
-enabled = true
 ```
 
 ---
 
-## Enabling / Disabling Backends
+## 4. TCP Socket Control Protocol
 
-You can easily enable or disable individual backends inside your credentials blocks using the `enabled` key:
-* **`enabled = true`** (or omitting the field): The backend is active. If credentials are correct, it syncs to the cloud; otherwise, it logs errors.
-* **`enabled = false`**: Bypasses the backend completely. The provider is not initialized, and no sync attempts are made.
+When running, the daemon listens on `127.0.0.1:8081` (configurable via `CLOUDSYNC_DAEMON_ADDR`). You can interact with it using text commands:
 
-Under the hood, the daemon uses unified helper functions (like `is_enabled` and `is_mega_enabled`) to deduplicate config verification. This prevents redundant pattern matching and config checking before initializing each provider instance.
+| Command | Response | Description |
+| :--- | :--- | :--- |
+| `status` | Formatted multi-line text | Reports running state, watch directory, log file, state dir, active providers, and sync progress. |
+| `get_log` | `Status: OK\nLog File: "..."\n\n<content>` | Streams the current contents of the active log file. |
+| `sync` | `Status: OK` | Initiates an immediate reconciliation pass across all backends. |
+| `pause` | `Status: OK` | Pauses filesystem watcher events and scheduled sync cycles. |
+| `resume` | `Status: OK` | Resumes automated synchronization. |
+| `reload` | `Status: OK` | Reloads configuration files and reinitializes storage backends. |
+| `stop` | `Status: OK` | Signals the daemon to shut down cleanly. |
 
-If a credentials section is omitted entirely, the daemon defaults to **Simulation Mode** for that provider, synchronizing to a folder inside the local directory.
+---
+
+## 5. Related Documentation
+
+- [Logging & Diagnostics Guide](../../docs/logging_and_diagnostics.md)
+- [State Catalog & Storage Architecture](../../docs/state_and_storage.md)
+- [Troubleshooting & Operations Guide](../../docs/troubleshooting.md)
+- [User Guide](../../docs/USER_GUIDE.md)
 
 ---
 
@@ -114,6 +141,3 @@ If a credentials section is omitted entirely, the daemon defaults to **Simulatio
 If you find this project useful, consider supporting its development:
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
-
-[Buy Me a Coffee](https://buymeacoffee.com/roberttizz1)
-

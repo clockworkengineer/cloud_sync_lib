@@ -1,22 +1,38 @@
 # Cloud Sync Workspace
 
-This workspace is a Rust-based tool designed to monitor a local watched folder and synchronize file additions, modifications, and deletions in real-time across multiple cloud storage backends.
+A high-performance, modular Rust workspace designed to watch local folders and synchronize file additions, modifications, and deletions in real-time across multiple cloud storage providers with 3-way synchronization, catalog isolation, and end-to-end observability.
 
 ---
 
 ## Workspace Structure
 
-The workspace is split into several modular components:
-1. **[`cloud_sync_lib`](crates/cloud_sync_lib/README.md)**: The core library providing backend integrations, path prefix formatting, simulated/mocked behaviors, client-side encryption, rate limiting, and the generic `StorageBackend` trait.
-2. **[`cloud_sync_daemon`](crates/cloud_sync_daemon/README.md)**: The CLI daemon wrapper that watches a folder for filesystem events and coordinates synchronization across all enabled backends.
-3. **[`cloud_sync_ui`](crates/cloud_sync_ui/README.md)**: A lightweight Axum-based HTTP server exposing API endpoints to monitor/control the daemon, serving an embedded web dashboard.
-4. **[`cloud_sync_tauri`](crates/cloud_sync_tauri/README.md)**: A Tauri-based desktop GUI application that bundles the web UI and manages the daemon as a sidecar.
-5. **[`cloud_sync_backup`](crates/cloud_sync_backup/README.md)**: A background daemon that periodically performs unidirectional synchronization (one-way backups) from a source storage provider to a destination storage provider.
-6. **[`cloud_sync_egui`](crates/cloud_sync_egui)**: A native, immediate-mode GUI client using egui/eframe.
-7. **[`cloud_sync_core`](crates/cloud_sync_core)**: Minimal core data structures, error types, and storage traits usable in `no_std` environments.
-8. **[`cloud_sync_std`](crates/cloud_sync_std)**: Common standard utilities, checksum calculators, and `.syncignore` parsers.
+The workspace is split into modular crates:
 
-For a detailed look at component interactions, design decisions, and system diagrams, refer to the **[Workspace Architecture Guide](docs/architecture.md)**.
+1. **[`cloud_sync_lib`](crates/cloud_sync_lib/README.md)**: Core provider client integrations, client-side encryption, rate limiting, and backend factories.
+2. **[`cloud_sync_daemon`](crates/cloud_sync_daemon/README.md)**: Background CLI service watching local directories, managing 3-way state catalogs, and exposing TCP control interfaces.
+3. **[`cloud_sync_ui`](crates/cloud_sync_ui/README.md)**: Axum-based HTTP web server and REST/SSE API gateway serving an embedded management dashboard.
+4. **[`cloud_sync_egui`](crates/cloud_sync_egui/README.md)**: Native GPU-accelerated immediate-mode desktop GUI built on `egui` and `eframe`.
+5. **[`cloud_sync_tauri`](crates/cloud_sync_tauri/README.md)**: Tauri 2.0 cross-platform desktop shell wrapping the Web UI and managing daemon sidecars.
+6. **[`cloud_sync_backup`](crates/cloud_sync_backup/README.md)**: Unidirectional periodic backup client for one-off CLI or cron-based jobs.
+7. **[`cloud_sync_core`](crates/cloud_sync_core/README.md)**: Zero-dependency, `no_std`-compatible storage traits (`StorageBackend`), domain data types, and path security.
+8. **[`cloud_sync_std`](crates/cloud_sync_std/README.md)**: Standard library helpers, asynchronous checksum hashers (`compute_sha256`, `compute_md5`), and Ripgrep-based `SyncIgnore` engine.
+
+---
+
+## Quick Launch (Windows)
+
+For daily desktop use on Windows, zero-console batch scripts are provided in the workspace root:
+
+* **Launch Native Desktop App**:
+  ```cmd
+  launch_egui.cmd
+  ```
+* **Launch Web UI Dashboard**:
+  ```cmd
+  launch_web_ui.cmd
+  ```
+
+These scripts run precompiled binaries windowless via `wscript.exe` without visible command prompts, falling back smoothly to `cargo run` if binaries have not been compiled yet.
 
 ---
 
@@ -25,14 +41,14 @@ For a detailed look at component interactions, design decisions, and system diag
 * **Google Drive**: Full REST API v3 integration with folders support.
 * **Dropbox**: Full API v2 integration with custom prefix folders support.
 * **OneDrive**: Microsoft Graph REST API integration.
-* **Box**: Custom app integration via OAuth 2.0 with access token rotation/caching and auto-persistence.
+* **Box**: Custom app integration via OAuth 2.0 with token rotation and persistence.
 * **MEGA**: Client-side encrypted sync utilizing the `mega` library.
 * **WebDAV**: Sync to WebDAV-compliant servers.
-* **Amazon S3**: AWS S3 or S3-compatible backend storage (like MinIO) sync.
+* **Amazon S3**: AWS S3 or S3-compatible backend storage (e.g., MinIO).
 * **SFTP**: Secure File Transfer Protocol sync.
 * **Nextcloud**: Sync to Nextcloud instances via WebDAV & OCS APIs.
 * **Azure Blob Storage**: Sync to Azure Storage container.
-* **Google Cloud Storage (GCS)**: Google Cloud Storage bucket sync utilizing service account credentials.
+* **Google Cloud Storage (GCS)**: Bucket sync utilizing service account credentials.
 * **Backblaze B2**: Backblaze B2 Cloud Storage sync.
 * **pCloud**: pCloud storage synchronization via OAuth2 access tokens.
 * **IPFS**: InterPlanetary File System sync utilizing pinning services (e.g., Pinata).
@@ -41,22 +57,50 @@ For a detailed look at component interactions, design decisions, and system diag
 
 ## Key Features
 
-* **Two-Way Synchronization**: Supports both unidirectional (local-to-remote) and bidirectional syncing, including automated local renaming (`*.local-conflict`) for conflict resolution.
-* **Client-Side Zero-Knowledge Encryption**: Optional client-side AES-256-GCM encryption of file payloads before uploading, with automatic decryption on download. Derived keys are hardened using PBKDF2-HMAC-SHA256.
-* **Bandwidth Rate-Limiting**: Flexible upload and download bandwidth limiting using a Token Bucket implementation.
-* **Cross-Platform Auto-Launch**: Automatically configures the desktop application (which spawns both the UI and background sync daemon) to start on system boot across Windows, macOS, and Linux.
+* **3-Way Synchronization**: Evaluates base catalog snapshot, local disk state, and remote cloud state to execute deterministic updates and handle collisions.
+* **State Catalog Isolation**: Keeps `.sync_state_<backend>.bin` and `.bak` catalog files in an isolated `sync_state/` directory, eliminating filesystem watcher loops and accidental cloud pollution.
+* **Configurable Logging & Observability**: Non-blocking `tracing-appender` file sink (`daemon.log`), queryable via TCP `get_log`, HTTP `GET /api/logs`, or desktop modal log viewers.
+* **Dual GUI Frontends**: Run either the decoupled Axum web dashboard (`cloud_sync_ui`) in any browser or the native desktop GUI (`cloud_sync_egui`).
+* **Client-Side Zero-Knowledge Encryption**: Optional client-side AES-256-GCM encryption of file payloads before uploading, with automatic decryption on download. Keys derived via PBKDF2-HMAC-SHA256.
+* **Bandwidth Rate-Limiting**: Flexible upload and download bandwidth ceilings using a Token Bucket implementation.
+* **Automated Legacy Migration**: Automatically discovers and moves older `.sync_state` databases from watched folders into `sync_state/` on startup.
+
+---
+
+## Documentation Guides
+
+| Guide | Description |
+| :--- | :--- |
+| 📖 **[User Guide](docs/USER_GUIDE.md)** | Step-by-step instructions for running the daemon, Web UI, Egui app, and CLI commands. |
+| 🏗️ **[Architecture Guide](docs/architecture.md)** | Comprehensive architectural diagram, component interactions, and state flow. |
+| 📘 **[Logging & Diagnostics Guide](docs/logging_and_diagnostics.md)** | Tracing configuration, non-blocking file sinks, TCP/HTTP log endpoints, and Windows sharing lock handling. |
+| 🗄️ **[State Catalog & Storage Guide](docs/state_and_storage.md)** | 3-way synchronization algorithm, catalog isolation in `sync_state/`, atomic `.bak` crash recovery, and migration. |
+| 🛠️ **[Troubleshooting & Operations Guide](docs/troubleshooting.md)** | OAuth 2.0 token regeneration, resolving `[Simulated]` mode, port collisions, and database recovery. |
 
 ---
 
 ## Setup & Configuration
 
-1. **Create Configuration**: Copy the template configuration file to a private file:
+1. **Create Configuration**: Copy the template configuration file:
    ```bash
    cp config.toml.example config.toml
    ```
-2. **Add Credentials**: Open `config.toml` and configure your API credentials and toggles:
-   * By default, any backend without credentials falls back to a local folder simulation.
-   * Toggle any backend on/off using the `enabled = true/false` parameter under its credentials block.
+2. **Configure General & Provider Settings**:
+   ```toml
+   [sync]
+   watch_directory = "watched_folder"
+   interval_seconds = 30
+   conflict_policy = "newer_wins"
+   log_file = "daemon.log"
+   state_directory = "sync_state"
+
+   [providers.google_drive]
+   enabled = true
+   client_id = "..."
+   client_secret = "..."
+   refresh_token = "..."
+   destination_folder = "MySyncFolder"
+   ```
 3. **Follow API Setup Guides**:
    * Refer to the [Google Drive API Setup Guide](docs/setup/google_drive_setup.md)
    * Refer to the [Dropbox API Setup Guide](docs/setup/dropbox_setup.md)
@@ -74,34 +118,34 @@ For a detailed look at component interactions, design decisions, and system diag
    * Refer to the [IPFS Pinning Service Setup Guide](docs/setup/ipfs_pinning_service_setup.md)
 
 4. **Automated OAuth Token Retrieval**:
-   For backends requiring OAuth 2.0 (Google Drive, Dropbox, OneDrive, Box), you can easily generate and save refresh tokens by running the provided Python helper scripts after entering your `client_id` and `client_secret` in `config.toml`:
-   * **Google Drive**: `python3 scripts/get_refresh_token.py`
-   * **Dropbox**: `python3 scripts/get_dropbox_token.py`
-   * **OneDrive**: `python3 scripts/get_onedrive_token.py`
-   * **Box**: `python3 scripts/get_box_token.py`
+   Run the Python helper scripts to retrieve and save refresh tokens:
+   * **Google Drive**: `python scripts/get_refresh_token.py`
+   * **Dropbox**: `python scripts/get_dropbox_token.py`
+   * **OneDrive**: `python scripts/get_onedrive_token.py`
+   * **Box**: `python scripts/get_box_token.py`
 
 ---
 
-## Execution
+## Running the Applications
 
-### Run the Daemon
-Start the synchronization daemon by passing the configuration path:
+### 1. Start the Sync Daemon
 ```bash
-cargo run --bin cloud_sync_daemon -- config.toml
+cargo run --bin cloud_sync_daemon
 ```
 
-### Run the Backup Daemon
-Start the backup daemon by passing the backup configuration path:
-```bash
-cargo run --bin cloud_sync_backup -- backup_config.toml
+### 2. Launch the Desktop Frontends
+```cmd
+# Native Egui Desktop GUI
+launch_egui.cmd
+
+# Axum Web Dashboard
+launch_web_ui.cmd
 ```
 
-### Run Workspace Tests
-Run unit, mock HTTP (using `wiremock`), and real integration tests:
+### 3. Run Workspace Tests
 ```bash
 cargo test --workspace --all-targets
 ```
-*Note: Real connection tests automatically detect whether valid credentials are configured and skip gracefully if they are missing or expired.*
 
 ---
 
@@ -110,5 +154,3 @@ cargo test --workspace --all-targets
 If you find this project useful, consider supporting its development:
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
-
-[Buy Me a Coffee](https://buymeacoffee.com/roberttizz1)

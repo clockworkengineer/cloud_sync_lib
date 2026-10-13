@@ -1,96 +1,156 @@
 # Workspace Architecture
 
-This document describes the modular architecture of the Cloud Sync workspace, detailing the interaction between the Tauri desktop app, the decoupled Axum Web UI, the `cloud_sync_daemon`, `cloud_sync_lib`, and the individual cloud storage backends.
+This document describes the modular architecture of the Cloud Sync workspace, detailing the interaction between the desktop interfaces (`cloud_sync_egui`, `cloud_sync_tauri`), the decoupled Axum Web UI (`cloud_sync_ui`), the background daemon (`cloud_sync_daemon`), the isolated state catalog, the non-blocking logging pipeline, and the storage backend provider libraries.
 
 ---
 
 ## High-Level Architecture Diagram
 
-The diagram below outlines the synchronization flow, TCP control sockets, HTTP endpoints, and modular structure of the workspace:
-
 ```mermaid
 graph TD
-    subgraph cloud_sync_tauri [cloud_sync_tauri - Tauri Desktop GUI]
-        tauri_main[main.rs] -->|spawn sidecar| daemon_bin[cloud_sync_daemon process]
-        tauri_main -->|spawn task| ui_server[Axum HTTP UI Server]
-        tauri_main -->|register startup| auto_launch[auto-launch registry/plist]
+    subgraph UI_Clients [Frontend User Interfaces]
+        egui_app[cloud_sync_egui - Native eframe GUI]
+        tauri_app[cloud_sync_tauri - Native Desktop Shell]
+        web_dashboard[Web Dashboard - Browser SPA]
     end
 
-    subgraph cloud_sync_ui [cloud_sync_ui - Axum Web UI Backend]
-        ui_server -->|serve index.html| web_dashboard[Web GUI Dashboard]
-        web_dashboard -->|HTTP POST/GET| ui_handlers[Axum Handlers]
-        ui_handlers -->|TCP Socket Status/Control| daemon_socket[Daemon TCP Control Socket]
+    subgraph cloud_sync_ui [cloud_sync_ui - Decoupled Axum Gateway :8082]
+        ui_server[Axum HTTP & SSE Server]
+        ui_logs[GET /api/logs Handler]
+        ui_events[GET /api/events SSE]
+        ui_handlers[Control & Conflict Handlers]
     end
 
-    subgraph cloud_sync_daemon [cloud_sync_daemon - CLI / Background Service]
-        daemon_socket -->|commands| control_loop[control::handle_control_command]
-        main[main.rs] -->|config| load_config[load_or_create_config]
-        main -->|watcher| notify[notify event loop]
-        notify -->|events| handle_event[handle_event dispatcher]
-        handle_event -->|sync tasks| sync_engine[sync_engine::sync_single_file]
+    subgraph cloud_sync_daemon [cloud_sync_daemon - Background Core Service :8081]
+        daemon_socket[TCP Control Listener :8081]
+        control_loop[control::handle_control_command]
+        main_loop[Watcher & Scheduler Loop]
+        sync_engine[3-Way sync_engine]
+        tracing_appender[tracing-appender Non-blocking Worker]
     end
 
-    subgraph cloud_sync_lib [cloud_sync_lib - Core Library]
-        sync_engine -->|Registry Factory| registry[BackendRegistry]
-        registry -->|StorageBackend Trait| enc_wrapper[EncryptedBackend AES-256-GCM Wrapper]
-        enc_wrapper -->|TokenBucket Rate Limiter| providers[All Storage Providers]
-        
-        providers -->|Auth absent| local_sim[LocalSimulation Fallback]
-        providers -->|Auth present| real_api[Real Cloud API REST Calls]
-        
-        providers -->|OAuth Token Refresh| utils[utils::refresh_oauth2_token]
+    subgraph File_System [Local Filesystem & State Isolation]
+        watched_dir[(watched_folder/ - User Files)]
+        state_dir[(sync_state/ - Isolated Catalogs)]
+        log_sink[(daemon.log - Active Log File)]
     end
 
-    subgraph Storage [Storage Destinations]
-        local_sim -->|fs::copy| sim_dirs[Local Simulation Folders]
-        real_api -->|HTTPS / SSH / WebDAV| cloud_storage[Cloud Storage / SFTP / IPFS]
+    subgraph cloud_sync_lib [cloud_sync_lib - Core Engine & Providers]
+        registry[BackendRegistry Factory]
+        enc_wrapper[EncryptedBackend AES-256-GCM]
+        rate_limiter[TokenBucket Rate Limiter]
+        providers[Storage Backends: Google Drive, Dropbox, OneDrive, Box, S3, etc.]
+        fallback[FallbackProvider / Simulation]
     end
+
+    subgraph Remote_Cloud [Cloud Storage Endpoints]
+        cloud_apis[Cloud REST APIs / WebDAV / SFTP]
+    end
+
+    %% UI Connections
+    egui_app -->|TCP Socket Commands & Logs| daemon_socket
+    tauri_app -->|Spawns Sidecar & Embeds| ui_server
+    web_dashboard -->|HTTP REST & SSE| ui_server
+    ui_handlers -->|TCP Socket Tunnelling| daemon_socket
+    ui_logs -->|get_log / Direct Read| daemon_socket
+
+    %% Daemon Internals
+    daemon_socket --> control_loop
+    control_loop --> sync_engine
+    main_loop --> sync_engine
+    sync_engine <-->|Read / Write User Files| watched_dir
+    sync_engine <-->|Persist .bin & .bak Catalogs| state_dir
+    main_loop -->|Emit Log Events| tracing_appender
+    tracing_appender -->|Flush Records| log_sink
+
+    %% Sync Engine to Library
+    sync_engine --> registry
+    registry --> enc_wrapper
+    enc_wrapper --> rate_limiter
+    rate_limiter --> providers
+    providers -->|Valid OAuth Credentials| cloud_apis
+    providers -->|Placeholder / Offline| fallback
 ```
 
 ---
 
 ## Core Components
 
-### 1. `cloud_sync_tauri`
-- **Application Entry Point**: Boots the desktop application framework, launching both the background Axum UI server and the daemon process as a Tauri sidecar wrapper.
-- **Sidecar Lifecycle**: Controls startup and shutdown of the daemon sidecar process.
-- **Auto-Launch Hook**: Integrates with system startup managers (Registry on Windows, LaunchAgents on macOS, and Autostart Desktop entries on Linux) to automatically start the sync utility on boot.
+### 1. `cloud_sync_egui` (Native Desktop Client)
+- **Immediate-Mode Desktop GUI**: Built using `egui 0.27` and `eframe`, executing at native GPU-accelerated framerates.
+- **Asynchronous Tokio Bridge**: Offloads network socket traffic and log retrieval to a decoupled Tokio background threadpool.
+- **Diagnostics & Operations**: Features status badges, operations center (Start, Stop, Pause, Resume, Sync, Reload), in-app modal log viewer, and OS text editor launching without file-sharing locks.
+- **Windowless Windows Subsystem**: Compiles with `#![windows_subsystem = "windows"]` and `CREATE_NO_WINDOW` flags to eliminate console windows.
 
-### 2. `cloud_sync_ui`
-- **Decoupled API Server**: An Axum HTTP server running on port `8082`. It exposes HTTP endpoints (such as `/api/status`, `/api/start`, `/api/pause`, `/api/sync`, `/api/stop`) and tunnels commands to the daemon's TCP control socket.
-- **Embedded Web Dashboard**: Hosts and serves an interactive dashboard user interface built inside a single page (`index.html`).
+### 2. `cloud_sync_ui` (Decoupled Axum Gateway)
+- **Decoupled API Server**: An Axum HTTP server running on port `8082`. Translates REST endpoints (`/api/status`, `/api/start`, `/api/pause`, `/api/sync`, `/api/stop`, `/api/conflicts/resolve`) into TCP socket commands for the daemon.
+- **Embedded Web Dashboard**: Compiles frontend assets (`index.html`, CSS, JS) directly into the binary.
+- **Plaintext Log Stream**: Exposes `/api/logs` which queries the daemon via `get_log` or falls back to reading the local disk log if the daemon is offline.
+- **Server-Sent Events (SSE)**: Streams live file synchronization telemetry to connected browser clients at `/api/events`.
 
-### 3. `cloud_sync_daemon`
-- **Configuration Parsing**: Reads and validates `private_config.toml` (parsed into `AppConfig`). Sets up global rates and backend-specific parameters.
-- **File System Monitoring**: Utilizes the `notify` crate to watch for file system additions, modifications, and deletions.
-- **TCP Control Socket**: Binds to port `8081` for receiving control commands (start, stop, pause, resume, sync, status, reload, etc.).
-- **Synchronization Engine**:
-   - Performs local/remote directory scans to build state maps.
-   - Implements **Two-Way Synchronization**: compares file metadata, checksums, and modification times.
-   - Handles conflicts by renaming the local conflict copy to `*.local-conflict` and uploading it while downloading the remote version.
-   - Features verification loops (3-attempt retries verifying file integrity via SHA-256 checksums).
-   - Sanitizes remote files during scanning to drop relative traversal sequences (`..`), securing the directory boundary.
+### 3. `cloud_sync_tauri` (Cross-Platform Desktop Shell)
+- **Application Wrapper**: Wraps the `cloud_sync_ui` web dashboard in a native desktop window framework.
+- **Sidecar Lifecycle**: Automatically spawns and supervises `cloud_sync_daemon` as a managed sidecar child process with argument forwarding.
+- **Auto-Launch Persistence**: Automatically registers the application to start on OS boot via the `auto-launch` crate.
 
-### 4. `cloud_sync_lib`
-- **`StorageBackend` Trait**: The core interface defined in [`traits.rs`](../crates/cloud_sync_core/src/traits.rs). It guarantees consistent APIs (`upload`, `download`, `delete`, `list`, `create_folder`) for all providers.
-- **`BackendRegistry`**: Factory wrapper allowing dynamic instantiation of storage providers by matching configuration enums.
-- **Provider Clients**:
-   - [`google_drive.rs`](../crates/cloud_sync_lib/src/providers/google_drive.rs): Google Drive API v3 (paginated listing).
-   - [`dropbox.rs`](../crates/cloud_sync_lib/src/providers/dropbox.rs): Dropbox API v2 (paginated listing).
-   - [`onedrive.rs`](../crates/cloud_sync_lib/src/providers/onedrive.rs): Microsoft Graph API for OneDrive (paginated listing).
-   - [`box_provider.rs`](../crates/cloud_sync_lib/src/providers/box_provider.rs): Box OAuth2 API.
-   - [`mega_provider.rs`](../crates/cloud_sync_lib/src/providers/mega_provider.rs): MEGA client API.
-   - [`azure_blob.rs`](../crates/cloud_sync_lib/src/providers/azure_blob.rs): Azure Blob Storage.
-   - [`gcs.rs`](../crates/cloud_sync_lib/src/providers/gcs.rs): Google Cloud Storage.
-   - [`b2.rs`](../crates/cloud_sync_lib/src/providers/b2.rs): Backblaze B2 (paginated listing).
-   - [`pcloud.rs`](../crates/cloud_sync_lib/src/providers/pcloud.rs): pCloud.
-   - [`ipfs.rs`](../crates/cloud_sync_lib/src/providers/ipfs.rs): IPFS pinning service.
-   - [`s3.rs`](../crates/cloud_sync_lib/src/providers/s3.rs): S3-compatible API.
-   - [`sftp.rs`](../crates/cloud_sync_lib/src/providers/sftp.rs): SFTP Client.
-   - [`webdav.rs`](../crates/cloud_sync_lib/src/providers/webdav.rs): WebDAV Client.
-   - [`nextcloud.rs`](../crates/cloud_sync_lib/src/providers/nextcloud.rs): Nextcloud-specific WebDAV & OCS client.
-- **Feature Wrappers & Helpers**:
-   - [`encryption.rs`](../crates/cloud_sync_lib/src/providers/encryption.rs): `EncryptedBackend` decorator that adds client-side AES-256-GCM zero-knowledge encryption. Keys are derived via PBKDF2-HMAC-SHA256, and temporary file handles on Unix are restricted to `0600` permissions.
-   - [`rate_limit.rs`](../crates/cloud_sync_lib/src/rate_limit.rs): `TokenBucket` rate limiter for imposing bandwidth ceilings on uploads/downloads.
-   - [`local_sim.rs`](../crates/cloud_sync_lib/src/providers/local_sim.rs): Local simulation backend (`LocalSimulation`) acting as fallback when API credentials are absent.
-   - [`utils.rs`](../crates/cloud_sync_lib/src/providers/utils.rs): Unified OAuth2 refresh exchanges, error parsing mappings, and retry-after logic.
+### 4. `cloud_sync_daemon` (Core Service)
+- **Configuration Parsing**: Reads and validates `config.toml` or `private_config.toml` into `AppConfig`.
+- **Filesystem Event Monitoring**: Employs the `notify` crate to detect additions, modifications, and deletions in the watched directory.
+- **TCP Control Socket**: Listens on port `8081` for control commands (`status`, `get_log`, `sync`, `pause`, `resume`, `reload`, `stop`).
+- **3-Way Synchronization Engine**: Evaluates Base snapshot ($B$), Local ($L$), and Remote ($R$) states to execute non-ambiguous uploads, downloads, and deletions.
+
+---
+
+## 5. State Management & Catalog Isolation
+
+To prevent watcher recursion, directory clutter, and accidental cloud uploads, synchronization catalogs are isolated from user files:
+
+```
+cloud_sync_lib/
+├── sync_state/                        <-- Dedicated state directory
+│   ├── .sync_state_Google_Drive.bin    <-- Active binary catalog (bincode)
+│   └── .sync_state_Google_Drive.bak    <-- Atomic write crash backup
+└── watched_folder/                     <-- Clean user directory
+    └── documents/
+```
+
+- **Separation of Concerns**: User documents remain clean and untainted by hidden internal metadata files.
+- **Watcher Protection**: Writing state updates never triggers false-positive modification events in `notify`.
+- **Two-Phase Atomic Commit**: State files are saved with `.bak` backups and temporary atomic renames to prevent corruption during unexpected shutdowns.
+- **Startup Migration**: Older `.sync_state` databases found in `watch_directory` are automatically discovered and migrated into `sync_state/` on daemon boot.
+
+---
+
+## 6. Observability & Logging Architecture
+
+The daemon implements a dual-sink, non-blocking observability architecture:
+
+- **Stdout Sink**: Colorized terminal output for interactive developer runs.
+- **Non-Blocking File Sink**: Managed by `tracing_appender::rolling::never`, piping tracing events through an asynchronous worker thread to disk (`daemon.log`).
+- **Multi-Interface Access**:
+  - Direct file inspection via `tail` or PowerShell `Get-Content`.
+  - Daemon TCP command: `get_log`.
+  - Axum REST endpoint: `GET /api/logs`.
+  - Native modal in `cloud_sync_egui` with external editor integration.
+
+---
+
+## 7. Storage Backend Providers (`cloud_sync_lib`)
+
+All storage backends implement the `StorageBackend` trait defined in [`cloud_sync_core`](../crates/cloud_sync_core/README.md):
+
+- **Cloud APIs**: Google Drive, Dropbox, Microsoft OneDrive, Box, Backblaze B2, pCloud, AWS S3, Azure Blob, Google Cloud Storage, MEGA, IPFS.
+- **Network Protocols**: WebDAV, Nextcloud (WebDAV + OCS), SFTP.
+- **Feature Wrappers**:
+  - `EncryptedBackend`: Zero-knowledge client-side AES-256-GCM encryption with PBKDF2 key derivation.
+  - `TokenBucket`: Bandwidth rate limiter for download/upload ceilings.
+  - `FallbackProvider`: In-memory and directory simulation fallback when credentials are absent or invalid.
+
+---
+
+## 8. Related Architectural References
+
+- 📘 [Logging & Diagnostics Architecture](logging_and_diagnostics.md)
+- 🗄️ [State Catalog & Storage Architecture](state_and_storage.md)
+- 🛠️ [Troubleshooting & Operations Guide](troubleshooting.md)
+- 📖 [User Guide](USER_GUIDE.md)
