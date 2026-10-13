@@ -215,10 +215,29 @@ impl CloudSyncApp {
         {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x08000000;
-            let _ = std::process::Command::new("cmd")
-                .args(["/c", "start", "", path])
+
+            let absolute_path = std::path::Path::new(path);
+            let full_path = if absolute_path.is_relative() {
+                if let Ok(cwd) = std::env::current_dir() {
+                    cwd.join(path)
+                } else {
+                    absolute_path.to_path_buf()
+                }
+            } else {
+                absolute_path.to_path_buf()
+            };
+
+            let script = format!("Start-Process -FilePath '{}'", full_path.display());
+            let res = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
                 .creation_flags(CREATE_NO_WINDOW)
                 .spawn();
+
+            if res.is_err() {
+                let _ = std::process::Command::new("notepad.exe")
+                    .arg(&full_path)
+                    .spawn();
+            }
         }
         #[cfg(not(target_os = "windows"))]
         {
