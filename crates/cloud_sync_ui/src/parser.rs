@@ -19,6 +19,7 @@ pub fn parse_status(raw: &str) -> serde_json::Value {
     let mut backend_details = json!([]);
     let mut syncing = false;
     let mut web_ui_address = String::new();
+    let mut log_file = String::new();
 
     for line in raw.lines() {
         if line.starts_with("Paused: ") {
@@ -84,6 +85,11 @@ pub fn parse_status(raw: &str) -> serde_json::Value {
             let addr = addr.strip_prefix('"').unwrap_or(addr);
             let addr = addr.strip_suffix('"').unwrap_or(addr);
             web_ui_address = addr.to_string();
+        } else if line.starts_with("Log File: ") {
+            let file = line.trim_start_matches("Log File: ").trim();
+            let file = file.strip_prefix('"').unwrap_or(file);
+            let file = file.strip_suffix('"').unwrap_or(file);
+            log_file = file.to_string();
         }
     }
 
@@ -97,6 +103,7 @@ pub fn parse_status(raw: &str) -> serde_json::Value {
         "backend_details": backend_details,
         "syncing": syncing,
         "web_ui_address": web_ui_address,
+        "log_file": log_file,
     })
 }
 
@@ -107,7 +114,7 @@ mod tests {
     /// Tests that the daemon TCP response parser maps raw lines correctly to a JSON status payload.
     #[test]
     fn test_parse_status() {
-        let raw_status = "Status: OK\nPaused: false\nWatch Directory: \"/watch/dir\"\nConfig File: \"private.toml\"\nActive Backends: [\"Google Drive\",\"Dropbox\"]\nFailed Backends: [\"Google Drive\"]\nSimulated Backends: [\"Google Drive\"]\nSyncing: false\nWeb UI Address: \"127.0.0.1:8082\"\n";
+        let raw_status = "Status: OK\nPaused: false\nWatch Directory: \"/watch/dir\"\nConfig File: \"private.toml\"\nActive Backends: [\"Google Drive\",\"Dropbox\"]\nFailed Backends: [\"Google Drive\"]\nSimulated Backends: [\"Google Drive\"]\nSyncing: false\nWeb UI Address: \"127.0.0.1:8082\"\nLog File: \"daemon.log\"\n";
         let parsed = parse_status(raw_status);
         assert_eq!(parsed["paused"], false);
         assert_eq!(parsed["watch_directory"], "/watch/dir");
@@ -126,5 +133,6 @@ mod tests {
         );
         assert_eq!(parsed["syncing"], false);
         assert_eq!(parsed["web_ui_address"], "127.0.0.1:8082");
+        assert_eq!(parsed["log_file"], "daemon.log");
     }
 }

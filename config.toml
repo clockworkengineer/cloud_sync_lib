@@ -11,6 +11,7 @@ gcs_root = ""
 b2_root = ""
 pcloud_root = ""
 ipfs_root = ""
+log_file = "daemon.log"
 
 [google_credentials]
 client_id = "PLACEHOLDER_CLIENT_ID"

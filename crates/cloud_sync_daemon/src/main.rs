@@ -72,6 +72,8 @@ pub struct DaemonState {
     pub event_tx: tokio::sync::broadcast::Sender<String>,
     /// Manager for tracking and resolving pending conflicts interactively.
     pub conflict_manager: crate::engine::conflict::ConflictManager,
+    /// Path of the active log file.
+    pub log_file: String,
 }
 
 #[allow(dead_code)]
@@ -317,50 +319,7 @@ pub fn build_backends(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let raw_args: Vec<String> = std::env::args().collect();
-    let mut log_file_path = None;
-    let mut args = Vec::new();
-    if !raw_args.is_empty() {
-        args.push(raw_args[0].clone());
-    }
-    let mut i = 1;
-    while i < raw_args.len() {
-        if (raw_args[i] == "--log-file" || raw_args[i] == "--log") && i + 1 < raw_args.len() {
-            log_file_path = Some(raw_args[i + 1].clone());
-            i += 2;
-        } else if raw_args[i].ends_with(".log") {
-            log_file_path = Some(raw_args[i].clone());
-            i += 1;
-        } else {
-            args.push(raw_args[i].clone());
-            i += 1;
-        }
-    }
-
-    // Initialize logging
-    let mut _log_guard = None;
-    if let Some(path) = log_file_path {
-        let path = std::path::PathBuf::from(path);
-        let directory = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-        let file_name = path
-            .file_name()
-            .unwrap_or_else(|| std::ffi::OsStr::new("daemon.log"))
-            .to_string_lossy()
-            .to_string();
-        let file_appender = tracing_appender::rolling::daily(directory, file_name);
-        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
-        _log_guard = Some(guard);
-
-        tracing_subscriber::registry()
-            .with(fmt::layer().with_writer(non_blocking))
-            .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-            .init();
-    } else {
-        tracing_subscriber::registry()
-            .with(fmt::layer())
-            .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-            .init();
-    }
-
+    let mut cli_log_file = None;
     let mut config_file = if std::path::Path::new("private_config.toml").exists() {
         "private_config.toml".to_string()
     } else if std::path::Path::new("config.toml").exists() {
@@ -380,27 +339,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cli_excludes = Vec::new();
 
     let mut i = 1;
-    while i < args.len() {
-        if args[i] == "--ui-addr" && i + 1 < args.len() {
-            ui_addr = Some(args[i + 1].clone());
+    while i < raw_args.len() {
+        if (raw_args[i] == "--log-file" || raw_args[i] == "--log") && i + 1 < raw_args.len() {
+            cli_log_file = Some(raw_args[i + 1].clone());
             i += 2;
-        } else if args[i] == "--control-addr" && i + 1 < args.len() {
-            control_addr = args[i + 1].clone();
+        } else if raw_args[i] == "--ui-addr" && i + 1 < raw_args.len() {
+            ui_addr = Some(raw_args[i + 1].clone());
             i += 2;
-        } else if args[i] == "--clear-remote" && i + 1 < args.len() {
-            clear_remote = Some(args[i + 1].clone());
+        } else if raw_args[i] == "--control-addr" && i + 1 < raw_args.len() {
+            control_addr = raw_args[i + 1].clone();
             i += 2;
-        } else if args[i] == "--single-shot" || args[i] == "-s" {
+        } else if raw_args[i] == "--clear-remote" && i + 1 < raw_args.len() {
+            clear_remote = Some(raw_args[i + 1].clone());
+            i += 2;
+        } else if raw_args[i] == "--single-shot" || raw_args[i] == "-s" {
             single_shot = true;
             i += 1;
-        } else if args[i] == "--pmu-hook" && i + 1 < args.len() {
-            pmu_hook = Some(args[i + 1].clone());
+        } else if raw_args[i] == "--pmu-hook" && i + 1 < raw_args.len() {
+            pmu_hook = Some(raw_args[i + 1].clone());
             i += 2;
-        } else if args[i] == "--dry-run" {
+        } else if raw_args[i] == "--dry-run" {
             cli_dry_run = true;
             i += 1;
-        } else if args[i] == "--conflict-policy" && i + 1 < args.len() {
-            let policy_str = args[i + 1].clone();
+        } else if raw_args[i] == "--conflict-policy" && i + 1 < raw_args.len() {
+            let policy_str = raw_args[i + 1].clone();
             let policy = match policy_str.as_str() {
                 "rename-local" => cloud_sync_lib::ConflictPolicy::RenameLocal,
                 "rename-remote" => cloud_sync_lib::ConflictPolicy::RenameRemote,
@@ -409,7 +371,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "keep-remote" => cloud_sync_lib::ConflictPolicy::KeepRemote,
                 "manual" => cloud_sync_lib::ConflictPolicy::Manual,
                 _ => {
-                    error!(
+                    eprintln!(
                         "Unknown conflict policy: '{}'. Using RenameLocal.",
                         policy_str
                     );
@@ -418,26 +380,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             cli_conflict_policy = Some(policy);
             i += 2;
-        } else if args[i] == "--exclude" && i + 1 < args.len() {
-            cli_excludes.push(args[i + 1].clone());
+        } else if raw_args[i] == "--exclude" && i + 1 < raw_args.len() {
+            cli_excludes.push(raw_args[i + 1].clone());
             i += 2;
+        } else if raw_args[i].ends_with(".log") {
+            cli_log_file = Some(raw_args[i].clone());
+            i += 1;
         } else {
-            config_file = args[i].clone();
+            config_file = raw_args[i].clone();
             i += 1;
         }
     }
+
+    // Load configuration to obtain configured log_file and settings
+    std::env::set_var("CLOUDSYNC_CONFIG_PATH", &config_file);
+    let config = load_or_create_config(&config_file).await?;
+
+    // Determine target log file: CLI flag > config file > default "daemon.log"
+    let resolved_log_file = cli_log_file
+        .or_else(|| config.log_file.clone())
+        .unwrap_or_else(|| "daemon.log".to_string());
+
+    let log_path = std::path::PathBuf::from(&resolved_log_file);
+    let directory = log_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let directory = if directory.as_os_str().is_empty() {
+        std::path::Path::new(".")
+    } else {
+        directory
+    };
+    let _ = std::fs::create_dir_all(directory);
+    let file_name = log_path
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("daemon.log"))
+        .to_string_lossy()
+        .to_string();
+
+    let file_appender = tracing_appender::rolling::never(directory, &file_name);
+    let (non_blocking, _log_guard) = tracing_appender::non_blocking(file_appender);
+
+    let clean_log_path = if let Ok(canon) = std::fs::canonicalize(&log_path) {
+        let s = canon.to_string_lossy().to_string();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            stripped.to_string()
+        } else {
+            s
+        }
+    } else {
+        log_path.to_string_lossy().to_string()
+    };
+
+    tracing_subscriber::registry()
+        .with(fmt::layer().with_writer(non_blocking))
+        .with(fmt::layer())
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .init();
 
     info!(
         "Starting Cloud Sync Daemon using config: {}...",
         config_file
     );
+    info!("Active log file: {}", clean_log_path);
     if let Some(ref addr) = ui_addr {
         info!("Web UI server address: {}", addr);
     }
-
-    // Load configuration
-    std::env::set_var("CLOUDSYNC_CONFIG_PATH", &config_file);
-    let config = load_or_create_config(&config_file).await?;
 
     // Apply error recovery configuration globally
     if let Some(ref recovery) = config.error_recovery {
@@ -599,6 +604,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         backends,
         watch_dir: watch_dir.clone(),
         config_file: config_file.clone(),
+        log_file: clean_log_path,
         syncing: false,
         ui_addr,
         gitignore,

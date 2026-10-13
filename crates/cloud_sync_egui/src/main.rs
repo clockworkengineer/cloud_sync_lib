@@ -27,6 +27,9 @@ impl DaemonClient {
 struct CloudSyncApp {
     client: Arc<Mutex<DaemonClient>>,
     runtime: tokio::runtime::Runtime,
+    show_log_modal: bool,
+    log_content: Arc<Mutex<Option<String>>>,
+    is_loading_log: Arc<Mutex<bool>>,
 }
 
 impl CloudSyncApp {
@@ -74,7 +77,13 @@ impl CloudSyncApp {
             }
         });
 
-        Self { client, runtime }
+        Self {
+            client,
+            runtime,
+            show_log_modal: false,
+            log_content: Arc::new(Mutex::new(None)),
+            is_loading_log: Arc::new(Mutex::new(false)),
+        }
     }
 
     async fn send_daemon_command(cmd: &str) -> Result<String, String> {
@@ -200,10 +209,74 @@ impl CloudSyncApp {
             }
         });
     }
+
+    fn open_file_externally(path: &str) {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", "", path])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+        }
+    }
+
+    fn fetch_logs(&self) {
+        let log_content = self.log_content.clone();
+        let is_loading = self.is_loading_log.clone();
+        let client = self.client.clone();
+        *is_loading.lock().unwrap() = true;
+
+        self.runtime.spawn(async move {
+            let content = match Self::send_daemon_command("get_log").await {
+                Ok(resp) => {
+                    if resp.starts_with("Status: OK") {
+                        if let Some(pos) = resp.find("\n\n") {
+                            resp[pos + 2..].to_string()
+                        } else {
+                            resp
+                        }
+                    } else {
+                        resp
+                    }
+                }
+                Err(_) => {
+                    let file_path = {
+                        let lock = client.lock().unwrap();
+                        lock.status["log_file"]
+                            .as_str()
+                            .unwrap_or("daemon.log")
+                            .to_string()
+                    };
+                    tokio::fs::read_to_string(&file_path)
+                        .await
+                        .unwrap_or_else(|e| format!("Could not read log file '{}': {}", file_path, e))
+                }
+            };
+
+            *log_content.lock().unwrap() = Some(content);
+            *is_loading.lock().unwrap() = false;
+        });
+    }
 }
 
 impl eframe::App for CloudSyncApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let (status, last_update, error_message, cached_config_file) = {
+            let client = self.client.lock().unwrap();
+            (
+                client.status.clone(),
+                client.last_update,
+                client.error_message.clone(),
+                client.cached_config_file.clone(),
+            )
+        };
+
         // Refined dark styling adjustments
         let panel_frame = egui::Frame::central_panel(&ctx.style())
             .fill(egui::Color32::from_rgb(20, 22, 26))
@@ -230,10 +303,8 @@ impl eframe::App for CloudSyncApp {
                     ui.add_space(12.0);
                 });
 
-                let client = self.client.lock().unwrap();
-
-                if client.status.is_null() {
-                    let config_to_use = if let Some(ref cached) = client.cached_config_file {
+                if status.is_null() {
+                    let config_to_use = if let Some(ref cached) = cached_config_file {
                         cached.clone()
                     } else if std::path::Path::new("private_config.toml").exists() {
                         "private_config.toml".to_string()
@@ -268,9 +339,23 @@ impl eframe::App for CloudSyncApp {
                                     egui::Color32::from_rgb(44, 48, 58),
                                 ))
                                 .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.label("Profile / Config File:");
-                                        ui.monospace(&config_to_use);
+                                    ui.vertical(|ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label("Profile / Config File:");
+                                            ui.monospace(&config_to_use);
+                                        });
+                                        ui.add_space(4.0);
+                                        ui.horizontal(|ui| {
+                                            ui.label("Log File:");
+                                            ui.monospace("daemon.log");
+                                            if ui.small_button("📄 View Log").clicked() {
+                                                self.show_log_modal = true;
+                                                self.fetch_logs();
+                                            }
+                                            if ui.small_button("↗ Open Externally").clicked() {
+                                                Self::open_file_externally("daemon.log");
+                                            }
+                                        });
                                     });
                                 });
 
@@ -294,7 +379,6 @@ impl eframe::App for CloudSyncApp {
                     return;
                 }
 
-                let status = &client.status;
                 let paused = status["paused"].as_bool().unwrap_or(false);
                 let syncing = status["syncing"].as_bool().unwrap_or(false);
                 let watch_dir = status["watch_directory"].as_str().unwrap_or("");
@@ -306,7 +390,7 @@ impl eframe::App for CloudSyncApp {
                 let config_file = status["config_file"].as_str().unwrap_or("");
 
                 // Error Banner (if any error in client)
-                if let Some(ref err) = client.error_message {
+                if let Some(ref err) = error_message {
                     egui::Frame::none()
                         .fill(egui::Color32::from_rgb(80, 20, 20))
                         .inner_margin(8.0)
@@ -386,6 +470,23 @@ impl eframe::App for CloudSyncApp {
                                             .color(egui::Color32::from_rgb(170, 180, 200)),
                                     );
                                     ui.monospace(config_file);
+                                    ui.end_row();
+
+                                    let log_file = status["log_file"].as_str().unwrap_or("daemon.log");
+                                    ui.label(
+                                        egui::RichText::new("Log File:")
+                                            .color(egui::Color32::from_rgb(170, 180, 200)),
+                                    );
+                                    ui.horizontal(|ui| {
+                                        ui.monospace(log_file);
+                                        if ui.small_button("📄 View Log").clicked() {
+                                            self.show_log_modal = true;
+                                            self.fetch_logs();
+                                        }
+                                        if ui.small_button("↗ Open Externally").clicked() {
+                                            Self::open_file_externally(log_file);
+                                        }
+                                    });
                                     ui.end_row();
                                 });
 
@@ -675,7 +776,7 @@ impl eframe::App for CloudSyncApp {
                     });
 
                 ui.add_space(16.0);
-                if let Some(last) = client.last_update {
+                if let Some(last) = last_update {
                     ui.horizontal(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(
@@ -690,6 +791,56 @@ impl eframe::App for CloudSyncApp {
                     });
                 }
             });
+
+        if self.show_log_modal {
+            let mut open = self.show_log_modal;
+            egui::Window::new("📄 Daemon Log Viewer")
+                .open(&mut open)
+                .default_size([720.0, 500.0])
+                .resizable(true)
+                .show(ctx, |ui| {
+                    let log_file = status["log_file"]
+                        .as_str()
+                        .unwrap_or("daemon.log")
+                        .to_string();
+
+                    ui.horizontal(|ui| {
+                        if ui.button("🔄 Refresh").clicked() {
+                            self.fetch_logs();
+                        }
+                        if ui.button("↗ Open in Text Editor").clicked() {
+                            Self::open_file_externally(&log_file);
+                        }
+                        ui.separator();
+                        ui.label(format!("File: {}", log_file));
+                    });
+                    ui.separator();
+
+                    let is_loading = *self.is_loading_log.lock().unwrap();
+                    if is_loading {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label("Loading log file contents...");
+                        });
+                    } else {
+                        let content_guard = self.log_content.lock().unwrap();
+                        let mut text = content_guard
+                            .clone()
+                            .unwrap_or_else(|| "No log content loaded.".to_string());
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .stick_to_bottom(true)
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut text)
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY),
+                                );
+                            });
+                    }
+                });
+            self.show_log_modal = open;
+        }
     }
 }
 

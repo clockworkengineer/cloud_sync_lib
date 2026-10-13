@@ -214,9 +214,19 @@ pub async fn handle_control_command(
             let backend_details_json = serde_json::to_string(&backend_details).unwrap_or_else(|_| "[]".to_string());
 
             format!(
-                "Status: OK\nPaused: {}\nWatch Directory: \"{}\"\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSimulated Backends: {:?}\nBackend Details: {}\nSyncing: {}\nWeb UI Address: {}\n",
-                s.paused, clean_watch_dir, s.config_file, backend_names, failed_backends, simulated_backends, backend_details_json, s.syncing, s.ui_addr.as_deref().unwrap_or("-")
+                "Status: OK\nPaused: {}\nWatch Directory: \"{}\"\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSimulated Backends: {:?}\nBackend Details: {}\nSyncing: {}\nWeb UI Address: {}\nLog File: \"{}\"\n",
+                s.paused, clean_watch_dir, s.config_file, backend_names, failed_backends, simulated_backends, backend_details_json, s.syncing, s.ui_addr.as_deref().unwrap_or("-"), s.log_file
             )
+        }
+        "get_log" | "log" => {
+            let log_file = {
+                let s = state.lock().await;
+                s.log_file.clone()
+            };
+            match tokio::fs::read_to_string(&log_file).await {
+                Ok(content) => format!("Status: OK\nLog File: \"{}\"\n\n{}", log_file, content),
+                Err(e) => format!("Status: Error\nCould not read log file '{}': {}\n", log_file, e),
+            }
         }
         "pause" => {
             let mut s = state.lock().await;

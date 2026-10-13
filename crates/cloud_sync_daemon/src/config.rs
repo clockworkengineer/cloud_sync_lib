@@ -52,6 +52,7 @@ pub struct AppConfig {
     pub dry_run: Option<bool>,
     pub bandwidth_schedule: Option<Vec<BandwidthSchedule>>,
     pub error_recovery: Option<ErrorRecoveryConfig>,
+    pub log_file: Option<String>,
 }
 
 impl std::ops::Deref for AppConfig {
@@ -116,6 +117,7 @@ impl Default for AppConfig {
             dry_run: Some(false),
             bandwidth_schedule: None,
             error_recovery: None,
+            log_file: Some("daemon.log".to_string()),
         }
     }
 }

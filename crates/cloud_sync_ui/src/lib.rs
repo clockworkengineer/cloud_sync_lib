@@ -12,8 +12,8 @@ use axum::{
 use tower_http::cors::CorsLayer;
 
 use handlers::{
-    api_clear, api_conflicts, api_events, api_pause, api_reload, api_resolve_conflict, api_resume,
-    api_start, api_status, api_stop, api_sync, serve_index,
+    api_clear, api_conflicts, api_events, api_logs, api_pause, api_reload, api_resolve_conflict,
+    api_resume, api_start, api_status, api_stop, api_sync, serve_index,
 };
 
 pub const UI_BIND_ADDR: &str = "127.0.0.1:8082";
@@ -37,6 +37,7 @@ pub async fn start_ui_server() -> Result<(), std::io::Error> {
     let router = Router::new()
         .route("/", get(serve_index))
         .route("/api/status", get(api_status))
+        .route("/api/logs", get(api_logs))
         .route("/api/events", get(api_events))
         .route("/api/start", post(api_start))
         .route("/api/pause", post(api_pause))

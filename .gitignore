@@ -21,3 +21,4 @@ crates/cloud_sync_tauri/binaries/cloud_sync_daemon-x86_64-unknown-linux-gnu
 watched_folder/*
 cloud_simulation/*
 .vscode/settings.json
+*.log

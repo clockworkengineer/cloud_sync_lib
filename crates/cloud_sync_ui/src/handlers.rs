@@ -35,6 +35,29 @@ pub async fn send_daemon_cmd(cmd: &str) -> Result<String, std::io::Error> {
     Ok(response)
 }
 
+/// Helper to determine active configured log file path when daemon is offline.
+fn get_offline_log_path() -> String {
+    let config_file = if std::path::Path::new(PRIVATE_CONFIG_FILE).exists() {
+        PRIVATE_CONFIG_FILE
+    } else {
+        DEFAULT_CONFIG_FILE
+    };
+    if let Ok(content) = std::fs::read_to_string(config_file) {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with("log_file") {
+                if let Some((_, val)) = line.split_once('=') {
+                    let val = val.trim().trim_matches('"').trim_matches('\'');
+                    if !val.is_empty() {
+                        return val.to_string();
+                    }
+                }
+            }
+        }
+    }
+    "daemon.log".to_string()
+}
+
 /// HTTP Endpoint: Returns the current status of the daemon.
 pub async fn api_status() -> impl IntoResponse {
     match send_daemon_cmd("status").await {
@@ -54,8 +77,42 @@ pub async fn api_status() -> impl IntoResponse {
             "syncing": false,
             "daemon_running": false,
             "web_ui_address": "-",
+            "log_file": get_offline_log_path(),
         }))
         .into_response(),
+    }
+}
+
+/// HTTP Endpoint: Serves the active daemon log file as plain text.
+pub async fn api_logs() -> impl IntoResponse {
+    if let Ok(resp) = send_daemon_cmd("get_log").await {
+        if resp.starts_with("Status: OK") {
+            if let Some(pos) = resp.find("\n\n") {
+                let body = &resp[pos + 2..];
+                return (
+                    [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                    body.to_string(),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    let offline_path = get_offline_log_path();
+    match tokio::fs::read_to_string(&offline_path).await {
+        Ok(content) => (
+            [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            content,
+        )
+            .into_response(),
+        Err(e) => (
+            [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            format!(
+                "(Daemon is offline and could not read local log file '{}': {})",
+                offline_path, e
+            ),
+        )
+            .into_response(),
     }
 }
 

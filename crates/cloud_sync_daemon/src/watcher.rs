@@ -515,6 +515,7 @@ mod tests {
             dry_run: false,
             event_tx,
             conflict_manager: crate::engine::conflict::ConflictManager::new(),
+            log_file: "daemon.log".to_string(),
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));
@@ -649,6 +650,7 @@ mod tests {
             dry_run: false,
             event_tx,
             conflict_manager: crate::engine::conflict::ConflictManager::new(),
+            log_file: "daemon.log".to_string(),
         }));
 
         let active_locks = Arc::new(Mutex::new(HashMap::new()));
