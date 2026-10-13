@@ -4095,8 +4095,6 @@ checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 [[package]]
 name = "mega"
 version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e8517428c91956a709c545b8b7aefa39f6c857eb9b5ef69e60a1d778e069036"
 dependencies = [
  "aes",
  "async-trait",
@@ -4113,6 +4111,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_repr",
+ "sha2",
  "sluice",
  "thiserror 1.0.69",
  "tokio",
