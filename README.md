@@ -9,10 +9,10 @@ A high-performance, modular Rust workspace designed to watch local folders and s
 The workspace is split into modular crates:
 
 1. **[`cloud_sync_lib`](crates/cloud_sync_lib/README.md)**: Core provider client integrations, client-side encryption, rate limiting, and backend factories.
-2. **[`cloud_sync_daemon`](crates/cloud_sync_daemon/README.md)**: Background CLI service watching local directories, managing 3-way state catalogs, and exposing TCP control interfaces.
+2. **[`cloud_sync_daemon`](crates/cloud_sync_daemon/README.md)**: Synchronization engine library and background CLI service watching local directories with 3-way catalog management.
 3. **[`cloud_sync_ui`](crates/cloud_sync_ui/README.md)**: Axum-based HTTP web server and REST/SSE API gateway serving an embedded management dashboard.
 4. **[`cloud_sync_egui`](crates/cloud_sync_egui/README.md)**: Native GPU-accelerated immediate-mode desktop GUI built on `egui` and `eframe`.
-5. **[`cloud_sync_tauri`](crates/cloud_sync_tauri/README.md)**: Tauri 2.0 cross-platform desktop shell wrapping the Web UI and managing daemon sidecars.
+5. **[`cloud_sync_tauri`](crates/cloud_sync_tauri/README.md)**: Tauri 2.0 cross-platform desktop and mobile shell with in-process synchronization engine and direct IPC commands.
 6. **[`cloud_sync_backup`](crates/cloud_sync_backup/README.md)**: Unidirectional periodic backup client for one-off CLI or cron-based jobs.
 7. **[`cloud_sync_core`](crates/cloud_sync_core/README.md)**: Zero-dependency, `no_std`-compatible storage traits (`StorageBackend`), domain data types, and path security.
 8. **[`cloud_sync_std`](crates/cloud_sync_std/README.md)**: Standard library helpers, asynchronous checksum hashers (`compute_sha256`, `compute_md5`), and Ripgrep-based `SyncIgnore` engine.
@@ -21,8 +21,11 @@ The workspace is split into modular crates:
 
 ## Quick Launch Scripts
 
-Convenient launch scripts for both desktop frontends are provided in the `scripts/` directory:
+Convenient launch scripts for the frontends are provided in the `scripts/` directory:
 
+* **Tauri Desktop & Mobile Interface (`cloud_sync_tauri`)**:
+  - Windows: `scripts\launch_tauri.cmd`
+  - Linux / macOS: `./scripts/launch_tauri.sh`
 * **Native Desktop GUI (`cloud_sync_egui`)**:
   - Windows: `scripts\launch_egui.cmd`
   - Linux / macOS: `./scripts/launch_egui.sh`
@@ -30,7 +33,9 @@ Convenient launch scripts for both desktop frontends are provided in the `script
   - Windows: `scripts\launch_web_ui.cmd`
   - Linux / macOS: `./scripts/launch_web_ui.sh`
 
-On Windows, these scripts run precompiled binaries windowless via `wscript.exe` without visible command prompts, falling back smoothly to `cargo run` if binaries have not been compiled yet. On Linux and macOS, they start background processes and open your system's default browser automatically.
+On Windows, these scripts run precompiled binaries windowless without visible command prompts, falling back smoothly to `cargo run` if binaries have not been compiled yet. On Linux and macOS, they start background processes and open your system's default browser automatically.
+
+For Android mobile build and deployment instructions, see the **[Android Client Guide](docs/ANDROID_CLIENT.md)**.
 
 ---
 
