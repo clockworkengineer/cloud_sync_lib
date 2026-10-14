@@ -11,6 +11,11 @@ fn main() {
     // 1. Determine target triple
     let target = env::var("TARGET").unwrap_or_else(|_| "x86_64-pc-windows-msvc".to_string());
 
+    if target.contains("android") || target.contains("ios") {
+        tauri_build::build();
+        return;
+    }
+
     // 2. Determine profile (debug vs release)
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
 
