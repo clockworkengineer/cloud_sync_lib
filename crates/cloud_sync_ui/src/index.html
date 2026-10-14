@@ -1395,14 +1395,18 @@
                 
                 banner.classList.remove('visible');
                 
-                let cleanWatchDir = data.watch_directory;
-                if (cleanWatchDir.startsWith("\\\\?\\")) {
+                let cleanWatchDir = data.watch_directory || data.watched_directory || '-';
+                if (typeof cleanWatchDir === 'string' && cleanWatchDir.startsWith("\\\\?\\")) {
                     cleanWatchDir = cleanWatchDir.substring(4);
                 }
-                document.getElementById('watched-dir').textContent = cleanWatchDir;
-                document.getElementById('config-file').textContent = data.config_file;
-                document.getElementById('web-ui-address').textContent = data.web_ui_address || '-';
-                document.getElementById('log-file').textContent = data.log_file || 'daemon.log';
+                const watchedDirEl = document.getElementById('watched-dir');
+                if (watchedDirEl) watchedDirEl.textContent = cleanWatchDir;
+                const configFileEl = document.getElementById('config-file');
+                if (configFileEl) configFileEl.textContent = data.config_file || '-';
+                const webUiAddressEl = document.getElementById('web-ui-address');
+                if (webUiAddressEl) webUiAddressEl.textContent = data.web_ui_address || '-';
+                const logFileEl = document.getElementById('log-file');
+                if (logFileEl) logFileEl.textContent = data.log_file || 'daemon.log';
 
                 // Render Backends
                 const backendsList = document.getElementById('backends-list');

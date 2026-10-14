@@ -77,8 +77,16 @@ fn main() {
     );
     let dest_bin_path = dest_dir.join(dest_bin_name);
 
-    fs::copy(&src_bin_path, &dest_bin_path)
-        .expect("failed to copy cloud_sync_daemon sidecar binary");
+    if let Err(e) = fs::copy(&src_bin_path, &dest_bin_path) {
+        if !dest_bin_path.exists() {
+            panic!("failed to copy cloud_sync_daemon sidecar binary: {}", e);
+        } else {
+            println!(
+                "cargo:warning=Failed to overwrite sidecar binary (file locked?): {}",
+                e
+            );
+        }
+    }
 
     // 6.5 Generate required icons from app_icon.png if present
     let icons_dir = manifest_dir.join("icons");

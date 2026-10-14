@@ -22,10 +22,6 @@ pub async fn create_in_process_state(
 ) -> SharedDaemonState {
     let (event_tx, _) = tokio::sync::broadcast::channel::<String>(100);
 
-    // Ensure watch_dir and state_dir exist
-    let _ = tokio::fs::create_dir_all(&watch_dir).await;
-    let _ = tokio::fs::create_dir_all(&state_dir).await;
-
     let app_config = config::load_or_create_config(&config_file)
         .await
         .unwrap_or_else(|_| config::AppConfig {
@@ -33,12 +29,22 @@ pub async fn create_in_process_state(
             ..Default::default()
         });
 
+    let effective_watch_dir = if app_config.watch_directory.as_os_str().is_empty() {
+        watch_dir
+    } else {
+        app_config.watch_directory.clone()
+    };
+
+    // Ensure effective watch_dir and state_dir exist
+    let _ = tokio::fs::create_dir_all(&effective_watch_dir).await;
+    let _ = tokio::fs::create_dir_all(&state_dir).await;
+
     let backends = build_backends(&app_config, None, None);
 
     Arc::new(Mutex::new(DaemonState {
         paused: false,
         backends,
-        watch_dir,
+        watch_dir: effective_watch_dir,
         config_file,
         syncing: false,
         ui_addr: None,
