@@ -57,6 +57,69 @@ pub async fn create_in_process_state(
     }))
 }
 
+/// Spawns a background task executing periodic synchronization passes at the specified interval.
+pub fn spawn_periodic_sync_worker(state: SharedDaemonState, interval_secs: u64) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+
+            let should_run = {
+                let mut lock = state.lock().await;
+                if lock.paused || lock.syncing || lock.backends.is_empty() {
+                    false
+                } else {
+                    lock.syncing = true;
+                    true
+                }
+            };
+
+            if !should_run {
+                continue;
+            }
+
+            let (
+                watch_dir,
+                state_dir,
+                backends,
+                gitignore,
+                max_concurrency,
+                conflict_policy,
+                dry_run,
+                event_tx,
+            ) = {
+                let lock = state.lock().await;
+                (
+                    lock.watch_dir.clone(),
+                    lock.state_dir.clone(),
+                    lock.backends.clone(),
+                    lock.gitignore.clone(),
+                    lock.max_concurrency,
+                    lock.conflict_policy,
+                    lock.dry_run,
+                    lock.event_tx.clone(),
+                )
+            };
+
+            cloud_sync_daemon::run_sync_all_backends(
+                &watch_dir,
+                &state_dir,
+                &backends,
+                &gitignore,
+                cloud_sync_daemon::InProcessSyncOptions {
+                    max_concurrency,
+                    conflict_policy,
+                    dry_run,
+                },
+                Some(event_tx),
+            )
+            .await;
+
+            let mut lock = state.lock().await;
+            lock.syncing = false;
+        }
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Application Entrypoint
 // ---------------------------------------------------------------------------
@@ -118,14 +181,15 @@ pub fn run() {
                 state_dir,
                 config_file.clone(),
             ));
-            app.manage(in_process_state);
+            app.manage(in_process_state.clone());
 
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            {
+            let has_sidecar = {
                 use tauri_plugin_shell::ShellExt;
-                // On desktop, spawn sidecar process if present
+                let mut spawned = false;
                 if let Ok(sidecar) = app.shell().sidecar("cloud_sync_daemon") {
                     if let Ok((mut rx, _child)) = sidecar.args([&config_file]).spawn() {
+                        spawned = true;
                         tauri::async_runtime::spawn(async move {
                             while let Some(event) = rx.recv().await {
                                 if let tauri_plugin_shell::process::CommandEvent::Stdout(line) =
@@ -140,6 +204,15 @@ pub fn run() {
                         });
                     }
                 }
+                spawned
+            };
+
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let has_sidecar = false;
+
+            if !has_sidecar {
+                // On mobile or standalone in-process runs, start periodic background synchronization
+                spawn_periodic_sync_worker(in_process_state, 30);
             }
 
             Ok(())
