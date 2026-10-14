@@ -79,7 +79,7 @@ pub fn run() {
         }
 
         // Spawn desktop background Axum HTTP UI server
-        tokio::spawn(async {
+        tauri::async_runtime::spawn(async {
             if let Err(e) = cloud_sync_ui::start_ui_server().await {
                 eprintln!("Axum background server error: {}", e);
             }
