@@ -22,8 +22,7 @@
       {
         "title": "Cloud Sync Dashboard",
         "width": 1024,
-        "height": 768,
-        "url": "http://127.0.0.1:8082"
+        "height": 768
       }
     ],
     "security": {

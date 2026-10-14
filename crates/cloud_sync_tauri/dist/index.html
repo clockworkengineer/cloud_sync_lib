@@ -1,12 +1,1266 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Cloud Sync</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>CloudSync Control Center</title>
+    <!-- Modern Premium Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #080710;
+            --card-bg: rgba(18, 16, 32, 0.6);
+            --card-border: rgba(255, 255, 255, 0.07);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            
+            /* Curated Gradients & Colors */
+            --accent-purple: #8b5cf6;
+            --accent-indigo: #6366f1;
+            --accent-teal: #14b8a6;
+            --accent-rose: #f43f5e;
+            --accent-amber: #f59e0b;
+            
+            --gradient-primary: linear-gradient(135deg, var(--accent-purple), var(--accent-indigo));
+            --gradient-success: linear-gradient(135deg, #0d9488, #14b8a6);
+            --gradient-danger: linear-gradient(135deg, #e11d48, #f43f5e);
+            
+            --glow-shadow: 0 0 25px rgba(139, 92, 246, 0.25);
+            --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.12) 0%, transparent 45%);
+            background-attachment: fixed;
+        }
+
+        /* Glassmorphism Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 2rem;
+            background: rgba(8, 7, 16, 0.4);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--card-border);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 2.2rem;
+            height: 2.2rem;
+            background: var(--gradient-primary);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.25rem;
+            color: #fff;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+        }
+
+        .logo-text {
+            font-weight: 700;
+            font-size: 1.3rem;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #fff, #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .daemon-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--accent-teal);
+            box-shadow: 0 0 10px var(--accent-teal);
+            display: inline-block;
+        }
+
+        .status-dot.disconnected {
+            background-color: var(--accent-rose);
+            box-shadow: 0 0 10px var(--accent-rose);
+        }
+
+        .status-dot.syncing {
+            background-color: var(--accent-indigo);
+            box-shadow: 0 0 10px var(--accent-indigo);
+            animation: pulse-sync 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse-sync {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.3); opacity: 0.5; }
+        }
+
+        /* Dashboard Main Layout */
+        main {
+            flex: 1;
+            max-width: 1200px;
+            width: 100%;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 868px) {
+            main {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Glass Cards */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(16px);
+            border-radius: 16px;
+            padding: 1.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transition: var(--transition-smooth);
+        }
+
+        .card:hover {
+            border-color: rgba(139, 92, 246, 0.25);
+            box-shadow: 0 15px 35px rgba(139, 92, 246, 0.05);
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.75rem;
+        }
+
+        /* Info Item Styles */
+        .info-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .info-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .info-value {
+            font-size: 1rem;
+            color: var(--text-primary);
+            word-break: break-all;
+            font-weight: 500;
+        }
+
+        .mono-text {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 0.35rem 0.6rem;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            font-size: 0.875rem;
+        }
+
+        /* Backend Providers Pills */
+        .backends-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .backend-pill {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: var(--transition-smooth);
+        }
+
+        .backend-pill.active {
+            background: rgba(20, 184, 166, 0.08);
+            border-color: rgba(20, 184, 166, 0.35);
+            color: #ccfbf1;
+        }
+
+        .backend-pill.simulated {
+            background: rgba(245, 158, 11, 0.08);
+            border-color: rgba(245, 158, 11, 0.35);
+            color: #fef3c7;
+        }
+
+        .backend-indicator {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
+        .backend-pill.active .backend-indicator {
+            background: var(--accent-teal);
+            box-shadow: 0 0 6px var(--accent-teal);
+        }
+
+        .backend-pill.simulated .backend-indicator {
+            background: #f59e0b;
+            box-shadow: 0 0 6px #f59e0b;
+        }
+
+        .backend-pill.failed {
+            background: rgba(244, 63, 94, 0.08);
+            border-color: rgba(244, 63, 94, 0.3);
+            color: #fca5a5;
+        }
+
+        .backend-pill.failed .backend-indicator {
+            background: var(--accent-rose);
+            box-shadow: 0 0 6px var(--accent-rose);
+        }
+
+        .backend-pill .backend-badge {
+            font-size: 0.65rem;
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-left: 0.35rem;
+        }
+
+        .backend-pill.active .backend-badge {
+            background: rgba(20, 184, 166, 0.18);
+            color: #5eead4;
+            border: 1px solid rgba(20, 184, 166, 0.35);
+        }
+
+        .backend-pill.simulated .backend-badge {
+            background: rgba(245, 158, 11, 0.18);
+            color: #fde68a;
+            border: 1px solid rgba(245, 158, 11, 0.35);
+        }
+
+        .backend-pill.failed .backend-badge {
+            background: rgba(244, 63, 94, 0.18);
+            color: #fca5a5;
+            border: 1px solid rgba(244, 63, 94, 0.35);
+        }
+
+        .backend-pill.syncing-now {
+            background: rgba(20, 184, 166, 0.2) !important;
+            border-color: rgba(20, 184, 166, 0.6) !important;
+            color: #99f6e4 !important;
+            animation: pulse-sync-pill 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse-sync-pill {
+            0%, 100% { box-shadow: 0 0 5px rgba(20, 184, 166, 0.2); }
+            50% { box-shadow: 0 0 15px rgba(20, 184, 166, 0.5); }
+        }
+
+        /* Controls / Buttons Grid */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .btn {
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 0.9rem 1.5rem;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            color: #fff;
+            transition: var(--transition-smooth);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.08);
+            opacity: 0;
+            transition: var(--transition-smooth);
+        }
+
+        .btn:hover::after {
+            opacity: 1;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-toggle-pause {
+            background: var(--gradient-primary);
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.25);
+        }
+
+        .btn-toggle-pause.paused {
+            background: var(--gradient-success);
+            box-shadow: 0 4px 15px rgba(20, 184, 166, 0.25);
+        }
+
+        .btn-sync {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+        }
+
+        .btn-sync:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-reload {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+        }
+
+        .btn-reload:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-stop {
+            background: var(--gradient-danger);
+            box-shadow: 0 4px 15px rgba(244, 63, 94, 0.2);
+            margin-top: auto;
+        }
+
+        /* Console/Logs Card - full width at bottom */
+        .logs-card {
+            grid-column: 1 / -1;
+        }
+
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.75rem;
+        }
+
+        .logs-header-left {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .logs-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-mini {
+            font-family: inherit;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            border: 1px solid var(--card-border);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+
+        .btn-mini:hover {
+            background: rgba(255, 255, 255, 0.06);
+            color: #fff;
+        }
+
+        .btn-mini.active {
+            background: rgba(139, 92, 246, 0.15);
+            border-color: rgba(139, 92, 246, 0.4);
+            color: #d8b4fe;
+        }
+
+        .console {
+            background: #05040a;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
+            height: 300px;
+            padding: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            scroll-behavior: smooth;
+        }
+
+        .log-entry {
+            display: flex;
+            gap: 0.75rem;
+            word-break: break-all;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(3px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .log-time {
+            color: #4b5563;
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        .log-level {
+            font-weight: 700;
+            text-transform: uppercase;
+            flex-shrink: 0;
+            width: 50px;
+            user-select: none;
+        }
+
+        .level-info { color: var(--accent-indigo); }
+        .level-warn { color: var(--accent-amber); }
+        .level-error { color: var(--accent-rose); }
+        .level-debug { color: var(--text-secondary); }
+
+        .log-msg {
+            color: #e5e7eb;
+        }
+
+        .console-empty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #4b5563;
+            font-style: italic;
+            user-select: none;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Status Banner */
+        .banner {
+            background: rgba(244, 63, 94, 0.15);
+            border: 1px solid rgba(244, 63, 94, 0.3);
+            color: #fda4af;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            margin: 0.5rem 1.5rem;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .banner.visible {
+            display: flex;
+        }
+    </style>
 </head>
 <body>
-  <script>
-    window.location.href = "http://127.0.0.1:8082";
-  </script>
+
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon">☁</div>
+            <div class="logo-text">CloudSync Control Center</div>
+        </div>
+        <div class="daemon-status">
+            <span class="status-dot disconnected" id="status-pulse"></span>
+            <span id="status-text">Connecting...</span>
+        </div>
+    </header>
+
+    <div class="banner" id="error-banner">
+        <span>Unable to connect to the cloud sync daemon socket. Make sure it is running.</span>
+        <button class="btn-mini" onclick="pollStatus()">Retry</button>
+    </div>
+
+    <main>
+        <!-- Card 1: Status & Configuration -->
+        <div class="card">
+            <h2 class="card-title">ℹ Daemon Information</h2>
+            
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Current Status</span>
+                    <span class="info-value" id="daemon-run-state">Checking...</span>
+                </div>
+                
+                <div class="info-item">
+                    <span class="info-label">Watched Directory</span>
+                    <span class="info-value mono-text" id="watched-dir">-</span>
+                </div>
+
+                <div class="info-item">
+                    <span class="info-label">Configuration File</span>
+                    <span class="info-value mono-text" id="config-file">-</span>
+                </div>
+
+                <div class="info-item">
+                    <span class="info-label">Web UI Address</span>
+                    <span class="info-value mono-text" id="web-ui-address">-</span>
+                </div>
+
+                <div class="info-item">
+                    <span class="info-label">Log File Destination</span>
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+                        <span class="info-value mono-text" id="log-file" style="flex: 1;">-</span>
+                        <a href="/api/logs" target="_blank" rel="noopener noreferrer" class="btn-mini" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem;">📄 View Log</a>
+                    </div>
+                </div>
+
+                <div class="info-item">
+                    <span class="info-label">Active Storage Backends</span>
+                    <div class="backends-container" id="backends-list">
+                        <!-- Populated dynamically -->
+                    </div>
+                    <div id="simulated-notice" style="display:none; margin-top: 0.75rem; padding: 0.75rem 1rem; border-radius: 8px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); font-size: 0.825rem; color: #fde68a; line-height: 1.45;">
+                        <strong style="color: #fbbf24;">ℹ Simulation Fallback Active:</strong>
+                        <span id="simulated-notice-text">Providers with expired credentials or local configuration are operating in local simulation fallback mode under <code>./cloud_simulation/</code>.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 2: Operations Center -->
+        <div class="card">
+            <h2 class="card-title">⚙ Operations & Controls</h2>
+            
+            <div class="controls-grid">
+                <button class="btn btn-toggle-pause" id="btn-pause" onclick="togglePause()">
+                    ⏸ Pause Syncing
+                </button>
+                
+                <button class="btn btn-sync" id="btn-sync" onclick="triggerSync()">
+                    🔄 Sync Now (Full Scan)
+                </button>
+                
+                <button class="btn btn-reload" id="btn-reload" onclick="reloadConfig()">
+                    ⚡ Reload Configuration
+                </button>
+                
+                <button class="btn btn-start" id="btn-start" onclick="startDaemon()" style="background: var(--gradient-success); box-shadow: 0 4px 15px rgba(20, 184, 166, 0.25); display: none;">
+                    ▶ Start Daemon
+                </button>
+                
+                <button class="btn btn-stop" id="btn-stop" onclick="stopDaemon()">
+                    🛑 Shutdown Daemon
+                </button>
+            </div>
+        </div>
+
+        <!-- Card 3: 3-Way Conflicts Resolution Center -->
+        <div class="card conflicts-card" id="conflicts-card" style="grid-column: 1 / -1;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 class="card-title" style="margin: 0; display: flex; align-items: center; gap: 0.75rem;">
+                    ⚖ Sync Conflicts & Reconciliation
+                    <span id="conflict-badge" style="background: rgba(244, 63, 94, 0.2); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.4); font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 20px; display: none;">0 Conflicts</span>
+                </h2>
+                <button class="btn-mini" onclick="pollConflicts()">Refresh Conflicts</button>
+            </div>
+            
+            <div id="conflicts-empty" style="color: var(--text-secondary); font-size: 0.95rem; padding: 1rem 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span style="color: var(--accent-teal); font-weight: bold;">✔</span> All files cleanly reconciled. No pending conflicts detected.
+            </div>
+
+            <div id="conflicts-table-container" style="display: none; overflow-x: auto; margin-top: 0.5rem;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.875rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--card-border); color: var(--text-secondary);">
+                            <th style="padding: 0.75rem 0.5rem;">File Path</th>
+                            <th style="padding: 0.75rem 0.5rem;">Conflict Type</th>
+                            <th style="padding: 0.75rem 0.5rem;">Local / Remote Metadata</th>
+                            <th style="padding: 0.75rem 0.5rem; text-align: right;">Resolution Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="conflicts-body">
+                        <!-- Populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Card 4: Activity Logs -->
+        <div class="card logs-card" style="grid-column: 1 / -1;">
+            <div class="logs-header">
+                <div class="logs-header-left" style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span>🗎 Command Execution Logs</span>
+                    <a href="/api/logs" target="_blank" rel="noopener noreferrer" class="btn-mini" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 500;">📄 Open Daemon Log File</a>
+                </div>
+                <div class="logs-actions">
+                    <button class="btn-mini active" id="log-filter-all" onclick="setLogFilter('all')">All</button>
+                    <button class="btn-mini" id="log-filter-info" onclick="setLogFilter('info')">Info</button>
+                    <button class="btn-mini" id="log-filter-error" onclick="setLogFilter('error')">Error</button>
+                    <button class="btn-mini" onclick="clearLogsUI()" style="margin-left: 0.5rem;">Clear UI</button>
+                </div>
+            </div>
+
+            <div class="console" id="log-console">
+                <div class="console-empty">No activity logged yet.</div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let isPaused = false;
+        let isSyncing = false;
+        let isConnected = false;
+        let currentFilter = 'all';
+        let localLogs = [];
+        let isStartingDaemon = false;
+        let wasDaemonRunning = true;
+        let lastConnectedState = null;
+        let loggedFailedBackends = new Set();
+        let activeSyncingBackend = null;
+
+        function addLogEntry(level, message) {
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            const dateStr = now.toISOString().split('T')[0];
+            const fullLog = `[${dateStr} ${timeStr}] [${level.toUpperCase()}] ${message}`;
+            localLogs.push(fullLog);
+            if (localLogs.length > 100) localLogs.shift();
+            renderLogs();
+        }
+
+        // Helper to update connection state UI
+        function setConnected(connected) {
+            if (lastConnectedState === connected) return;
+            lastConnectedState = connected;
+            isConnected = connected;
+            const banner = document.getElementById('error-banner');
+            const buttons = document.querySelectorAll('.btn');
+
+            if (!connected) {
+                const pulse = document.getElementById('status-pulse');
+                const text = document.getElementById('status-text');
+                pulse.className = 'status-dot disconnected';
+                text.textContent = 'UI Server Disconnected';
+                banner.classList.add('visible');
+                const errorMsg = 'Unable to connect to the UI backend server. Make sure the UI server is running.';
+                banner.querySelector('span').textContent = errorMsg;
+                buttons.forEach(b => b.setAttribute('disabled', 'true'));
+                document.getElementById('daemon-run-state').textContent = 'Disconnected';
+                addLogEntry('error', `Connection error: ${errorMsg}`);
+            } else {
+                addLogEntry('info', 'Connection to UI backend server restored.');
+            }
+        }
+
+        async function apiCall(endpoint, method = 'GET') {
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    const cmd = endpoint.replace(/^\//, '').replace(/\//g, '_');
+                    try {
+                        const res = await window.__TAURI_INTERNALS__.invoke(cmd);
+                        setConnected(true);
+                        return res;
+                    } catch (e) {
+                        console.warn(`Tauri direct invocation of '${cmd}' failed:`, e);
+                    }
+                }
+                const response = await fetch(`/api${endpoint}`, { method });
+                if (!response.ok) throw new Error('API server returned error');
+                setConnected(true);
+                return await response.json();
+            } catch (err) {
+                console.error(`API Call failed to /api${endpoint}:`, err);
+                setConnected(false);
+                return null;
+            }
+        }
+
+        async function pollStatus() {
+            const data = await apiCall('/status');
+            if (!data) return;
+
+            const daemonRunning = data.daemon_running;
+            
+            const btnPause = document.getElementById('btn-pause');
+            const btnSync = document.getElementById('btn-sync');
+            const btnReload = document.getElementById('btn-reload');
+            const btnStop = document.getElementById('btn-stop');
+            const btnStart = document.getElementById('btn-start');
+            const banner = document.getElementById('error-banner');
+            const pulse = document.getElementById('status-pulse');
+            const statusText = document.getElementById('status-text');
+            const runStateText = document.getElementById('daemon-run-state');
+
+            if (daemonRunning) {
+                if (!wasDaemonRunning) {
+                    addLogEntry('info', 'Connection to cloud sync daemon restored.');
+                    wasDaemonRunning = true;
+                }
+                isStartingDaemon = false;
+                isPaused = data.paused;
+                isSyncing = data.syncing;
+                
+                runStateText.textContent = isPaused ? 'Paused' : 'Active (Watching for changes)';
+                
+                if (isPaused) {
+                    btnPause.className = 'btn btn-toggle-pause paused';
+                    btnPause.innerHTML = '▶ Resume Syncing';
+                    statusText.textContent = 'Paused';
+                } else {
+                    btnPause.className = 'btn btn-toggle-pause';
+                    btnPause.innerHTML = '⏸ Pause Syncing';
+                    statusText.textContent = isSyncing ? 'Syncing...' : 'Connected';
+                }
+
+                if (isSyncing) {
+                    btnSync.innerHTML = '<span class="spinner"></span> Syncing...';
+                    btnSync.disabled = true;
+                    pulse.className = 'status-dot syncing';
+                } else {
+                    btnSync.innerHTML = '🔄 Sync Now (Full Scan)';
+                    btnSync.disabled = false;
+                    pulse.className = isPaused ? 'status-dot disconnected' : 'status-dot';
+                }
+
+                btnPause.style.display = 'inline-flex';
+                btnSync.style.display = 'inline-flex';
+                btnReload.style.display = 'inline-flex';
+                btnStop.style.display = 'inline-flex';
+                btnStart.style.display = 'none';
+
+                btnPause.removeAttribute('disabled');
+                btnReload.removeAttribute('disabled');
+                btnStop.removeAttribute('disabled');
+                btnStop.innerHTML = '🛑 Shutdown Daemon';
+                
+                banner.classList.remove('visible');
+                
+                let cleanWatchDir = data.watch_directory;
+                if (cleanWatchDir.startsWith("\\\\?\\")) {
+                    cleanWatchDir = cleanWatchDir.substring(4);
+                }
+                document.getElementById('watched-dir').textContent = cleanWatchDir;
+                document.getElementById('config-file').textContent = data.config_file;
+                document.getElementById('web-ui-address').textContent = data.web_ui_address || '-';
+                document.getElementById('log-file').textContent = data.log_file || 'daemon.log';
+
+                // Render Backends
+                const backendsList = document.getElementById('backends-list');
+                backendsList.innerHTML = '';
+                
+                const allProviders = [
+                    'Google Drive', 'Dropbox', 'OneDrive', 'WebDAV', 'S3', 'SFTP', 'Nextcloud', 
+                    'Box', 'MEGA', 'Azure Blob', 'Google Cloud Storage', 'Backblaze B2', 'pCloud', 'IPFS'
+                ];
+                let simulatedCount = 0;
+                let simulatedNames = [];
+
+                allProviders.forEach(prov => {
+                    const isActive = data.active_backends && data.active_backends.includes(prov);
+                    if (!isActive) return;
+                    
+                    const isFailed = data.failed_backends && data.failed_backends.includes(prov);
+                    const isSimulated = !isFailed && data.simulated_backends && data.simulated_backends.includes(prov);
+
+                    if (isSimulated) {
+                        simulatedCount++;
+                        simulatedNames.push(prov);
+                    }
+                    
+                    if (isFailed && isActive) {
+                        if (!loggedFailedBackends.has(prov)) {
+                            addLogEntry('error', `Connection error: ${prov} backend has invalid or placeholder credentials (refresh token needs updating).`);
+                            loggedFailedBackends.add(prov);
+                        }
+                    } else {
+                        loggedFailedBackends.delete(prov);
+                    }
+
+                    const isSyncingThis = activeSyncingBackend === prov;
+                    const pill = document.createElement('div');
+                    let statusClass = 'active';
+                    let badgeLabel = 'Live Cloud';
+                    let titleText = `${prov}: Connected to live cloud storage`;
+
+                    if (isFailed) {
+                        statusClass = 'failed';
+                        badgeLabel = 'Failed';
+                        titleText = `${prov}: Connection failed`;
+                    } else if (isSimulated) {
+                        statusClass = 'simulated';
+                        badgeLabel = 'Simulated';
+                        titleText = `${prov}: Operating in local directory simulation (credentials unverified or fallback triggered)`;
+                    }
+
+                    pill.className = `backend-pill ${statusClass} ${isSyncingThis ? 'syncing-now' : ''}`;
+                    pill.title = titleText;
+                    pill.innerHTML = `
+                        <span class="backend-indicator"></span>
+                        <span style="font-weight: 500;">${prov}</span>
+                        <span class="backend-badge">${badgeLabel}</span>
+                    `;
+                    backendsList.appendChild(pill);
+                });
+
+                const simNotice = document.getElementById('simulated-notice');
+                const simNoticeText = document.getElementById('simulated-notice-text');
+                if (simNotice && simNoticeText) {
+                    if (simulatedCount > 0) {
+                        simNotice.style.display = 'block';
+                        simNoticeText.innerHTML = `<strong>${simulatedNames.join(', ')}</strong> ${simulatedCount === 1 ? 'is' : 'are'} currently operating in <strong>Local Simulation Fallback</strong> mode under <code>./cloud_simulation/</code>. Real cloud storage is active for all other connected providers.`;
+                    } else {
+                        simNotice.style.display = 'none';
+                    }
+                }
+            } else {
+                if (isStartingDaemon) return;
+                // Daemon is offline/stopped
+                runStateText.textContent = 'Stopped / Offline';
+                statusText.textContent = 'Offline';
+                pulse.className = 'status-dot disconnected';
+                
+                btnPause.style.display = 'none';
+                btnSync.style.display = 'none';
+                btnReload.style.display = 'none';
+                btnStop.style.display = 'none';
+                
+                btnStart.style.display = 'inline-flex';
+                btnStart.removeAttribute('disabled');
+                btnStart.innerHTML = '▶ Start Daemon';
+
+                const errorMsg = 'The cloud sync daemon is offline. Click "Start Daemon" to launch it.';
+                banner.classList.add('visible');
+                banner.querySelector('span').textContent = errorMsg;
+
+                if (wasDaemonRunning) {
+                    addLogEntry('error', 'Connection error: Cloud sync daemon is offline.');
+                    wasDaemonRunning = false;
+                }
+
+                document.getElementById('watched-dir').textContent = '-';
+                document.getElementById('config-file').textContent = '-';
+                document.getElementById('web-ui-address').textContent = '-';
+                document.getElementById('log-file').textContent = data.log_file || 'daemon.log';
+                
+                const backendsList = document.getElementById('backends-list');
+                backendsList.innerHTML = '<div style="color: var(--text-secondary); font-style: italic;">Daemon offline</div>';
+            }
+        }
+
+        function renderLogs() {
+            const consoleEl = document.getElementById('log-console');
+            
+            const filtered = localLogs.filter(log => {
+                if (currentFilter === 'all') return true;
+                return log.toLowerCase().includes(`[${currentFilter}]`);
+            });
+
+            if (filtered.length === 0) {
+                consoleEl.innerHTML = '<div class="console-empty">No matching log entries found.</div>';
+                return;
+            }
+
+            consoleEl.innerHTML = '';
+            filtered.forEach(log => {
+                const match = log.match(/^\[(.*?)\]\s+\[(.*?)\]\s+(.*)$/);
+                
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+
+                if (match) {
+                    const [_, timestamp, level, msg] = match;
+                    const cleanTime = timestamp.split(' ')[1] || timestamp;
+                    
+                    const timeEl = document.createElement('span');
+                    timeEl.className = 'log-time';
+                    timeEl.textContent = cleanTime;
+
+                    const levelEl = document.createElement('span');
+                    levelEl.className = `log-level level-${level.toLowerCase()}`;
+                    levelEl.textContent = level;
+
+                    const msgEl = document.createElement('span');
+                    msgEl.className = 'log-msg';
+                    msgEl.textContent = msg;
+
+                    entry.appendChild(timeEl);
+                    entry.appendChild(levelEl);
+                    entry.appendChild(msgEl);
+                } else {
+                    const msgEl = document.createElement('span');
+                    msgEl.className = 'log-msg';
+                    msgEl.textContent = log;
+                    entry.appendChild(msgEl);
+                }
+                
+                consoleEl.appendChild(entry);
+            });
+
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function setLogFilter(filter) {
+            currentFilter = filter;
+            ['all', 'info', 'error'].forEach(f => {
+                document.getElementById(`log-filter-${f}`).className = `btn-mini ${f === filter ? 'active' : ''}`;
+            });
+            renderLogs();
+        }
+
+        function clearLogsUI() {
+            localLogs = [];
+            renderLogs();
+        }
+
+        async function togglePause() {
+            const cmd = isPaused ? 'resume' : 'pause';
+            const btn = document.getElementById('btn-pause');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner"></span> Working...';
+            btn.disabled = true;
+
+            addLogEntry('info', `Sending '${cmd}' command to daemon...`);
+            const res = await apiCall(`/${cmd}`, 'POST');
+            if (res && res.status) {
+                addLogEntry('info', `Daemon responded: ${res.status}`);
+                await pollStatus();
+            } else {
+                addLogEntry('error', `Failed to send '${cmd}' command.`);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        async function triggerSync() {
+            const btn = document.getElementById('btn-sync');
+            btn.innerHTML = '<span class="spinner"></span> Syncing...';
+            btn.disabled = true;
+            isSyncing = true;
+            document.getElementById('status-pulse').className = 'status-dot syncing';
+            document.getElementById('status-text').textContent = 'Syncing...';
+
+            addLogEntry('info', "Requesting manual sync scan...");
+            const res = await apiCall('/sync', 'POST');
+            if (res && res.status) {
+                addLogEntry('info', `Daemon response: ${res.status}`);
+                await pollStatus();
+            } else {
+                isSyncing = false;
+                addLogEntry('error', "Failed to trigger sync scan.");
+                btn.innerHTML = '🔄 Sync Now (Full Scan)';
+                btn.disabled = false;
+                await pollStatus();
+            }
+        }
+
+        async function reloadConfig() {
+            const btn = document.getElementById('btn-reload');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner"></span> Reloading...';
+            btn.disabled = true;
+
+            addLogEntry('info', "Requesting daemon configuration reload...");
+            const res = await apiCall('/reload', 'POST');
+            if (res) {
+                if (res.status) {
+                    addLogEntry('info', `Daemon response: ${res.status}`);
+                } else if (res.error) {
+                    addLogEntry('error', `Daemon failed to reload: ${res.error}`);
+                }
+                await pollStatus();
+            } else {
+                addLogEntry('error', "Failed to connect to proxy server for reload.");
+            }
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+
+        async function startDaemon() {
+            const btn = document.getElementById('btn-start');
+            btn.innerHTML = '<span class="spinner"></span> Starting...';
+            btn.disabled = true;
+            isStartingDaemon = true;
+            
+            addLogEntry('info', "Requesting daemon start...");
+            const res = await apiCall('/start', 'POST');
+            if (res && res.status) {
+                addLogEntry('info', `Daemon start request succeeded: ${res.status}`);
+                await pollStatus();
+            } else {
+                addLogEntry('error', "Failed to start daemon.");
+                btn.innerHTML = '▶ Start Daemon';
+                btn.disabled = false;
+                isStartingDaemon = false;
+            }
+        }
+
+        async function stopDaemon() {
+            if (confirm('Are you sure you want to stop the background sync daemon? The daemon process will exit.')) {
+                const btn = document.getElementById('btn-stop');
+                btn.innerHTML = '<span class="spinner"></span> Stopping...';
+                btn.disabled = true;
+                
+                addLogEntry('info', "Sending stop command to daemon...");
+                await apiCall('/stop', 'POST');
+                setTimeout(async () => {
+                    addLogEntry('info', "Daemon shutdown initiated.");
+                    await pollStatus();
+                }, 1500);
+            }
+        }
+
+        async function pollConflicts() {
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    const conflicts = await window.__TAURI_INTERNALS__.invoke('conflicts');
+                    renderConflicts(conflicts);
+                    return;
+                }
+                const res = await fetch('/api/conflicts');
+                if (!res.ok) return;
+                const conflicts = await res.json();
+                renderConflicts(conflicts);
+            } catch (e) {
+                console.error("Failed to poll conflicts:", e);
+            }
+        }
+
+        function renderConflicts(conflicts) {
+            const badge = document.getElementById('conflict-badge');
+            const emptyEl = document.getElementById('conflicts-empty');
+            const tableContainer = document.getElementById('conflicts-table-container');
+            const tbody = document.getElementById('conflicts-body');
+
+            if (!conflicts || conflicts.length === 0) {
+                badge.style.display = 'none';
+                emptyEl.style.display = 'flex';
+                tableContainer.style.display = 'none';
+                tbody.innerHTML = '';
+                return;
+            }
+
+            badge.style.display = 'inline-block';
+            badge.textContent = `${conflicts.length} Conflict${conflicts.length > 1 ? 's' : ''}`;
+            emptyEl.style.display = 'none';
+            tableContainer.style.display = 'block';
+            tbody.innerHTML = '';
+
+            conflicts.forEach(c => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid var(--card-border)';
+
+                let typeLabel = 'Concurrent Edit';
+                if (c.conflict_type === 'local_modified_remote_deleted') typeLabel = 'Local Edit vs Remote Delete';
+                else if (c.conflict_type === 'remote_modified_local_deleted') typeLabel = 'Remote Edit vs Local Delete';
+                else if (c.conflict_type === 'concurrent_addition') typeLabel = 'Concurrent Addition';
+
+                const localInfo = c.local_size !== null ? `${c.local_size} bytes` : 'Deleted';
+                const remoteInfo = c.remote_size !== null ? `${c.remote_size} bytes` : 'Deleted';
+
+                tr.innerHTML = `
+                    <td style="padding: 0.75rem 0.5rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; word-break: break-all;">
+                        ${c.rel_path}
+                    </td>
+                    <td style="padding: 0.75rem 0.5rem;">
+                        <span style="background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">
+                            ${typeLabel}
+                        </span>
+                    </td>
+                    <td style="padding: 0.75rem 0.5rem; color: var(--text-secondary); font-size: 0.8rem;">
+                        Local: <span style="color: var(--text-primary);">${localInfo}</span> | 
+                        Remote: <span style="color: var(--text-primary);">${remoteInfo}</span>
+                    </td>
+                    <td style="padding: 0.75rem 0.5rem; text-align: right; white-space: nowrap;">
+                        <button class="btn-mini" onclick="resolveConflict('${c.rel_path}', 'use_local')" style="background: rgba(20, 184, 166, 0.2); color: var(--accent-teal); border: 1px solid rgba(20, 184, 166, 0.4); margin-right: 0.25rem;" title="Upload local version to remote">Keep Local</button>
+                        <button class="btn-mini" onclick="resolveConflict('${c.rel_path}', 'use_remote')" style="background: rgba(99, 102, 241, 0.2); color: var(--accent-indigo); border: 1px solid rgba(99, 102, 241, 0.4); margin-right: 0.25rem;" title="Download remote version to local">Keep Remote</button>
+                        <button class="btn-mini" onclick="resolveConflict('${c.rel_path}', 'keep_both')" style="background: rgba(139, 92, 246, 0.2); color: var(--accent-purple); border: 1px solid rgba(139, 92, 246, 0.4); margin-right: 0.25rem;" title="Preserve both files">Keep Both</button>
+                        <button class="btn-mini" onclick="resolveConflict('${c.rel_path}', 'skip')" style="background: rgba(255, 255, 255, 0.05); color: var(--text-secondary);" title="Dismiss alert">Dismiss</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        async function resolveConflict(relPath, resolution) {
+            addLogEntry('info', `Resolving conflict for '${relPath}' with '${resolution}'...`);
+            if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                try {
+                    const data = await window.__TAURI_INTERNALS__.invoke('resolve_conflict', { path: relPath, resolution: resolution });
+                    addLogEntry('info', `Conflict resolution: ${data.status}`);
+                    await pollConflicts();
+                    await pollStatus();
+                    return;
+                } catch (e) {
+                    addLogEntry('error', `Conflict resolution failed: ${e}`);
+                    return;
+                }
+            }
+            try {
+                const res = await fetch('/api/conflicts/resolve', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rel_path: relPath, resolution: resolution })
+                });
+                const data = await res.json();
+                if (data.status) {
+                    addLogEntry('info', `Conflict resolution: ${data.status}`);
+                    await pollConflicts();
+                    await pollStatus();
+                } else if (data.error) {
+                    addLogEntry('error', `Conflict resolution failed: ${data.error}`);
+                }
+            } catch (e) {
+                addLogEntry('error', `Error sending conflict resolution: ${e}`);
+            }
+        }
+
+        function initEventSource() {
+            if (window.__TAURI_INTERNALS__) {
+                return;
+            }
+            const eventSource = new EventSource('/api/events');
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'progress') {
+                        activeSyncingBackend = data.backend_name || null;
+                        const backendPrefix = data.backend_name ? `[${data.backend_name}] ` : '';
+                        addLogEntry('info', `[Real-Time Progress] ${backendPrefix}${data.message} ${data.active_file ? `(${data.active_file})` : ''} - ${data.progress_percent ? Math.round(data.progress_percent) : 0}%`);
+                        const syncText = document.getElementById('status-text');
+                        if (syncText) {
+                            syncText.textContent = `Syncing${data.backend_name ? ` [${data.backend_name}]` : ''}: ${Math.round(data.progress_percent)}%`;
+                        }
+                    } else if (data.type === 'status') {
+                        if (data.message === "Starting synchronization...") {
+                            activeSyncingBackend = data.backend_name || null;
+                        } else {
+                            activeSyncingBackend = null;
+                        }
+                        const backendPrefix = data.backend_name ? `[${data.backend_name}] ` : '';
+                        addLogEntry('info', `[Status Update] ${backendPrefix}${data.message}`);
+                        pollStatus();
+                    } else if (data.type === 'conflict' || data.type === 'conflict_resolved') {
+                        addLogEntry('info', `[Conflict Event] ${data.rel_path || ''} ${data.resolution || ''}`);
+                        pollConflicts();
+                    } else if (data.type === 'error') {
+                        const backendPrefix = data.backend_name ? `[${data.backend_name}] ` : '';
+                        addLogEntry('error', `[Daemon Error] ${backendPrefix}${data.message}`);
+                    }
+                } catch (e) {
+                    console.error('Error parsing SSE event:', e);
+                }
+            };
+            eventSource.onerror = () => {
+                console.warn('SSE connection lost. Reconnecting in 5 seconds...');
+                eventSource.close();
+                setTimeout(initEventSource, 5000);
+            };
+        }
+
+        // Initial loading and scheduling
+        (async function init() {
+            addLogEntry('info', "UI Client initialized. Connecting to Rust UI server...");
+            await pollStatus();
+            await pollConflicts();
+            initEventSource();
+            
+            // Poll status and conflicts every 2 seconds
+            setInterval(async () => {
+                await pollStatus();
+                await pollConflicts();
+            }, 2000);
+        })();
+    </script>
 </body>
 </html>
