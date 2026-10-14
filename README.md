@@ -33,9 +33,13 @@ Convenient launch scripts for the frontends are provided in the `scripts/` direc
   - Windows: `scripts\launch_web_ui.cmd`
   - Linux / macOS: `./scripts/launch_web_ui.sh`
 
-On Windows, these scripts run precompiled binaries windowless without visible command prompts, falling back smoothly to `cargo run` if binaries have not been compiled yet. On Linux and macOS, they start background processes and open your system's default browser automatically.
+* **Android Mobile APK Builder (`cloud_sync_tauri`)**:
+  - Windows: `scripts\build_android.cmd`
+  - Linux / macOS: `./scripts/build_android.sh`
 
-For Android mobile build and deployment instructions, see the **[Android Client Guide](docs/ANDROID_CLIENT.md)**.
+On Windows, the launch scripts run precompiled binaries windowless without visible command prompts, falling back smoothly to `cargo run` if binaries have not been compiled yet. On Linux and macOS, they start background processes and open your system's default browser automatically.
+
+For Android mobile architecture, permissions, and deployment workflows, see the **[Android Client Guide](docs/ANDROID_CLIENT.md)**.
 
 ---
 

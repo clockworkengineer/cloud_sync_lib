@@ -24,3 +24,12 @@ cloud_simulation/*
 *.log
 sync_state/
 **/sync_state/
+
+# Android build outputs and generated assets
+crates/cloud_sync_tauri/binaries/cloud_sync_daemon-*
+crates/cloud_sync_tauri/gen/android/app/build/
+crates/cloud_sync_tauri/gen/android/app/src/main/jniLibs/
+crates/cloud_sync_tauri/gen/android/app/src/main/assets/
+crates/cloud_sync_tauri/gen/android/.gradle/
+crates/cloud_sync_tauri/gen/android/build/
+crates/cloud_sync_tauri/gen/android/.tauri/

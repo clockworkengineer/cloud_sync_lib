@@ -23,6 +23,19 @@ abstract class BuildTask : DefaultTask() {
 
     @TaskAction
     fun assemble() {
+        val abi = when (target) {
+            "aarch64-linux-android" -> "arm64-v8a"
+            "armv7-linux-androideabi" -> "armeabi-v7a"
+            "i686-linux-android" -> "x86"
+            "x86_64-linux-android" -> "x86_64"
+            else -> "arm64-v8a"
+        }
+        val jniLib = File(projectDir, "src/main/jniLibs/$abi/libcloud_sync_tauri_lib.so")
+        if (jniLib.exists()) {
+            println("Native library already compiled at: ${jniLib.absolutePath}")
+            return
+        }
+
         val executable = """cargo""";
         try {
             runTauriCli(executable)

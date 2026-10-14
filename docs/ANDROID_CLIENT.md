@@ -118,7 +118,17 @@ cargo tauri android init
 ```
 This generates the Gradle project under `crates/cloud_sync_tauri/gen/android/` with `MainActivity.kt` pre-configured to load `libcloud_sync_tauri.so`.
 
-### 4.2 Run in Live Development Mode (Emulator or Device)
+### 4.2 Quick 1-Click APK Build Script
+To build the Android ARM64 APK with all environment variables, asset sync, and NDK paths automatically configured:
+* **Windows**: `scripts\build_android.cmd`
+* **Linux / macOS**: `./scripts/build_android.sh`
+
+The compiled APK will be produced at:
+```text
+crates/cloud_sync_tauri/gen/android/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk
+```
+
+### 4.3 Run in Live Development Mode (Emulator or Device)
 Connect an Android device with USB Debugging enabled (or start an AVD emulator), then execute:
 ```bash
 cargo tauri android dev
@@ -129,14 +139,14 @@ Tauri will:
 3. Build the APK and install it on the connected device.
 4. Stream `adb logcat` output directly to the terminal.
 
-### 4.3 Build Release APK
+### 4.4 Build Release APK
 To generate a release APK:
 ```bash
 cargo tauri android build --apk
 ```
-The compiled APK will be located at:
-```
-crates/cloud_sync_tauri/gen/android/app/build/outputs/apk/release/app-release-unsigned.apk
+The compiled release APK will be located at:
+```text
+crates/cloud_sync_tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release-unsigned.apk
 ```
 
 ---
