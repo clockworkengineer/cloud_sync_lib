@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    cloud_sync_tauri::run();
+    cloud_sync_tauri_lib::run();
 }
