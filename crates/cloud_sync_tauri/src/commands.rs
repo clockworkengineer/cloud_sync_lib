@@ -208,3 +208,149 @@ pub async fn resolve_conflict(
         _ => Err(format!("Unknown resolution: {}", resolution)),
     }
 }
+
+#[tauri::command]
+pub async fn get_config(
+    state: tauri::State<'_, SharedDaemonState>,
+) -> Result<serde_json::Value, String> {
+    let config_file = {
+        let lock = state.lock().await;
+        lock.config_file.clone()
+    };
+
+    let config = cloud_sync_daemon::config::load_or_create_config(&config_file)
+        .await
+        .map_err(|e| format!("Failed to read configuration: {}", e))?;
+
+    serde_json::to_value(&config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_config(
+    state: tauri::State<'_, SharedDaemonState>,
+    config: cloud_sync_daemon::config::AppConfig,
+) -> Result<serde_json::Value, String> {
+    let mut lock = state.lock().await;
+    let config_file = lock.config_file.clone();
+
+    // Ensure watch directory exists
+    let _ = tokio::fs::create_dir_all(&config.watch_directory).await;
+    lock.watch_dir = config.watch_directory.clone();
+
+    if let Some(cp) = config.conflict_policy {
+        lock.conflict_policy = cp;
+    }
+    if let Some(dr) = config.dry_run {
+        lock.dry_run = dr;
+    }
+    if let Some(mc) = config.max_concurrency {
+        lock.max_concurrency = mc;
+    }
+
+    // Rebuild active backends
+    lock.backends = cloud_sync_daemon::build_backends(
+        &config,
+        lock.upload_limiter.clone(),
+        lock.download_limiter.clone(),
+    );
+
+    // Save TOML
+    let toml_str = toml::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize TOML configuration: {}", e))?;
+    tokio::fs::write(&config_file, toml_str)
+        .await
+        .map_err(|e| format!("Failed to save config file: {}", e))?;
+
+    let _ = lock.event_tx.send(
+        serde_json::json!({
+            "type": "status",
+            "message": format!("Configuration saved. Active backends: {}", lock.backends.len())
+        })
+        .to_string(),
+    );
+
+    Ok(serde_json::json!({
+        "status": "saved",
+        "watch_directory": lock.watch_dir.to_string_lossy(),
+        "active_backends_count": lock.backends.len()
+    }))
+}
+
+#[derive(serde::Serialize)]
+pub struct DirectoryPreset {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct DirectoryListing {
+    pub current: String,
+    pub parent: Option<String>,
+    pub subdirectories: Vec<String>,
+    pub presets: Vec<DirectoryPreset>,
+}
+
+#[tauri::command]
+pub async fn list_directory(path: Option<String>) -> Result<DirectoryListing, String> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+
+    let target_path = match path {
+        Some(p) if !p.trim().is_empty() => std::path::PathBuf::from(p),
+        _ => std::path::PathBuf::from(&home),
+    };
+
+    let canonical = target_path.canonicalize().unwrap_or(target_path.clone());
+    let mut subdirectories = Vec::new();
+
+    if let Ok(mut entries) = tokio::fs::read_dir(&canonical).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if let Ok(file_type) = entry.file_type().await {
+                if file_type.is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if !name.starts_with('.') && !name.starts_with('$') {
+                        subdirectories.push(name);
+                    }
+                }
+            }
+        }
+    }
+    subdirectories.sort_by_key(|a| a.to_lowercase());
+
+    let parent = canonical.parent().map(|p| p.to_string_lossy().to_string());
+
+    let mut presets = Vec::new();
+    let home_path = std::path::Path::new(&home);
+    presets.push(DirectoryPreset {
+        name: "Home".into(),
+        path: home.clone(),
+    });
+    for (name, sub) in &[
+        ("Documents", "Documents"),
+        ("Downloads", "Downloads"),
+        ("Pictures", "Pictures"),
+        ("CloudSync", "CloudSync"),
+    ] {
+        let p = home_path.join(sub);
+        presets.push(DirectoryPreset {
+            name: (*name).into(),
+            path: p.to_string_lossy().to_string(),
+        });
+    }
+
+    Ok(DirectoryListing {
+        current: canonical.to_string_lossy().to_string(),
+        parent,
+        subdirectories,
+        presets,
+    })
+}
+
+#[tauri::command]
+pub async fn create_directory(path: String) -> Result<serde_json::Value, String> {
+    tokio::fs::create_dir_all(&path)
+        .await
+        .map_err(|e| format!("Failed to create directory '{}': {}", path, e))?;
+    Ok(serde_json::json!({ "status": "created", "path": path }))
+}

@@ -223,7 +223,11 @@ pub fn run() {
             commands::pause,
             commands::resume,
             commands::conflicts,
-            commands::resolve_conflict
+            commands::resolve_conflict,
+            commands::get_config,
+            commands::save_config,
+            commands::list_directory,
+            commands::create_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
