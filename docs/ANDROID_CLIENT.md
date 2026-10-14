@@ -128,7 +128,12 @@ The compiled APK will be produced at:
 crates/cloud_sync_tauri/gen/android/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk
 ```
 
-### 4.3 Run in Live Development Mode (Emulator or Device)
+### 4.3 Quick 1-Click Device Deployment & Logcat Streaming
+To detect a connected device/emulator, install the APK, launch `com.cloudsync.app/.MainActivity`, and stream Rust/Tauri logs in one command:
+* **Windows**: `scripts\install_android.cmd`
+* **Linux / macOS**: `./scripts/install_android.sh`
+
+### 4.4 Run in Live Development Mode (Emulator or Device)
 Connect an Android device with USB Debugging enabled (or start an AVD emulator), then execute:
 ```bash
 cargo tauri android dev
