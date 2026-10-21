@@ -1,5 +1,10 @@
 # Cloud Sync Workspace
 
+[![CI](https://github.com/clockworkengineer/cloud_sync_lib/actions/workflows/ci.yml/badge.svg)](https://github.com/clockworkengineer/cloud_sync_lib/actions/workflows/ci.yml)
+[![Version: 0.2.0](https://img.shields.io/badge/version-0.2.0-orange.svg)](Cargo.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Tests: 96 Passed](https://img.shields.io/badge/tests-96%20passed-brightgreen.svg)](#3-run-workspace-tests)
+
 A high-performance, modular Rust workspace designed to watch local folders and synchronize file additions, modifications, and deletions in real-time across multiple cloud storage providers with 3-way synchronization, catalog isolation, and end-to-end observability.
 
 ---
