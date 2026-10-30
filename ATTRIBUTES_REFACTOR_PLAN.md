@@ -237,6 +237,22 @@ impl StorageError {
 > - Resolved Windows MSVC build failures: `cargo test -p cloud_sync_daemon` and `cargo test -p cloud_sync_backup` now compile and pass out-of-the-box on Windows without requiring Perl or OpenSSL toolchains.
 > - 100% test coverage passing: 19 tests in `cloud_sync_core`, 33 tests in `cloud_sync_daemon`, all tests in `cloud_sync_backup`, 0 Clippy warnings under `-D warnings`.
 
+### Phase 4: Flexibility, Testability & Footprint (Attributes 5, 6, 8, 10) [COMPLETED]
+
+> [!NOTE]
+> **Status: COMPLETED**
+> - **Flexibility & Customization (`Attribute 6`)**:
+>   - Implemented [`SyncInterceptor`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_daemon/src/engine/orchestrator.rs#L18) trait in `SyncOrchestrator` (`before_action`, `after_action`, `on_error`) providing lifecycle hooks for cancellation, progress observation, and telemetry.
+>   - Implemented [`JsonStateStore`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_core/src/state_io.rs#L164) alongside `PostcardStateStore` providing an alternative human-readable JSON state catalog backend with atomic temporary write-rename and `.bak` recovery.
+> - **High Testability (`Attribute 8`)**:
+>   - Built standardized specification compliance harness [`verify_backend_compliance`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_core/src/testing.rs#L19) in `cloud_sync_core::testing`, verifying non-empty names, upload, listing, byte-for-byte download, NotFound error contracts, deletion, and capability invariants.
+>   - Automated compliance testing in [`crates/cloud_sync_lib/src/providers/local_sim.rs`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/providers/local_sim.rs#L442).
+> - **Maintainability (`Attribute 5`)**:
+>   - Standardized error categorization and tracing fields across all backends and middlewares.
+> - **Low Dependency Footprint (`Attribute 10`)**:
+>   - Kept `default = []` in `cloud_sync_lib` and slimmed default providers in `cloud_sync_daemon` and `cloud_sync_backup` to pure-Rust backends.
+> - **Verification**: 121 tests passing across the workspace (19 in `cloud_sync_core`, 60 in `cloud_sync_lib`, 33 in `cloud_sync_daemon`, 5 in `cloud_sync_ui`, 4 in `cloud_sync_std`), with 0 Clippy warnings under `-D warnings`.
+
 ---
 
 ```mermaid

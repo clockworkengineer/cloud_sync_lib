@@ -158,3 +158,83 @@ impl StateStore for PostcardStateStore {
         Ok(())
     }
 }
+
+/// Alternative human-readable JSON state store with atomic save and `.bak` recovery.
+#[cfg(feature = "std")]
+#[derive(Debug, Clone, Default)]
+pub struct JsonStateStore;
+
+#[cfg(feature = "std")]
+impl JsonStateStore {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[cfg(feature = "std")]
+#[async_trait::async_trait]
+impl StateStore for JsonStateStore {
+    async fn load(&self, path: &Path) -> Result<SyncState, StorageError> {
+        match tokio::fs::read(path).await {
+            Ok(bytes) => {
+                if let Ok(state) = serde_json::from_slice(&bytes) {
+                    return Ok(state);
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(SyncState::default());
+            }
+            Err(_) => {}
+        }
+
+        let bak_path = path.with_extension("bak");
+        if bak_path.exists() {
+            if let Ok(bytes) = tokio::fs::read(&bak_path).await {
+                if let Ok(state) = serde_json::from_slice(&bytes) {
+                    return Ok(state);
+                }
+            }
+        }
+
+        Ok(SyncState::default())
+    }
+
+    async fn save(&self, path: &Path, state: &SyncState) -> Result<(), StorageError> {
+        let payload = serde_json::to_vec_pretty(state)
+            .map_err(|e| StorageError::Io(std::io::Error::other(e.to_string())))?;
+
+        let temp_filename = format!(
+            ".{}_{}.tmp",
+            path.file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| "state".to_string()),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+
+        let temp_path = match path.parent() {
+            Some(parent) => {
+                tokio::fs::create_dir_all(parent).await?;
+                parent.join(temp_filename)
+            }
+            None => std::path::PathBuf::from(temp_filename),
+        };
+
+        {
+            use tokio::io::AsyncWriteExt;
+            let mut file = tokio::fs::File::create(&temp_path).await?;
+            file.write_all(&payload).await?;
+            file.sync_all().await?;
+        }
+
+        if path.exists() {
+            let bak_path = path.with_extension("bak");
+            let _ = tokio::fs::copy(path, &bak_path).await;
+        }
+
+        tokio::fs::rename(&temp_path, path).await?;
+        Ok(())
+    }
+}

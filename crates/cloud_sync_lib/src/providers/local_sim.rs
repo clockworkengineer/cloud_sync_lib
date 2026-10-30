@@ -278,6 +278,36 @@ impl cloud_sync_core::ResumableUploadSession for SimulatedResumableUploadSession
 }
 
 #[async_trait]
+impl cloud_sync_core::ServerSideOperations for LocalSimulation {
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.copy(from, to).await
+    }
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.rename(from, to).await
+    }
+}
+
+#[async_trait]
+impl cloud_sync_core::ResumableUploader for LocalSimulation {
+    async fn start_resumable_upload(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+        chunk_size: usize,
+    ) -> Result<Box<dyn cloud_sync_core::ResumableUploadSession>, StorageError> {
+        let meta = tokio::fs::metadata(local_path).await?;
+        let dest = self.resolve(remote_path);
+        Ok(Box::new(SimulatedResumableUploadSession {
+            local_path: local_path.to_path_buf(),
+            dest_path: dest,
+            total_bytes: meta.len(),
+            uploaded_bytes: 0,
+            chunk_size: chunk_size.max(1024),
+        }))
+    }
+}
+
+#[async_trait]
 impl StorageBackend for LocalSimulation {
     fn name(&self) -> &str {
         &self.provider_name
@@ -288,6 +318,14 @@ impl StorageBackend for LocalSimulation {
             .union(cloud_sync_core::StorageCapabilities::SERVER_SIDE_COPY)
             .union(cloud_sync_core::StorageCapabilities::RESUMABLE_UPLOAD)
             .union(cloud_sync_core::StorageCapabilities::CHECKSUM_SHA256)
+    }
+
+    fn as_server_side_ops(&self) -> Option<&dyn cloud_sync_core::ServerSideOperations> {
+        Some(self)
+    }
+
+    fn as_resumable_uploader(&self) -> Option<&dyn cloud_sync_core::ResumableUploader> {
+        Some(self)
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
@@ -400,5 +438,16 @@ mod tests {
         let dest_file = temp_dir.path().join("new_parent/dest.txt");
         let checksum = sim.compute_local_checksum(&dest_file).await.unwrap();
         assert!(checksum.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_local_sim_specification_compliance() {
+        let dir = tempdir().unwrap();
+        let sim_root = dir.path().join("sim_root");
+        tokio::fs::create_dir_all(&sim_root).await.unwrap();
+        let sim = LocalSimulation::new(sim_root, "compliance_test".to_string());
+        cloud_sync_core::verify_backend_compliance(&sim, dir.path())
+            .await
+            .expect("Specification compliance test failed");
     }
 }

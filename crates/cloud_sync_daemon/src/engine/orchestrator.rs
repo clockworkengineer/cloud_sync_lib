@@ -14,11 +14,40 @@ use crate::engine::state_repository::SyncStateRepository;
 use crate::engine::versioning::TrashManager;
 use cloud_sync_lib::StorageBackend;
 
+/// Lifecycle interceptor hooks for observing or intercepting sync actions (Attribute 6: Flexibility).
+#[async_trait::async_trait]
+pub trait SyncInterceptor: Send + Sync {
+    /// Invoked immediately prior to an action executing; returning Err cancels the action.
+    async fn before_action(
+        &self,
+        _action: &crate::engine::plan::SyncAction,
+    ) -> Result<(), cloud_sync_lib::StorageError> {
+        Ok(())
+    }
+
+    /// Invoked immediately after an action completes successfully.
+    async fn after_action(
+        &self,
+        _action: &crate::engine::plan::SyncAction,
+        _duration: std::time::Duration,
+    ) {
+    }
+
+    /// Invoked if an action fails.
+    async fn on_error(
+        &self,
+        _action: &crate::engine::plan::SyncAction,
+        _error: &cloud_sync_lib::StorageError,
+    ) {
+    }
+}
+
 /// Orchestrator coordinating synchronization operations across local filesystems and remote backends (SRP & DIP).
 pub struct SyncOrchestrator {
     fs: Arc<dyn FileSystem>,
     clock: Arc<dyn Clock>,
     state_repo: SyncStateRepository,
+    interceptor: Option<Arc<dyn SyncInterceptor>>,
 }
 
 impl SyncOrchestrator {
@@ -27,7 +56,17 @@ impl SyncOrchestrator {
             fs,
             clock,
             state_repo: SyncStateRepository::new(),
+            interceptor: None,
         }
+    }
+
+    pub fn with_interceptor(mut self, interceptor: Arc<dyn SyncInterceptor>) -> Self {
+        self.interceptor = Some(interceptor);
+        self
+    }
+
+    pub fn interceptor(&self) -> Option<&Arc<dyn SyncInterceptor>> {
+        self.interceptor.as_ref()
     }
 
     pub fn default_real() -> Self {
