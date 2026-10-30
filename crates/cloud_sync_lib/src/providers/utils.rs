@@ -178,6 +178,25 @@ impl OAuthTokenManager {
         *cache = Some((token.clone(), expiry));
         Ok(token)
     }
+
+    pub async fn force_refresh(&self) -> Result<String, StorageError> {
+        {
+            let mut cache = self.cache.write().await;
+            *cache = None;
+        }
+        self.get_access_token().await
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::auth::TokenProvider for OAuthTokenManager {
+    async fn get_access_token(&self) -> Result<String, StorageError> {
+        self.get_access_token().await
+    }
+
+    async fn force_refresh(&self) -> Result<String, StorageError> {
+        self.force_refresh().await
+    }
 }
 
 /// Unified helper to map an HTTP status code to `StorageError`.

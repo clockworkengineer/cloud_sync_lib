@@ -22,8 +22,8 @@ pub struct BoxProvider {
     api_url: String,
     /// The base upload API URL.
     upload_url: String,
-    /// Shared OAuth token manager.
-    token_manager: std::sync::Arc<super::utils::OAuthTokenManager>,
+    /// Shared OAuth token manager / token provider.
+    token_manager: std::sync::Arc<dyn crate::auth::TokenProvider>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -97,6 +97,15 @@ impl BoxProvider {
         ));
         self.api_url = api_url;
         self.upload_url = upload_url;
+        self
+    }
+
+    /// Sets a custom token provider (Dependency Inversion Principle).
+    pub fn with_token_provider(
+        mut self,
+        token_provider: std::sync::Arc<dyn crate::auth::TokenProvider>,
+    ) -> Self {
+        self.token_manager = token_provider;
         self
     }
 

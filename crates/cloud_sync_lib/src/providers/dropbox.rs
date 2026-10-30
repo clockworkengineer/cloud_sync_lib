@@ -20,8 +20,8 @@ pub struct DropboxProvider {
     api_url: String,
     /// The base content API URL.
     content_url: String,
-    /// Shared OAuth token manager.
-    token_manager: std::sync::Arc<super::utils::OAuthTokenManager>,
+    /// Shared OAuth token manager / token provider.
+    token_manager: std::sync::Arc<dyn crate::auth::TokenProvider>,
     /// Optional upload rate limiter.
     upload_limiter: Option<crate::rate_limit::TokenBucket>,
     /// Optional download rate limiter.
@@ -76,6 +76,15 @@ impl DropboxProvider {
         if self.download_limiter.is_none() {
             self.download_limiter = download_limiter;
         }
+        self
+    }
+
+    /// Sets a custom token provider (Dependency Inversion Principle).
+    pub fn with_token_provider(
+        mut self,
+        token_provider: std::sync::Arc<dyn crate::auth::TokenProvider>,
+    ) -> Self {
+        self.token_manager = token_provider;
         self
     }
 

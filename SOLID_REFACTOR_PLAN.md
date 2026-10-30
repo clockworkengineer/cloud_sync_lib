@@ -180,7 +180,15 @@ pub trait StorageBackend: StorageReader + StorageWriter + DirectoryLister {
 
 ---
 
-### Phase 2: Dependency Inversion (DIP) in `cloud_sync_lib`
+### Phase 2: Dependency Inversion (DIP) in `cloud_sync_lib` [COMPLETED]
+
+> [!NOTE]
+> **Status: COMPLETED**
+> - `HttpTransport` trait, `ReqwestHttpTransport`, and `MockHttpTransport` implemented in `crates/cloud_sync_lib/src/transport.rs` with `execute` and `send` helper.
+> - `TokenProvider` trait and `StaticTokenProvider` implemented in `crates/cloud_sync_lib/src/auth.rs`.
+> - `OAuthTokenManager` implements `TokenProvider` with `get_access_token` and `force_refresh`.
+> - `GoogleDriveProvider`, `DropboxProvider`, `OneDriveProvider`, and `BoxProvider` decoupled to depend on `Arc<dyn TokenProvider>` with `.with_token_provider(...)` dependency injection.
+> - 100% test coverage passing: `cloud_sync_lib` (53 tests), `cloud_sync_daemon` (compilation verified).
 
 #### 2.1 Transport Abstraction for Network Providers
 Separate HTTP and socket execution from provider business logic:

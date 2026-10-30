@@ -6,16 +6,20 @@
 //! It supports both actual API clients (using OAuth2 refresh tokens) and a local
 //! folder fallback simulation for offline development and testing.
 
+pub mod auth;
 pub mod config;
 pub mod layers;
 pub mod providers;
 pub mod rate_limit;
+pub mod transport;
 
+pub use auth::{StaticTokenProvider, TokenProvider};
 pub use config::{ProviderCredentialsConfig, ProviderRootsConfig};
 pub use layers::{
     LayeredBackendExt, LoggingLayer, MetricsCollector, MetricsLayer, RateLimitLayer, RetryLayer,
     StorageLayer, StorageMetrics,
 };
+pub use transport::{HttpTransport, MockHttpTransport, ReqwestHttpTransport};
 
 pub use cloud_sync_core::traits;
 pub mod sys {
