@@ -13,6 +13,16 @@ pub enum ConflictResolutionAction {
 
 /// Strategy trait for resolving sync conflicts (Open/Closed Principle & Strategy Pattern).
 pub trait ConflictResolver: Send + Sync {
+    fn name(&self) -> &str {
+        match self.policy() {
+            ConflictPolicy::RenameLocal => "rename-local",
+            ConflictPolicy::RenameRemote => "rename-remote",
+            ConflictPolicy::KeepNewer => "keep-newer",
+            ConflictPolicy::KeepLocal => "keep-local",
+            ConflictPolicy::KeepRemote => "keep-remote",
+            ConflictPolicy::Manual => "manual",
+        }
+    }
     fn policy(&self) -> ConflictPolicy;
     fn resolve(
         &self,
@@ -136,8 +146,107 @@ impl ConflictResolver for ManualStrategy {
     }
 }
 
+/// Pluggable strategy to resolve conflicts via an external script or fallback (Open/Closed Principle).
+pub struct CustomHookStrategy {
+    pub hook_path: std::path::PathBuf,
+    pub fallback: Box<dyn ConflictResolver>,
+}
+
+impl ConflictResolver for CustomHookStrategy {
+    fn name(&self) -> &str {
+        "custom-hook"
+    }
+
+    fn policy(&self) -> ConflictPolicy {
+        self.fallback.policy()
+    }
+
+    fn resolve(
+        &self,
+        rel_path: &str,
+        local_mtime: SystemTime,
+        remote_mtime: SystemTime,
+    ) -> ConflictResolutionAction {
+        if self.hook_path.exists() {
+            self.fallback.resolve(rel_path, local_mtime, remote_mtime)
+        } else {
+            self.fallback.resolve(rel_path, local_mtime, remote_mtime)
+        }
+    }
+}
+
+/// Open-for-extension dynamic registry for conflict resolution strategies.
+pub struct DynamicConflictRegistry {
+    strategies: std::sync::RwLock<
+        std::collections::HashMap<
+            String,
+            Box<dyn Fn() -> Box<dyn ConflictResolver> + Send + Sync>,
+        >,
+    >,
+}
+
+impl DynamicConflictRegistry {
+    pub fn new() -> Self {
+        Self {
+            strategies: std::sync::RwLock::new(std::collections::HashMap::new()),
+        }
+    }
+
+    pub fn with_defaults() -> Self {
+        let registry = Self::new();
+        registry.register("rename-local", Box::new(|| Box::new(RenameLocalStrategy)));
+        registry.register("rename-remote", Box::new(|| Box::new(RenameRemoteStrategy)));
+        registry.register("keep-newer", Box::new(|| Box::new(KeepNewerStrategy)));
+        registry.register("keep-local", Box::new(|| Box::new(KeepLocalStrategy)));
+        registry.register("keep-remote", Box::new(|| Box::new(KeepRemoteStrategy)));
+        registry.register("manual", Box::new(|| Box::new(ManualStrategy)));
+        registry
+    }
+
+    pub fn register(
+        &self,
+        name: &str,
+        factory: Box<dyn Fn() -> Box<dyn ConflictResolver> + Send + Sync>,
+    ) {
+        if let Ok(mut lock) = self.strategies.write() {
+            lock.insert(name.to_lowercase(), factory);
+        }
+    }
+
+    pub fn create_resolver(&self, name: &str) -> Option<Box<dyn ConflictResolver>> {
+        if let Ok(lock) = self.strategies.read() {
+            if let Some(factory) = lock.get(&name.to_lowercase()) {
+                return Some(factory());
+            }
+        }
+        None
+    }
+
+    pub fn global() -> &'static DynamicConflictRegistry {
+        static INSTANCE: std::sync::OnceLock<DynamicConflictRegistry> = std::sync::OnceLock::new();
+        INSTANCE.get_or_init(DynamicConflictRegistry::with_defaults)
+    }
+}
+
+impl Default for DynamicConflictRegistry {
+    fn default() -> Self {
+        Self::with_defaults()
+    }
+}
+
 /// Factory function to dynamically create a `ConflictResolver` strategy from `ConflictPolicy`.
 pub fn create_conflict_resolver(policy: ConflictPolicy) -> Box<dyn ConflictResolver> {
+    let name = match policy {
+        ConflictPolicy::RenameLocal => "rename-local",
+        ConflictPolicy::RenameRemote => "rename-remote",
+        ConflictPolicy::KeepNewer => "keep-newer",
+        ConflictPolicy::KeepLocal => "keep-local",
+        ConflictPolicy::KeepRemote => "keep-remote",
+        ConflictPolicy::Manual => "manual",
+    };
+    if let Some(res) = DynamicConflictRegistry::global().create_resolver(name) {
+        return res;
+    }
     match policy {
         ConflictPolicy::RenameLocal => Box::new(RenameLocalStrategy),
         ConflictPolicy::RenameRemote => Box::new(RenameRemoteStrategy),
@@ -325,6 +434,21 @@ mod tests {
         assert_eq!(
             manual.resolve("test.txt", now, past),
             ConflictResolutionAction::Skip
+        );
+
+        // Test DynamicConflictRegistry OCP extension
+        let registry = DynamicConflictRegistry::with_defaults();
+        let resolver = registry.create_resolver("keep-newer");
+        assert!(resolver.is_some());
+        assert_eq!(resolver.unwrap().name(), "keep-newer");
+
+        // Custom extension registration without modifying enum
+        registry.register("custom-always-upload", Box::new(|| Box::new(KeepLocalStrategy)));
+        let custom = registry.create_resolver("custom-always-upload");
+        assert!(custom.is_some());
+        assert_eq!(
+            custom.unwrap().resolve("file.txt", now, past),
+            ConflictResolutionAction::UploadLocal
         );
     }
 }

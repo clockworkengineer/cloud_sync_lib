@@ -223,7 +223,14 @@ Providers receive `Arc<dyn TokenProvider>` and `Arc<dyn HttpTransport>`, enablin
 
 ---
 
-### Phase 3: Open/Closed Principle (OCP) for Providers & Configuration
+### Phase 3: Open/Closed Principle (OCP) for Providers & Configuration [COMPLETED]
+
+> [!NOTE]
+> **Status: COMPLETED**
+> - Dynamic factory pattern [`BackendFactory`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/providers/factory.rs) and thread-safe [`DynamicBackendRegistry`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/providers/factory.rs#L31) fully implemented with `with_defaults()` and `global()`.
+> - Concrete factory implementations provided for all 15 backends (`LocalSimFactory`, `GoogleDriveFactory`, `DropboxFactory`, `OneDriveFactory`, `WebDAVFactory`, `S3Factory`, `BoxFactory`, `SFTPFactory`, `NextcloudFactory`, `MegaFactory`, `AzureBlobFactory`, `B2Factory`, `PCloudFactory`, `GCSFactory`, `IPFSFactory`).
+> - Pluggable conflict strategy pattern implemented in [`ConflictResolver`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_daemon/src/engine/conflict.rs#L14) with [`CustomHookStrategy`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_daemon/src/engine/conflict.rs#L150) and [`DynamicConflictRegistry`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_daemon/src/engine/conflict.rs#L182).
+> - 100% test coverage passing: `cloud_sync_lib` (55 tests), `cloud_sync_daemon` (33 tests across daemon and test binaries).
 
 #### 3.1 Dynamic Provider Factory & Registry
 Replace hardcoded `BackendCredentials` enums with dynamic provider registration:
