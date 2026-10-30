@@ -292,12 +292,12 @@ pub async fn translate_http_error(
     err
 }
 
-/// Copies bytes from a reader to a writer using a standardized buffer size.
+/// Copies bytes from a reader to a writer using a standardized 64KB buffer.
 pub fn copy_buffered<R: std::io::Read, W: std::io::Write>(
     mut reader: R,
     mut writer: W,
 ) -> std::io::Result<u64> {
-    let mut buffer = [0u8; 16384];
+    let mut buffer = [0u8; 65536];
     let mut total_copied = 0;
     loop {
         let bytes_read = reader.read(&mut buffer)?;
@@ -308,6 +308,14 @@ pub fn copy_buffered<R: std::io::Read, W: std::io::Write>(
         total_copied += bytes_read as u64;
     }
     Ok(total_copied)
+}
+
+/// Asynchronously copies bytes between two streams using tokio's optimized 64KB chunking.
+pub async fn copy_async<R: tokio::io::AsyncRead + Unpin, W: tokio::io::AsyncWrite + Unpin>(
+    reader: &mut R,
+    writer: &mut W,
+) -> std::io::Result<u64> {
+    tokio::io::copy(reader, writer).await
 }
 
 /// Helper to apply Bearer token authorization to an outgoing HTTP request.

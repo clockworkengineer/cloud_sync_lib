@@ -7,6 +7,7 @@
 //! folder fallback simulation for offline development and testing.
 
 pub mod auth;
+pub mod buffer_pool;
 pub mod client;
 pub mod config;
 pub mod layers;
@@ -15,11 +16,12 @@ pub mod rate_limit;
 pub mod transport;
 
 pub use auth::{StaticTokenProvider, TokenProvider};
+pub use buffer_pool::{BufferPool, PooledBuffer};
 pub use client::{CloudSyncBuilder, CloudSyncClient, SyncSummary};
 pub use config::{ProviderCredentialsConfig, ProviderRootsConfig};
 pub use layers::{
-    LayeredBackendExt, LoggingLayer, MetricsCollector, MetricsLayer, RateLimitLayer, RetryLayer,
-    StorageLayer, StorageMetrics,
+    CircuitBreakerConfig, CircuitBreakerLayer, LayeredBackendExt, LoggingLayer, MetricsCollector,
+    MetricsLayer, RateLimitLayer, RetryLayer, StorageLayer, StorageMetrics,
 };
 pub use transport::{HttpTransport, MockHttpTransport, ReqwestHttpTransport};
 
@@ -47,7 +49,9 @@ pub use providers::{
 };
 
 pub use cloud_sync_std::SyncIgnore;
-pub use providers::utils::{get_global_retry_config, set_global_retry_config, RetryConfig};
+pub use providers::utils::{
+    copy_async, copy_buffered, get_global_retry_config, set_global_retry_config, RetryConfig,
+};
 
 /// Dynamically constructs a fully-wrapped `StorageBackend` instance from `BackendCredentials` and target root path.
 pub fn create_backend(

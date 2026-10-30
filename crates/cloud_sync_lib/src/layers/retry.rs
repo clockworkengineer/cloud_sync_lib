@@ -59,20 +59,7 @@ pub struct RetryBackend {
 
 impl RetryBackend {
     fn is_retryable(err: &StorageError) -> bool {
-        match err {
-            StorageError::RateLimit { .. } => true,
-            StorageError::ConnectionFailed(_) => true,
-            StorageError::AuthenticationExpired(_) => true,
-            StorageError::Provider { status, .. } => {
-                if let Some(code) = status {
-                    *code == 429 || *code >= 500
-                } else {
-                    true
-                }
-            }
-            StorageError::Reqwest(e) => e.is_connect() || e.is_timeout() || e.is_request(),
-            _ => false,
-        }
+        err.is_transient() || err.is_auth_expired()
     }
 
     async fn execute_with_retry<F, Fut, T>(&self, op_name: &str, f: F) -> Result<T, StorageError>
@@ -81,7 +68,6 @@ impl RetryBackend {
         Fut: std::future::Future<Output = Result<T, StorageError>>,
     {
         let mut attempts = 0;
-        let mut delay = self.config.base_delay;
 
         loop {
             attempts += 1;
@@ -92,14 +78,20 @@ impl RetryBackend {
                         return Err(err);
                     }
 
-                    let sleep_dur = match &err {
-                        StorageError::RateLimit {
-                            retry_after: Some(dur),
-                            ..
-                        } => *dur,
-                        _ => {
-                            let jitter = Duration::from_millis((rand::random::<u64>() % 200) + 50);
-                            delay.saturating_add(jitter)
+                    // Full Jitter Backoff (decorrelated to avoid thundering-herd on outages)
+                    let sleep_dur = match err.retry_after() {
+                        Some(dur) => dur,
+                        None => {
+                            let max_delay_ms = self.config.max_delay.as_millis() as u64;
+                            let base_delay_ms = self.config.base_delay.as_millis() as u64;
+                            let exp_factor = 1u64.checked_shl(attempts.saturating_sub(1)).unwrap_or(u64::MAX);
+                            let ceiling = base_delay_ms.saturating_mul(exp_factor).min(max_delay_ms);
+                            let jittered_ms = if ceiling > 0 {
+                                rand::random::<u64>() % (ceiling + 1)
+                            } else {
+                                0
+                            };
+                            Duration::from_millis(jittered_ms)
                         }
                     };
 
@@ -114,7 +106,6 @@ impl RetryBackend {
                     );
 
                     tokio::time::sleep(sleep_dur).await;
-                    delay = (delay * 2).min(self.config.max_delay);
                 }
             }
         }

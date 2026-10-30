@@ -4,7 +4,8 @@
 //! cloud storage providers, performing file operations, and executing synchronization tasks.
 
 use crate::layers::{
-    LayeredBackendExt, LoggingLayer, MetricsLayer, RateLimitLayer, RetryConfig, RetryLayer,
+    CircuitBreakerConfig, CircuitBreakerLayer, LayeredBackendExt, LoggingLayer, MetricsLayer,
+    RateLimitLayer, RetryConfig, RetryLayer,
 };
 use crate::providers::DynamicBackendRegistry;
 use crate::rate_limit::TokenBucket;
@@ -129,6 +130,7 @@ pub struct CloudSyncBuilder {
     sim_root: Option<PathBuf>,
     registry: Option<Arc<DynamicBackendRegistry>>,
     retry: Option<RetryConfig>,
+    circuit_breaker: Option<CircuitBreakerConfig>,
     rate_limits: Option<(u64, u64)>,
     enable_logging: bool,
     enable_metrics: bool,
@@ -185,6 +187,16 @@ impl CloudSyncBuilder {
         self
     }
 
+    /// Configures circuit breaker middleware for fast-failing during sustained outages.
+    pub fn with_circuit_breaker(mut self, failure_threshold: u32, recovery_timeout: Duration) -> Self {
+        self.circuit_breaker = Some(CircuitBreakerConfig {
+            failure_threshold,
+            recovery_timeout,
+            probe_success_threshold: 2,
+        });
+        self
+    }
+
     /// Configures bandwidth rate limiting (upload_bytes_per_sec, download_bytes_per_sec).
     pub fn with_rate_limits(mut self, upload_bps: u64, download_bps: u64) -> Self {
         self.rate_limits = Some((upload_bps, download_bps));
@@ -229,7 +241,11 @@ impl CloudSyncBuilder {
             });
         };
 
-        // Apply layers in standard order: Retry -> RateLimit -> Metrics -> Logging
+        // Apply layers in standard order: CircuitBreaker -> Retry -> RateLimit -> Metrics -> Logging
+        if let Some(cb_cfg) = self.circuit_breaker {
+            backend = backend.with_layer(CircuitBreakerLayer::new(cb_cfg));
+        }
+
         if let Some(retry_cfg) = self.retry {
             backend = backend.with_layer(RetryLayer::new(retry_cfg));
         }
