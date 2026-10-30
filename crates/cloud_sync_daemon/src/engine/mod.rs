@@ -16,10 +16,12 @@ pub use conflict::{
 };
 pub use executor::{ExecutionResult, PlanExecutor};
 pub use filter::FileFilter;
-pub use orchestrator::SyncOrchestrator;
+pub use orchestrator::{sync_bidirectional, SyncOrchestrator};
 pub use plan::{SyncAction, SyncPlan};
 pub use planner::SyncPlanner;
 pub use rename_detector::{CandidateItem, DetectedMove, RenameDetector};
 pub use scanner::{DirectoryScanner, ScannedItem};
-pub use state_repository::SyncStateRepository;
+pub use state_repository::{
+    migrate_legacy_state_files, resolve_state_file_path, SyncStateRepository,
+};
 pub use versioning::{TrashManager, VersioningConfig};

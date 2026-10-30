@@ -297,13 +297,13 @@ pub async fn handle_control_command(
                             .name()
                             .to_lowercase()
                             .replace(" ", "_");
-                        let state_file_path = crate::sync_engine::resolve_state_file_path(
+                        let state_file_path = crate::engine::resolve_state_file_path(
                             &state_dir,
                             &watch_dir,
                             &safe_name,
                         )
                         .await;
-                        if let Err(e) = crate::sync_engine::sync_bidirectional(
+                        if let Err(e) = crate::engine::sync_bidirectional(
                             &watch_dir,
                             active_backend.backend.clone(),
                             active_backend.policy,
@@ -501,7 +501,7 @@ pub async fn handle_control_command(
                     .name()
                     .to_lowercase()
                     .replace(' ', "_");
-                let state_file_path = crate::sync_engine::resolve_state_file_path(
+                let state_file_path = crate::engine::resolve_state_file_path(
                     &s.state_dir,
                     &s.watch_dir,
                     &safe_name,

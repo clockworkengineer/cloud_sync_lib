@@ -8,7 +8,6 @@
 pub mod config;
 pub mod control;
 pub mod engine;
-pub mod sync_engine;
 pub mod utils;
 pub mod watcher;
 
@@ -347,13 +346,13 @@ pub async fn run_sync_all_backends(
             .to_lowercase()
             .replace(' ', "_");
         let state_file_path =
-            sync_engine::resolve_state_file_path(state_dir, watch_dir, &safe_name).await;
+            engine::resolve_state_file_path(state_dir, watch_dir, &safe_name).await;
         info!(
             "In-process sync: Starting backend {}",
             active_backend.backend.name()
         );
 
-        if let Err(e) = sync_engine::sync_bidirectional(
+        if let Err(e) = engine::sync_bidirectional(
             watch_dir,
             active_backend.backend.clone(),
             active_backend.policy,

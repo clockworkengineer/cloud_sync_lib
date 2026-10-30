@@ -8,6 +8,8 @@ extern crate alloc;
 pub mod path;
 pub mod state;
 #[cfg(feature = "std")]
+pub mod state_io;
+#[cfg(feature = "std")]
 pub mod sys;
 pub mod traits;
 
@@ -15,6 +17,8 @@ pub mod traits;
 pub use path::get_permissions;
 pub use path::{format_absolute_path, format_relative_path, normalize_remote_path, NormalizedPath};
 pub use state::{FileState, SyncState};
+#[cfg(feature = "std")]
+pub use state_io::{PostcardStateStore, StateStore};
 #[cfg(feature = "std")]
 pub use sys::{Clock, FileSystem, RealFileSystem, SystemClock};
 #[cfg(feature = "std")]

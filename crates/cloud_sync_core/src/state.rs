@@ -1,4 +1,3 @@
-use alloc::format;
 use alloc::string::ToString;
 use serde::{Deserialize, Serialize};
 
@@ -46,9 +45,6 @@ pub enum StateMutation {
     Delete(alloc::string::String),
 }
 
-const CSTX_MAGIC: &[u8; 4] = b"CSTX";
-const CSTX_VERSION: u8 = 1;
-
 /// Computes a fast 64-bit FNV-1a checksum to verify state file integrity without external dependencies.
 pub fn compute_checksum(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf29ce484222325u64;
@@ -80,126 +76,30 @@ impl SyncState {
         }
     }
 
-    /// Loads the sync state catalog from the specified file path with transactional integrity verification.
-    /// If the primary state is corrupted or missing, automatically attempts recovery from `.bak`.
-    /// Fallback to legacy postcard binary and legacy JSON formats is fully supported for seamless migration.
+    /// Loads the sync state catalog from the specified file path utilizing the SRP `StateStore`.
     #[cfg(feature = "std")]
     pub async fn load(path: &std::path::Path) -> std::io::Result<Self> {
-        if !path.exists() {
-            // Check if a backup file exists for automated recovery
-            let bak_path = path.with_extension("bak");
-            if bak_path.exists() {
-                if let Ok(recovered) = Self::load_raw(&bak_path).await {
-                    return Ok(recovered);
-                }
-            }
-            return Ok(Self::default());
-        }
-
-        match Self::load_raw(path).await {
-            Ok(state) => Ok(state),
-            Err(_) => {
-                // Primary state corrupted: attempt recovery from backup
-                let bak_path = path.with_extension("bak");
-                if bak_path.exists() {
-                    if let Ok(recovered) = Self::load_raw(&bak_path).await {
-                        return Ok(recovered);
-                    }
-                }
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Failed to deserialize sync state (checksum mismatch or corrupt data)",
-                ))
-            }
-        }
+        use crate::state_io::StateStore;
+        crate::state_io::PostcardStateStore::new()
+            .load(path)
+            .await
+            .map_err(|e| match e {
+                crate::traits::StorageError::Io(io_err) => io_err,
+                other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+            })
     }
 
-    #[cfg(feature = "std")]
-    async fn load_raw(path: &std::path::Path) -> std::io::Result<Self> {
-        let bytes = tokio::fs::read(path).await?;
-
-        // 1. Check for transactional CSTX header with checksum
-        if bytes.len() >= 13 && &bytes[..4] == CSTX_MAGIC {
-            let version = bytes[4];
-            if version == CSTX_VERSION {
-                let mut checksum_bytes = [0u8; 8];
-                checksum_bytes.copy_from_slice(&bytes[5..13]);
-                let expected_checksum = u64::from_be_bytes(checksum_bytes);
-                let payload = &bytes[13..];
-                let actual_checksum = compute_checksum(payload);
-
-                if expected_checksum == actual_checksum {
-                    if let Ok(state) = Self::from_bytes(payload) {
-                        return Ok(state);
-                    }
-                }
-            }
-        }
-
-        // 2. Legacy postcard binary fallback
-        if let Ok(state) = Self::from_bytes(&bytes) {
-            return Ok(state);
-        }
-
-        // 3. Legacy JSON format fallback
-        if let Ok(data_str) = core::str::from_utf8(&bytes) {
-            if let Ok(state) = serde_json::from_str::<Self>(data_str) {
-                return Ok(state);
-            }
-        }
-
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Failed to deserialize sync state",
-        ))
-    }
-
-    /// Saves the sync state catalog to disk using an atomic write-replace strategy with physical disk flush.
-    /// Creates a `.bak` copy of the prior valid state for crash resilience.
+    /// Saves the sync state catalog to disk utilizing the SRP `StateStore`.
     #[cfg(feature = "std")]
     pub async fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
-        let payload = self
-            .to_bytes()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
-
-        let checksum = compute_checksum(&payload);
-
-        // Frame data with CSTX transactional header: MAGIC (4B) + VERSION (1B) + CHECKSUM (8B) + PAYLOAD
-        let mut framed_bytes = alloc::vec::Vec::with_capacity(13 + payload.len());
-        framed_bytes.extend_from_slice(CSTX_MAGIC);
-        framed_bytes.push(CSTX_VERSION);
-        framed_bytes.extend_from_slice(&checksum.to_be_bytes());
-        framed_bytes.extend_from_slice(&payload);
-
-        // Write to a temporary file in the same directory to guarantee atomic same-filesystem rename
-        let temp_filename = format!(
-            ".{}_{}.tmp",
-            path.file_name()
-                .map(|f| f.to_string_lossy().to_string())
-                .unwrap_or_else(|| "state".to_string()),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        );
-        let temp_path = path.with_file_name(temp_filename);
-
-        use tokio::io::AsyncWriteExt;
-        let mut file = tokio::fs::File::create(&temp_path).await?;
-        file.write_all(&framed_bytes).await?;
-        file.sync_all().await?;
-        drop(file);
-
-        // Retain prior state as backup snapshot
-        if path.exists() {
-            let bak_path = path.with_extension("bak");
-            let _ = tokio::fs::copy(path, &bak_path).await;
-        }
-
-        // Atomically rename temporary file over target file
-        tokio::fs::rename(&temp_path, path).await?;
-
-        Ok(())
+        use crate::state_io::StateStore;
+        crate::state_io::PostcardStateStore::new()
+            .save(path, self)
+            .await
+            .map_err(|e| match e {
+                crate::traits::StorageError::Io(io_err) => io_err,
+                other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+            })
     }
 }
 

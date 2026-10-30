@@ -5,7 +5,7 @@
 //! to all configured and enabled cloud storage providers.
 
 use cloud_sync_daemon::{
-    build_backends, config, control, sync_engine, watcher, DaemonState, DAEMON_BIND_ADDR,
+    build_backends, config, control, engine, watcher, DaemonState, DAEMON_BIND_ADDR,
 };
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
@@ -187,7 +187,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| PathBuf::from("sync_state"));
     let _ = fs::create_dir_all(&state_dir).await;
     info!("Sync state directory: {:?}", state_dir);
-    sync_engine::migrate_legacy_state_files(&watch_dir, &state_dir).await;
+    engine::migrate_legacy_state_files(&watch_dir, &state_dir).await;
 
     // Initialize gitignore matcher
     let mut final_excludes = config.exclude.clone().unwrap_or_default();
@@ -239,9 +239,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .to_lowercase()
                 .replace(" ", "_");
             let state_file_path =
-                sync_engine::resolve_state_file_path(&state_dir, &watch_dir, &safe_name).await;
+                engine::resolve_state_file_path(&state_dir, &watch_dir, &safe_name).await;
             info!("Syncing backend: {}", active_backend.backend.name());
-            if let Err(e) = sync_engine::sync_bidirectional(
+            if let Err(e) = engine::sync_bidirectional(
                 &watch_dir,
                 active_backend.backend.clone(),
                 active_backend.policy,
@@ -506,8 +506,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .to_lowercase()
                     .replace(" ", "_");
                 let state_file_path =
-                    sync_engine::resolve_state_file_path(&state_dir, &watch_dir, &safe_name).await;
-                if let Err(e) = sync_engine::sync_bidirectional(
+                    engine::resolve_state_file_path(&state_dir, &watch_dir, &safe_name).await;
+                if let Err(e) = engine::sync_bidirectional(
                     &watch_dir,
                     active_backend.backend.clone(),
                     active_backend.policy,
