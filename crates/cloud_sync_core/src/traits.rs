@@ -90,8 +90,13 @@ impl StorageError {
     }
 
     /// Returns true if this error represents an authentication failure or expired token.
-    pub fn is_auth_expired(&self) -> bool {
+    pub fn is_auth(&self) -> bool {
         matches!(self, Self::Authentication(_) | Self::AuthenticationExpired(_))
+    }
+
+    /// Returns true if this error represents an authentication failure or expired token.
+    pub fn is_auth_expired(&self) -> bool {
+        self.is_auth()
     }
 
     /// Returns true if this error indicates that a resource was not found.

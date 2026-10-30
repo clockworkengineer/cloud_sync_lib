@@ -68,8 +68,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                     *self.fallback_reason.write().unwrap() = None;
                     Ok(())
                 }
-                Err(StorageError::Authentication(e))
-                | Err(StorageError::AuthenticationExpired(e)) => {
+                Err(ref e) if e.is_auth() => {
                     tracing::warn!(
                         "[{}] Authentication failed, falling back to local simulation: {}",
                         self.name,
@@ -93,8 +92,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                     *self.fallback_reason.write().unwrap() = None;
                     Ok(())
                 }
-                Err(StorageError::Authentication(e))
-                | Err(StorageError::AuthenticationExpired(e)) => {
+                Err(ref e) if e.is_auth() => {
                     tracing::warn!(
                         "[{}] Authentication failed, falling back to local simulation: {}",
                         self.name,
@@ -118,8 +116,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                     *self.fallback_reason.write().unwrap() = None;
                     Ok(())
                 }
-                Err(StorageError::Authentication(e))
-                | Err(StorageError::AuthenticationExpired(e)) => {
+                Err(ref e) if e.is_auth() => {
                     tracing::warn!(
                         "[{}] Authentication failed, falling back to local simulation: {}",
                         self.name,
@@ -143,8 +140,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                     *self.fallback_reason.write().unwrap() = None;
                     Ok(items)
                 }
-                Err(StorageError::Authentication(e))
-                | Err(StorageError::AuthenticationExpired(e)) => {
+                Err(ref e) if e.is_auth() => {
                     tracing::warn!(
                         "[{}] Authentication failed, falling back to local simulation: {}",
                         self.name,
@@ -168,8 +164,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                     *self.fallback_reason.write().unwrap() = None;
                     Ok(())
                 }
-                Err(StorageError::Authentication(e))
-                | Err(StorageError::AuthenticationExpired(e)) => {
+                Err(ref e) if e.is_auth() => {
                     tracing::warn!(
                         "[{}] Authentication failed, falling back to local simulation: {}",
                         self.name,
@@ -193,8 +188,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                     *self.fallback_reason.write().unwrap() = None;
                     Ok(())
                 }
-                Err(StorageError::Authentication(e))
-                | Err(StorageError::AuthenticationExpired(e)) => {
+                Err(ref e) if e.is_auth() => {
                     tracing::warn!(
                         "[{}] Authentication failed, falling back to local simulation: {}",
                         self.name,
@@ -218,8 +212,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                     *self.fallback_reason.write().unwrap() = None;
                     Ok(cursor)
                 }
-                Err(StorageError::Authentication(e))
-                | Err(StorageError::AuthenticationExpired(e)) => {
+                Err(ref e) if e.is_auth() => {
                     tracing::warn!(
                         "[{}] Authentication failed, falling back to local simulation for cursor: {}",
                         self.name,
@@ -246,8 +239,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                     *self.fallback_reason.write().unwrap() = None;
                     Ok(changes)
                 }
-                Err(StorageError::Authentication(e))
-                | Err(StorageError::AuthenticationExpired(e)) => {
+                Err(ref e) if e.is_auth() => {
                     tracing::warn!(
                         "[{}] Authentication failed, falling back to local simulation for changes: {}",
                         self.name,
@@ -279,8 +271,7 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
                     *self.fallback_reason.write().unwrap() = None;
                     Ok(())
                 }
-                Err(StorageError::Authentication(e))
-                | Err(StorageError::AuthenticationExpired(e)) => {
+                Err(ref e) if e.is_auth() => {
                     tracing::warn!(
                         "[{}] Authentication failed, falling back to local simulation for copy: {}",
                         self.name,

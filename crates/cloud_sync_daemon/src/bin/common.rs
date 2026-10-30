@@ -36,7 +36,10 @@ pub async fn run_connection_diagnostics(
             }
         }
         Err(e) => {
-            eprintln!("\n❌ Connection Failed during listing:\n{:?}\n", e);
+            eprintln!("\n❌ Connection Failed during listing:\n{}\n", e);
+            if e.is_auth() {
+                eprintln!("💡 Tip: Authentication error: {}\n   Please verify your credentials or check your account status at the provider portal.", e);
+            }
             std::process::exit(1);
         }
     }

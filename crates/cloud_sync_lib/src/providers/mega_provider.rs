@@ -19,6 +19,51 @@ pub struct MegaProvider {
 
 crate::impl_provider_builder!(MegaProvider, MegaProviderBuilder, MegaCredentials);
 
+/// Helper to map `mega::Error` into semantic `StorageError` variants.
+pub(crate) fn map_mega_error(err: mega::Error) -> StorageError {
+    match err {
+        mega::Error::MegaError(mega::ErrorCode::EBLOCKED) => StorageError::Authentication(
+            "MEGA account is administratively blocked, suspended, or requires verification at https://mega.nz".to_string(),
+        ),
+        mega::Error::MegaError(mega::ErrorCode::ESID) => StorageError::AuthenticationExpired(
+            "MEGA session expired or invalid".to_string(),
+        ),
+        mega::Error::MegaError(mega::ErrorCode::EACCESS) => StorageError::Authentication(
+            "MEGA access denied".to_string(),
+        ),
+        mega::Error::MegaError(mega::ErrorCode::EMFAREQUIRED) => StorageError::Authentication(
+            "MEGA multi-factor authentication required".to_string(),
+        ),
+        mega::Error::MegaError(mega::ErrorCode::ENOENT) => StorageError::NotFound(
+            "MEGA remote path not found".to_string(),
+        ),
+        mega::Error::MegaError(mega::ErrorCode::EEXIST) => StorageError::Conflict(
+            "MEGA item already exists".to_string(),
+        ),
+        mega::Error::MegaError(
+            mega::ErrorCode::ERATELIMIT
+            | mega::ErrorCode::ETOOMANY
+            | mega::ErrorCode::ETOOMANYCONNECTIONS,
+        ) => StorageError::RateLimit {
+            message: "MEGA rate limit exceeded".to_string(),
+            retry_after: None,
+        },
+        mega::Error::MegaError(
+            mega::ErrorCode::EOVERQUOTA
+            | mega::ErrorCode::EGOINGOVERQUOTA
+            | mega::ErrorCode::EPAYWALL,
+        ) => StorageError::Provider {
+            message: "MEGA storage quota exceeded".to_string(),
+            status: Some(507),
+        },
+        mega::Error::IoError(e) => StorageError::Io(e),
+        other => StorageError::Provider {
+            message: other.to_string(),
+            status: None,
+        },
+    }
+}
+
 impl MegaProvider {
     /// Creates a new `MegaProvider` with custom HTTP client options.
     pub fn with_client_options(
@@ -45,10 +90,7 @@ impl MegaProvider {
         let nodes = client
             .fetch_own_nodes()
             .await
-            .map_err(|e| StorageError::Provider {
-                message: e.to_string(),
-                status: None,
-            })?;
+            .map_err(map_mega_error)?;
 
         // Find the root node
         let mut current_node = nodes
@@ -103,20 +145,14 @@ impl MegaProvider {
                         client
                             .create_dir(&current_node, segment)
                             .await
-                            .map_err(|e| StorageError::Provider {
-                                message: e.to_string(),
-                                status: None,
-                            })?;
+                            .map_err(map_mega_error)?;
 
                         // Re-fetch nodes to get the new folder's hash/node
                         let updated_nodes =
                             client
                                 .fetch_own_nodes()
                                 .await
-                                .map_err(|e| StorageError::Provider {
-                                    message: e.to_string(),
-                                    status: None,
-                                })?;
+                                .map_err(map_mega_error)?;
 
                         current_node = updated_nodes
                             .iter()
@@ -182,7 +218,7 @@ impl StorageBackend for MegaProvider {
                 client
                     .login(&email, &password, None)
                     .await
-                    .map_err(|e| StorageError::Authentication(e.to_string()))?;
+                    .map_err(map_mega_error)?;
 
                 // Determine destination folder and file name
                 let path = Path::new(&remote_path);
@@ -205,10 +241,7 @@ impl StorageBackend for MegaProvider {
                 let nodes = client
                     .fetch_own_nodes()
                     .await
-                    .map_err(|e| StorageError::Provider {
-                        message: e.to_string(),
-                        status: None,
-                    })?;
+                    .map_err(map_mega_error)?;
 
                 let existing = parent_node
                     .children()
@@ -220,10 +253,7 @@ impl StorageBackend for MegaProvider {
                     client
                         .delete_node(node)
                         .await
-                        .map_err(|e| StorageError::Provider {
-                            message: e.to_string(),
-                            status: None,
-                        })?;
+                        .map_err(map_mega_error)?;
                 }
 
                 // Upload file (wrapping tokio::fs::File into compat futures_io::AsyncRead)
@@ -235,10 +265,7 @@ impl StorageBackend for MegaProvider {
                 client
                     .upload_node(&parent_node, &file_name, size, compat_file)
                     .await
-                    .map_err(|e| StorageError::Provider {
-                        message: e.to_string(),
-                        status: None,
-                    })?;
+                    .map_err(map_mega_error)?;
 
                 Ok(())
             })
@@ -280,7 +307,7 @@ impl StorageBackend for MegaProvider {
                 client
                     .login(&email, &password, None)
                     .await
-                    .map_err(|e| StorageError::Authentication(e.to_string()))?;
+                    .map_err(map_mega_error)?;
 
                 let node = Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false)
                     .await?;
@@ -297,10 +324,7 @@ impl StorageBackend for MegaProvider {
                 client
                     .download_node(&node, compat_file)
                     .await
-                    .map_err(|e| StorageError::Provider {
-                        message: e.to_string(),
-                        status: None,
-                    })?;
+                    .map_err(map_mega_error)?;
 
                 Ok(())
             })
@@ -341,17 +365,14 @@ impl StorageBackend for MegaProvider {
                 client
                     .login(&email, &password, None)
                     .await
-                    .map_err(|e| StorageError::Authentication(e.to_string()))?;
+                    .map_err(map_mega_error)?;
 
                 let node = Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false)
                     .await?;
                 client
                     .delete_node(&node)
                     .await
-                    .map_err(|e| StorageError::Provider {
-                        message: e.to_string(),
-                        status: None,
-                    })?;
+                    .map_err(map_mega_error)?;
                 Ok(())
             })
         })
@@ -391,7 +412,7 @@ impl StorageBackend for MegaProvider {
                 client
                     .login(&email, &password, None)
                     .await
-                    .map_err(|e| StorageError::Authentication(e.to_string()))?;
+                    .map_err(map_mega_error)?;
 
                 let folder_node =
                     Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false)
@@ -400,10 +421,7 @@ impl StorageBackend for MegaProvider {
                 let nodes = client
                     .fetch_own_nodes()
                     .await
-                    .map_err(|e| StorageError::Provider {
-                        message: e.to_string(),
-                        status: None,
-                    })?;
+                    .map_err(map_mega_error)?;
 
                 let items = folder_node
                     .children()
