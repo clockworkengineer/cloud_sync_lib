@@ -129,9 +129,12 @@ impl<T: DaemonClientPort + ?Sized> DaemonClientPort for Arc<T> {
     }
 }
 
+/// Mock command handler closure type.
+pub type MockCommandHandler = Box<dyn Fn(&str) -> Result<String, DaemonClientError> + Send + Sync>;
+
 /// Mock daemon client for offline presentation and integration testing without sockets.
 pub struct MockDaemonClient {
-    handler: Box<dyn Fn(&str) -> Result<String, DaemonClientError> + Send + Sync>,
+    handler: MockCommandHandler,
 }
 
 impl MockDaemonClient {

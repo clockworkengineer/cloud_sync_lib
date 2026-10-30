@@ -340,7 +340,14 @@ pub struct PostcardStateStore;
 
 ---
 
-### Phase 5: Client / Presentation Decoupling in `cloud_sync_ui`
+### Phase 5: Client / Presentation Decoupling in `cloud_sync_ui` [COMPLETED]
+
+> [!NOTE]
+> **Status: COMPLETED**
+> - Gateway abstraction [`DaemonClientPort`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_ui/src/client.rs#L38) created along with production [`TcpDaemonClient`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_ui/src/client.rs#L78) and unit test fixture [`MockDaemonClient`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_ui/src/client.rs#L133).
+> - `build_router(client: Arc<dyn DaemonClientPort>) -> Router` wired in [`crates/cloud_sync_ui/src/lib.rs`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_ui/src/lib.rs#L40) injecting state across Axum routes.
+> - Handlers in [`crates/cloud_sync_ui/src/handlers.rs`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_ui/src/handlers.rs) decoupled to consume `State(client): State<Arc<dyn DaemonClientPort>>` rather than opening raw TCP streams per handler.
+> - 100% test coverage passing: `cloud_sync_ui` (5 tests passing with in-memory mock client).
 
 #### 5.1 Daemon Client Gateway Port (DIP)
 Introduce an abstracted client trait for UI communication:
@@ -364,6 +371,18 @@ pub struct TcpDaemonClient {
 ```
 
 This decouples Axum HTTP routes from raw TCP streams, allowing mock daemon testing for the UI.
+
+### Phase 6: Workspace-wide Verification & Clippy Audit [COMPLETED]
+
+> [!NOTE]
+> **Status: COMPLETED**
+> - `cargo test -p cloud_sync_core`: 18/18 tests passed.
+> - `cargo test -p cloud_sync_lib`: 55/55 tests passed.
+> - `cargo test -p cloud_sync_daemon`: 27/27 tests passed across engine components and binaries.
+> - `cargo test -p cloud_sync_ui`: 5/5 tests passed with in-memory mock client.
+> - `cargo test -p cloud_sync_std`: 4/4 tests passed.
+> - `cargo test -p cloud_sync_backup`: All tests passed.
+> - Strict Clippy audit (`-D warnings` across `--all-targets`) completed with 0 warnings on `cloud_sync_core`, `cloud_sync_lib`, `cloud_sync_daemon`, `cloud_sync_ui`, `cloud_sync_std`, and `cloud_sync_backup`.
 
 ---
 

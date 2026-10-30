@@ -32,7 +32,7 @@ pub async fn send_daemon_cmd(cmd: &str) -> Result<String, std::io::Error> {
     let client = crate::TcpDaemonClient::new(crate::get_daemon_control_addr());
     client.send_command(cmd).await.map_err(|e| match e {
         crate::DaemonClientError::Io(err) => err,
-        other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+        other => std::io::Error::other(other.to_string()),
     })
 }
 

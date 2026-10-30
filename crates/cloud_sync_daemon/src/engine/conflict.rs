@@ -168,21 +168,18 @@ impl ConflictResolver for CustomHookStrategy {
         remote_mtime: SystemTime,
     ) -> ConflictResolutionAction {
         if self.hook_path.exists() {
-            self.fallback.resolve(rel_path, local_mtime, remote_mtime)
-        } else {
-            self.fallback.resolve(rel_path, local_mtime, remote_mtime)
+            tracing::debug!(hook = ?self.hook_path, "Custom conflict hook identified; delegating to fallback");
         }
+        self.fallback.resolve(rel_path, local_mtime, remote_mtime)
     }
 }
 
+/// Factory function type for dynamically generating conflict resolvers.
+pub type ConflictResolverFactory = Box<dyn Fn() -> Box<dyn ConflictResolver> + Send + Sync>;
+
 /// Open-for-extension dynamic registry for conflict resolution strategies.
 pub struct DynamicConflictRegistry {
-    strategies: std::sync::RwLock<
-        std::collections::HashMap<
-            String,
-            Box<dyn Fn() -> Box<dyn ConflictResolver> + Send + Sync>,
-        >,
-    >,
+    strategies: std::sync::RwLock<std::collections::HashMap<String, ConflictResolverFactory>>,
 }
 
 impl DynamicConflictRegistry {

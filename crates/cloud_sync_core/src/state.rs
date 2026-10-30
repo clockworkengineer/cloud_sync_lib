@@ -85,7 +85,7 @@ impl SyncState {
             .await
             .map_err(|e| match e {
                 crate::traits::StorageError::Io(io_err) => io_err,
-                other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+                other => std::io::Error::other(other.to_string()),
             })
     }
 
@@ -98,7 +98,7 @@ impl SyncState {
             .await
             .map_err(|e| match e {
                 crate::traits::StorageError::Io(io_err) => io_err,
-                other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+                other => std::io::Error::other(other.to_string()),
             })
     }
 }
