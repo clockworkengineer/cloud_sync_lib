@@ -18,9 +18,9 @@ pub use state::{FileState, SyncState};
 #[cfg(feature = "std")]
 pub use sys::{Clock, FileSystem, RealFileSystem, SystemClock};
 #[cfg(feature = "std")]
-pub use traits::ResumableUploadSession;
+pub use traits::{ResumableUploadSession, ResumableUploader};
 pub use traits::{
-    ChecksumOps, ConflictPolicy, DirectoryLister, FolderOps, RemoteChange, StorageBackend,
-    StorageCapabilities, StorageError, StorageItem, StorageReader, StorageWriter, SyncMode,
-    SyncPolicy,
+    ChangeFeed, ChecksumOps, ConflictPolicy, DirectoryLister, FolderOps, RemoteChange,
+    ServerSideOperations, StorageBackend, StorageCapabilities, StorageError, StorageItem,
+    StorageReader, StorageWriter, SyncMode, SyncPolicy,
 };

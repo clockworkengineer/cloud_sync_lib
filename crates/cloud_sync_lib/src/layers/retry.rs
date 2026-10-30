@@ -2,8 +2,8 @@
 
 use super::StorageLayer;
 use cloud_sync_core::{
-    RemoteChange, ResumableUploadSession, StorageBackend, StorageCapabilities, StorageError,
-    StorageItem,
+    ChangeFeed, RemoteChange, ResumableUploadSession, ResumableUploader, ServerSideOperations,
+    StorageBackend, StorageCapabilities, StorageError, StorageItem,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -129,6 +129,18 @@ impl StorageBackend for RetryBackend {
 
     fn capabilities(&self) -> StorageCapabilities {
         self.inner.capabilities()
+    }
+
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        self.inner.as_server_side_ops()
+    }
+
+    fn as_change_feed(&self) -> Option<&dyn ChangeFeed> {
+        self.inner.as_change_feed()
+    }
+
+    fn as_resumable_uploader(&self) -> Option<&dyn ResumableUploader> {
+        self.inner.as_resumable_uploader()
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {

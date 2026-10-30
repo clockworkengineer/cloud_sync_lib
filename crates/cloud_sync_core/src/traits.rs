@@ -111,6 +111,12 @@ pub struct StorageItem {
 #[async_trait::async_trait]
 pub trait StorageReader: Send + Sync {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError>;
+    async fn compute_local_checksum(
+        &self,
+        _local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
+        Ok(None)
+    }
 }
 
 #[cfg(feature = "std")]
@@ -123,6 +129,35 @@ pub trait StorageWriter: Send + Sync {
 #[async_trait::async_trait]
 pub trait DirectoryLister: Send + Sync {
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError>;
+    async fn create_folder(&self, _remote_path: &str) -> Result<(), StorageError> {
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+pub trait ServerSideOperations: Send + Sync {
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError>;
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError>;
+}
+
+#[async_trait::async_trait]
+pub trait ChangeFeed: Send + Sync {
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError>;
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<RemoteChange>, String)>, StorageError>;
+}
+
+#[cfg(feature = "std")]
+#[async_trait::async_trait]
+pub trait ResumableUploader: Send + Sync {
+    async fn start_resumable_upload(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+        chunk_size: usize,
+    ) -> Result<Box<dyn ResumableUploadSession>, StorageError>;
 }
 
 #[async_trait::async_trait]
@@ -240,6 +275,22 @@ pub trait StorageBackend: Send + Sync {
         StorageCapabilities::NONE
     }
 
+    /// Accessor for server-side move/copy operations if supported adhering to LSP.
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        None
+    }
+
+    /// Accessor for incremental change feed operations if supported adhering to LSP.
+    fn as_change_feed(&self) -> Option<&dyn ChangeFeed> {
+        None
+    }
+
+    /// Accessor for chunked resumable uploader operations if supported adhering to LSP.
+    #[cfg(feature = "std")]
+    fn as_resumable_uploader(&self) -> Option<&dyn ResumableUploader> {
+        None
+    }
+
     #[cfg(feature = "std")]
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError>;
 
@@ -315,6 +366,15 @@ impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
     fn capabilities(&self) -> StorageCapabilities {
         (**self).capabilities()
     }
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        (**self).as_server_side_ops()
+    }
+    fn as_change_feed(&self) -> Option<&dyn ChangeFeed> {
+        (**self).as_change_feed()
+    }
+    fn as_resumable_uploader(&self) -> Option<&dyn ResumableUploader> {
+        (**self).as_resumable_uploader()
+    }
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         (**self).upload(local_path, remote_path).await
     }
@@ -377,6 +437,15 @@ impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
     }
     fn capabilities(&self) -> StorageCapabilities {
         (**self).capabilities()
+    }
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        (**self).as_server_side_ops()
+    }
+    fn as_change_feed(&self) -> Option<&dyn ChangeFeed> {
+        (**self).as_change_feed()
+    }
+    fn as_resumable_uploader(&self) -> Option<&dyn ResumableUploader> {
+        (**self).as_resumable_uploader()
     }
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         (**self).upload(local_path, remote_path).await
@@ -569,6 +638,87 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+        assert!(arc.as_server_side_ops().is_none());
+        assert!(arc.as_change_feed().is_none());
+        assert!(arc.as_resumable_uploader().is_none());
+    }
+
+    struct AdvancedBackend;
+
+    #[async_trait::async_trait]
+    impl ServerSideOperations for AdvancedBackend {
+        async fn copy(&self, _from: &str, _to: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn rename(&self, _from: &str, _to: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ChangeFeed for AdvancedBackend {
+        async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+            Ok(Some("cursor_123".to_string()))
+        }
+        async fn fetch_changes(
+            &self,
+            _cursor: &str,
+        ) -> Result<Option<(Vec<RemoteChange>, String)>, StorageError> {
+            Ok(Some((vec![], "cursor_456".to_string())))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl StorageBackend for AdvancedBackend {
+        fn name(&self) -> &str {
+            "advanced"
+        }
+        fn capabilities(&self) -> StorageCapabilities {
+            StorageCapabilities::SERVER_SIDE_MOVE | StorageCapabilities::SERVER_SIDE_COPY
+        }
+        fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+            Some(self)
+        }
+        fn as_change_feed(&self) -> Option<&dyn ChangeFeed> {
+            Some(self)
+        }
+        #[cfg(feature = "std")]
+        async fn upload(&self, _local_path: &Path, _remote_path: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        #[cfg(feature = "std")]
+        async fn download(
+            &self,
+            _remote_path: &str,
+            _local_path: &Path,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn delete(&self, _remote_path: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn list(&self, _remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+            Ok(vec![])
+        }
+    }
+
+    #[tokio::test]
+    async fn test_segregated_capabilities_and_lsp() {
+        let backend: Arc<dyn StorageBackend> = Arc::new(AdvancedBackend);
+
+        // LSP verification: capability discovery via typed interface query
+        let server_ops = backend.as_server_side_ops();
+        assert!(server_ops.is_some());
+        assert!(server_ops.unwrap().rename("old", "new").await.is_ok());
+        assert!(server_ops.unwrap().copy("src", "dst").await.is_ok());
+
+        let change_feed = backend.as_change_feed();
+        assert!(change_feed.is_some());
+        let cur = change_feed.unwrap().get_latest_cursor().await.unwrap();
+        assert_eq!(cur.as_deref(), Some("cursor_123"));
+
+        let resumable = backend.as_resumable_uploader();
+        assert!(resumable.is_none());
     }
 
     #[test]
