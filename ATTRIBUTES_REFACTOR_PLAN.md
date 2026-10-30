@@ -198,6 +198,21 @@ impl StorageError {
 
 ## 4. Phased Implementation Roadmap
 
+### Phase 1: API Ergonomics & Documentation (Attributes 1 & 2) [COMPLETED]
+
+> [!NOTE]
+> **Status: COMPLETED**
+> - Created unified [`CloudSyncClient`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/client.rs#L44) and [`CloudSyncBuilder`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/client.rs#L125) providing a fluent, intuitive consumer facade.
+> - Enhanced [`StorageError`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_core/src/traits.rs#L85) with semantic categorization methods: `is_transient()`, `is_auth_expired()`, `is_not_found()`, `is_rate_limited()`, `is_conflict()`, and `retry_after()`.
+> - Re-exported `CloudSyncClient`, `CloudSyncBuilder`, and `SyncSummary` in `crates/cloud_sync_lib/src/lib.rs`.
+> - Implemented 3 standalone runnable examples:
+>   - [`examples/basic_sync.rs`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/examples/basic_sync.rs): Complete end-to-end sync in under 30 lines.
+>   - [`examples/custom_provider.rs`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/examples/custom_provider.rs): External provider implementation and registry injection.
+>   - [`examples/resumable_upload.rs`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/examples/resumable_upload.rs): Bandwidth rate limiting and large archive transfer.
+> - Verified compilation, doc-tests (`cargo test --doc -p cloud_sync_lib`), and Clippy audit (0 warnings with `--all-targets`).
+
+---
+
 ```mermaid
 flowchart TD
     Phase1["Phase 1: API Ergonomics & Documentation<br>- Unified CloudSyncClient & Builder (Attr 1)<br>- Runnable examples & #![warn(missing_docs)] (Attr 2)"]
@@ -221,3 +236,4 @@ flowchart TD
 5. **Security**: Path traversal tests pass; valid filenames with `..` accepted; Alternate Data Streams rejected; tokens zeroized on drop.
 6. **Portability**: Full workspace builds and tests pass on Windows MSVC without requiring Perl or external OpenSSL installations.
 7. **Dependency Footprint**: `cargo tree -d` reports 0 duplicate major dependencies.
+

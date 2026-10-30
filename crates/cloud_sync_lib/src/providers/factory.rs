@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, RwLock};
 
+#[allow(dead_code)]
 fn config_err(e: impl std::fmt::Display) -> StorageError {
     StorageError::Provider {
         message: format!("Configuration error: {}", e),

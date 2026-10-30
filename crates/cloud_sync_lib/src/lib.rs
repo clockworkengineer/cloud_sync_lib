@@ -7,6 +7,7 @@
 //! folder fallback simulation for offline development and testing.
 
 pub mod auth;
+pub mod client;
 pub mod config;
 pub mod layers;
 pub mod providers;
@@ -14,6 +15,7 @@ pub mod rate_limit;
 pub mod transport;
 
 pub use auth::{StaticTokenProvider, TokenProvider};
+pub use client::{CloudSyncBuilder, CloudSyncClient, SyncSummary};
 pub use config::{ProviderCredentialsConfig, ProviderRootsConfig};
 pub use layers::{
     LayeredBackendExt, LoggingLayer, MetricsCollector, MetricsLayer, RateLimitLayer, RetryLayer,

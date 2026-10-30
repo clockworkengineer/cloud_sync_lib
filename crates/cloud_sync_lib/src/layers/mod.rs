@@ -32,3 +32,9 @@ impl<T: StorageBackend + 'static> LayeredBackendExt for T {
         layer.layer(self)
     }
 }
+
+impl LayeredBackendExt for dyn StorageBackend {
+    fn with_layer<L: StorageLayer>(self: Arc<Self>, layer: L) -> Arc<dyn StorageBackend> {
+        layer.layer(self)
+    }
+}

@@ -77,6 +77,48 @@ impl core::fmt::Display for StorageError {
 #[cfg(feature = "std")]
 impl std::error::Error for StorageError {}
 
+impl StorageError {
+    /// Returns true if this error represents a transient failure that may succeed upon retry.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::RateLimit { .. } | Self::ConnectionFailed(_) => true,
+            Self::Provider { status: Some(status), .. } => *status == 429 || *status >= 500,
+            #[cfg(feature = "std")]
+            Self::Reqwest(e) => e.is_connect() || e.is_timeout() || e.is_request(),
+            _ => false,
+        }
+    }
+
+    /// Returns true if this error represents an authentication failure or expired token.
+    pub fn is_auth_expired(&self) -> bool {
+        matches!(self, Self::Authentication(_) | Self::AuthenticationExpired(_))
+    }
+
+    /// Returns true if this error indicates that a resource was not found.
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, Self::NotFound(_))
+    }
+
+    /// Returns true if this error is caused by rate limiting.
+    pub fn is_rate_limited(&self) -> bool {
+        matches!(self, Self::RateLimit { .. })
+    }
+
+    /// Returns true if this error indicates a conflict.
+    pub fn is_conflict(&self) -> bool {
+        matches!(self, Self::Conflict(_))
+    }
+
+    /// Returns suggested retry delay if specified by rate limiting headers.
+    #[cfg(feature = "std")]
+    pub fn retry_after(&self) -> Option<std::time::Duration> {
+        match self {
+            Self::RateLimit { retry_after, .. } => *retry_after,
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteChange {
     #[cfg(feature = "std")]
