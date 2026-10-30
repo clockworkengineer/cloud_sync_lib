@@ -2,13 +2,17 @@
 //!
 //! Exposes the Axum HTTP API server logic for integration into other runtimes (like Tauri).
 
+pub mod client;
 pub mod handlers;
 pub mod parser;
+
+pub use client::{DaemonClientError, DaemonClientPort, MockDaemonClient, TcpDaemonClient};
 
 use axum::{
     routing::{get, post},
     Router,
 };
+use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
 use handlers::{
@@ -32,9 +36,9 @@ pub fn get_daemon_control_addr() -> String {
     std::env::var("CLOUDSYNC_DAEMON_ADDR").unwrap_or_else(|_| DAEMON_CONTROL_ADDR.to_string())
 }
 
-/// Starts the Axum HTTP UI server on the configured address.
-pub async fn start_ui_server() -> Result<(), std::io::Error> {
-    let router = Router::new()
+/// Builds an Axum router injected with the provided daemon client gateway port.
+pub fn build_router(client: Arc<dyn DaemonClientPort>) -> Router {
+    Router::new()
         .route("/", get(serve_index))
         .route("/api/status", get(api_status))
         .route("/api/logs", get(api_logs))
@@ -50,7 +54,14 @@ pub async fn start_ui_server() -> Result<(), std::io::Error> {
         .route("/api/conflicts", get(api_conflicts))
         .route("/api/conflicts/resolve", post(api_resolve_conflict))
         .route("/api/sync/plan", get(api_sync_plan))
-        .layer(CorsLayer::permissive());
+        .layer(CorsLayer::permissive())
+        .with_state(client)
+}
+
+/// Starts the Axum HTTP UI server on the configured address.
+pub async fn start_ui_server() -> Result<(), std::io::Error> {
+    let client = Arc::new(TcpDaemonClient::new(get_daemon_control_addr()));
+    let router = build_router(client);
 
     let bind_addr = get_ui_bind_addr();
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;

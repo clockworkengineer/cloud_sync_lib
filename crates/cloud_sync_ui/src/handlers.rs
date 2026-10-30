@@ -1,15 +1,18 @@
 //! Axum HTTP endpoint handlers routing to the daemon TCP control socket.
 
 use axum::{
+    extract::State,
     response::{Html, IntoResponse},
     Json,
 };
 use serde_json::json;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
+use crate::client::DaemonClientPort;
 use crate::parser::parse_status;
 use crate::{DAEMON_SPAWN_DELAY_MS, DEFAULT_CONFIG_FILE, PRIVATE_CONFIG_FILE};
 
@@ -26,13 +29,11 @@ pub async fn serve_index() -> Html<&'static str> {
 /// # Returns
 /// The raw response string returned by the daemon.
 pub async fn send_daemon_cmd(cmd: &str) -> Result<String, std::io::Error> {
-    let mut stream = TcpStream::connect(crate::get_daemon_control_addr()).await?;
-    stream.write_all(format!("{}\n", cmd).as_bytes()).await?;
-    stream.flush().await?;
-
-    let mut response = String::new();
-    stream.read_to_string(&mut response).await?;
-    Ok(response)
+    let client = crate::TcpDaemonClient::new(crate::get_daemon_control_addr());
+    client.send_command(cmd).await.map_err(|e| match e {
+        crate::DaemonClientError::Io(err) => err,
+        other => std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+    })
 }
 
 /// Helper to determine active configured log file path when daemon is offline.
@@ -59,8 +60,8 @@ fn get_offline_log_path() -> String {
 }
 
 /// HTTP Endpoint: Returns the current status of the daemon.
-pub async fn api_status() -> impl IntoResponse {
-    match send_daemon_cmd("status").await {
+pub async fn api_status(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("status").await {
         Ok(raw) => {
             let mut val = parse_status(&raw);
             val["daemon_running"] = serde_json::Value::Bool(true);
@@ -84,8 +85,8 @@ pub async fn api_status() -> impl IntoResponse {
 }
 
 /// HTTP Endpoint: Serves the active daemon log file as plain text.
-pub async fn api_logs() -> impl IntoResponse {
-    if let Ok(resp) = send_daemon_cmd("get_log").await {
+pub async fn api_logs(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    if let Ok(resp) = client.send_command("get_log").await {
         if resp.starts_with("Status: OK") {
             if let Some(pos) = resp.find("\n\n") {
                 let body = &resp[pos + 2..];
@@ -217,8 +218,8 @@ pub async fn api_start() -> impl IntoResponse {
 }
 
 /// HTTP Endpoint: Commands the daemon to pause synchronization operations.
-pub async fn api_pause() -> impl IntoResponse {
-    match send_daemon_cmd("pause").await {
+pub async fn api_pause(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("pause").await {
         Ok(raw) => Json(json!({ "status": raw.trim() })).into_response(),
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -229,8 +230,8 @@ pub async fn api_pause() -> impl IntoResponse {
 }
 
 /// HTTP Endpoint: Commands the daemon to resume synchronization operations.
-pub async fn api_resume() -> impl IntoResponse {
-    match send_daemon_cmd("resume").await {
+pub async fn api_resume(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("resume").await {
         Ok(raw) => Json(json!({ "status": raw.trim() })).into_response(),
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -241,8 +242,8 @@ pub async fn api_resume() -> impl IntoResponse {
 }
 
 /// HTTP Endpoint: Triggers a manual full synchronization across all enabled backends.
-pub async fn api_sync() -> impl IntoResponse {
-    match send_daemon_cmd("sync").await {
+pub async fn api_sync(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("sync").await {
         Ok(raw) => Json(json!({ "status": raw.trim() })).into_response(),
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -253,8 +254,8 @@ pub async fn api_sync() -> impl IntoResponse {
 }
 
 /// HTTP Endpoint: Reloads the daemon configuration.
-pub async fn api_reload() -> impl IntoResponse {
-    match send_daemon_cmd("reload").await {
+pub async fn api_reload(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("reload").await {
         Ok(raw) => {
             let trimmed = raw.trim();
             if trimmed.starts_with("Error:") {
@@ -272,8 +273,8 @@ pub async fn api_reload() -> impl IntoResponse {
 }
 
 /// HTTP Endpoint: Requests the daemon to stop executing and terminate gracefully.
-pub async fn api_stop() -> impl IntoResponse {
-    match send_daemon_cmd("stop").await {
+pub async fn api_stop(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("stop").await {
         Ok(raw) => Json(json!({ "status": raw.trim() })).into_response(),
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -289,9 +290,12 @@ pub struct ClearRequest {
 }
 
 /// HTTP Endpoint: Clears a provider's remote destination.
-pub async fn api_clear(Json(payload): axum::Json<ClearRequest>) -> impl IntoResponse {
+pub async fn api_clear(
+    State(client): State<Arc<dyn DaemonClientPort>>,
+    Json(payload): axum::Json<ClearRequest>,
+) -> impl IntoResponse {
     let cmd = format!("clear {}", payload.provider);
-    match send_daemon_cmd(&cmd).await {
+    match client.send_command(&cmd).await {
         Ok(raw) => {
             let trimmed = raw.trim();
             if trimmed.starts_with("Error:") {
@@ -315,8 +319,8 @@ pub struct ResolveConflictRequest {
 }
 
 /// HTTP Endpoint: Lists all pending conflicts from the daemon.
-pub async fn api_conflicts() -> impl IntoResponse {
-    match send_daemon_cmd("conflicts").await {
+pub async fn api_conflicts(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("conflicts").await {
         Ok(raw) => {
             let trimmed = raw.trim();
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
@@ -331,13 +335,14 @@ pub async fn api_conflicts() -> impl IntoResponse {
 
 /// HTTP Endpoint: Resolves a conflict with a specific choice (use_local, use_remote, keep_both, skip).
 pub async fn api_resolve_conflict(
+    State(client): State<Arc<dyn DaemonClientPort>>,
     Json(payload): axum::Json<ResolveConflictRequest>,
 ) -> impl IntoResponse {
     let cmd = format!(
         "resolve_conflict {} {}",
         payload.rel_path, payload.resolution
     );
-    match send_daemon_cmd(&cmd).await {
+    match client.send_command(&cmd).await {
         Ok(raw) => {
             let trimmed = raw.trim();
             if trimmed.starts_with("Error:") {
@@ -354,13 +359,9 @@ pub async fn api_resolve_conflict(
     }
 }
 
-use axum::response::sse::{Event, Sse};
-use tokio::io::AsyncBufReadExt;
-use tokio::io::BufReader;
-
 fn constrain_stream<S>(stream: S) -> S
 where
-    S: futures_util::stream::Stream<Item = Result<Event, std::io::Error>>,
+    S: futures_util::stream::Stream<Item = Result<axum::response::sse::Event, std::io::Error>>,
 {
     stream
 }
@@ -384,7 +385,7 @@ pub async fn api_events() -> impl IntoResponse {
                         Ok(_) => {
                             let trimmed = line.trim();
                             if !trimmed.starts_with("Status:") {
-                                yield Event::default().data(trimmed);
+                                yield axum::response::sse::Event::default().data(trimmed);
                             }
                             line.clear();
                         }
@@ -400,12 +401,12 @@ pub async fn api_events() -> impl IntoResponse {
         }
     });
 
-    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
+    axum::response::sse::Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 
 /// HTTP Endpoint: Returns active or preview synchronization plans across backends.
-pub async fn api_sync_plan() -> impl IntoResponse {
-    match send_daemon_cmd("get_plan").await {
+pub async fn api_sync_plan(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("get_plan").await {
         Ok(raw) => {
             let json_val: serde_json::Value =
                 serde_json::from_str(&raw).unwrap_or_else(|_| json!([]));
@@ -418,11 +419,67 @@ pub async fn api_sync_plan() -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::MockDaemonClient;
 
     #[tokio::test]
-    async fn test_api_conflicts_disconnected() {
-        std::env::set_var("CLOUDSYNC_DAEMON_ADDR", "127.0.0.1:59999");
-        let resp = api_conflicts().await.into_response();
+    async fn test_api_conflicts_with_mock() {
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
+            if cmd == "conflicts" {
+                Ok(r#"[{"path":"file.txt","reason":"ModifiedBoth"}]"#.to_string())
+            } else {
+                Err(crate::client::DaemonClientError::CommandFailed("unknown".into()))
+            }
+        }));
+
+        let resp = api_conflicts(State(client)).await.into_response();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_api_status_with_mock() {
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
+            if cmd == "status" {
+                Ok("Watch Dir: /sync\nBackends: [local (ok)]\nSyncing: false\nPaused: false".to_string())
+            } else {
+                Err(crate::client::DaemonClientError::CommandFailed("unknown".into()))
+            }
+        }));
+
+        let resp = api_status(State(client)).await.into_response();
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_api_pause_resume_sync_with_mock() {
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
+            match cmd {
+                "pause" => Ok("Paused".to_string()),
+                "resume" => Ok("Resumed".to_string()),
+                "sync" => Ok("Sync initiated".to_string()),
+                _ => Err(crate::client::DaemonClientError::CommandFailed("unknown".into())),
+            }
+        }));
+
+        let pause_resp = api_pause(State(client.clone())).await.into_response();
+        assert_eq!(pause_resp.status(), axum::http::StatusCode::OK);
+
+        let resume_resp = api_resume(State(client.clone())).await.into_response();
+        assert_eq!(resume_resp.status(), axum::http::StatusCode::OK);
+
+        let sync_resp = api_sync(State(client)).await.into_response();
+        assert_eq!(sync_resp.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_api_disconnected_graceful_fallback() {
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|_| {
+            Err(crate::client::DaemonClientError::ConnectionFailed("Connection refused".into()))
+        }));
+
+        let status_resp = api_status(State(client.clone())).await.into_response();
+        assert_eq!(status_resp.status(), axum::http::StatusCode::OK);
+
+        let conflicts_resp = api_conflicts(State(client)).await.into_response();
+        assert_eq!(conflicts_resp.status(), axum::http::StatusCode::OK);
     }
 }
