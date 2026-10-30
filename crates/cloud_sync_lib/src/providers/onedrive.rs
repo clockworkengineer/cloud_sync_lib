@@ -5,7 +5,7 @@
 
 use crate::providers::utils::translate_http_error;
 use crate::providers::OAuthCredentials;
-use crate::traits::{StorageBackend, StorageError, StorageItem};
+use crate::traits::{StorageBackend, StorageCapabilities, StorageError, StorageItem};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -103,6 +103,100 @@ impl OneDriveProvider {
 impl StorageBackend for OneDriveProvider {
     fn name(&self) -> &str {
         "OneDrive"
+    }
+
+    fn capabilities(&self) -> StorageCapabilities {
+        StorageCapabilities::SERVER_SIDE_MOVE
+            | StorageCapabilities::SERVER_SIDE_COPY
+            | StorageCapabilities::RESUMABLE_UPLOAD
+            | StorageCapabilities::CHANGE_CURSOR
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "rename", || async {
+            let token = self.get_access_token().await?;
+            let clean_from = self.format_path(from);
+            let clean_to = self.format_path(to);
+
+            let (to_parent, to_name) = match clean_to.rfind('/') {
+                Some(idx) => (&clean_to[..idx], &clean_to[idx + 1..]),
+                None => ("", clean_to.as_ref()),
+            };
+
+            let (from_parent, _) = match clean_from.rfind('/') {
+                Some(idx) => (&clean_from[..idx], &clean_from[idx + 1..]),
+                None => ("", clean_from.as_ref()),
+            };
+
+            let patch_url = format!("{}/me/drive/root:/{}:", self.api_url, clean_from);
+            let body = if to_parent == from_parent {
+                serde_json::json!({
+                    "name": to_name
+                })
+            } else {
+                let parent_path = if to_parent.is_empty() {
+                    "/drive/root".to_string()
+                } else {
+                    format!("/drive/root:/{}", to_parent)
+                };
+                serde_json::json!({
+                    "name": to_name,
+                    "parentReference": {
+                        "path": parent_path
+                    }
+                })
+            };
+
+            let res = super::utils::apply_bearer_auth(self.client.patch(&patch_url), &token)
+                .json(&body)
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "rename").await);
+            }
+
+            Ok(())
+        })
+        .await
+    }
+
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "copy", || async {
+            let token = self.get_access_token().await?;
+            let clean_from = self.format_path(from);
+            let clean_to = self.format_path(to);
+
+            let (to_parent, to_name) = match clean_to.rfind('/') {
+                Some(idx) => (&clean_to[..idx], &clean_to[idx + 1..]),
+                None => ("", clean_to.as_ref()),
+            };
+
+            let copy_url = format!("{}/me/drive/root:/{}:/copy", self.api_url, clean_from);
+            let parent_path = if to_parent.is_empty() {
+                "/drive/root".to_string()
+            } else {
+                format!("/drive/root:/{}", to_parent)
+            };
+            let body = serde_json::json!({
+                "name": to_name,
+                "parentReference": {
+                    "path": parent_path
+                }
+            });
+
+            let res = super::utils::apply_bearer_auth(self.client.post(&copy_url), &token)
+                .json(&body)
+                .send()
+                .await?;
+
+            if !res.status().is_success() && res.status() != reqwest::StatusCode::ACCEPTED {
+                return Err(translate_http_error(res, self.name(), "copy").await);
+            }
+
+            Ok(())
+        })
+        .await
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {

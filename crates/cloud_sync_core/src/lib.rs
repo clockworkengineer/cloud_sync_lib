@@ -17,7 +17,10 @@ pub use path::{format_absolute_path, format_relative_path, normalize_remote_path
 pub use state::{FileState, SyncState};
 #[cfg(feature = "std")]
 pub use sys::{Clock, FileSystem, RealFileSystem, SystemClock};
+#[cfg(feature = "std")]
+pub use traits::ResumableUploadSession;
 pub use traits::{
     ChecksumOps, ConflictPolicy, DirectoryLister, FolderOps, RemoteChange, StorageBackend,
-    StorageError, StorageItem, StorageReader, StorageWriter, SyncMode, SyncPolicy,
+    StorageCapabilities, StorageError, StorageItem, StorageReader, StorageWriter, SyncMode,
+    SyncPolicy,
 };

@@ -7,10 +7,15 @@
 //! folder fallback simulation for offline development and testing.
 
 pub mod config;
+pub mod layers;
 pub mod providers;
 pub mod rate_limit;
 
 pub use config::{ProviderCredentialsConfig, ProviderRootsConfig};
+pub use layers::{
+    LayeredBackendExt, LoggingLayer, MetricsCollector, MetricsLayer, RateLimitLayer, RetryLayer,
+    StorageLayer, StorageMetrics,
+};
 
 pub use cloud_sync_core::traits;
 pub mod sys {
@@ -23,14 +28,16 @@ pub use cloud_sync_std::ignore;
 
 pub use cloud_sync_core::{
     ChecksumOps, Clock, ConflictPolicy, DirectoryLister, FileState, FileSystem, FolderOps,
-    NormalizedPath, RealFileSystem, StorageReader, StorageWriter, SyncState, SystemClock,
+    NormalizedPath, RealFileSystem, ResumableUploadSession, StorageBackend, StorageCapabilities,
+    StorageError, StorageItem, StorageReader, StorageWriter, SyncMode, SyncPolicy, SyncState,
+    SystemClock,
 };
 pub use providers::{
     local_sim::LocalSimulation, AzureBlobCredentials, B2Credentials, BackendCredentials,
     BackendFactory, BackendRegistry, CommonProviderSettings, DynamicBackendRegistry,
     EncryptedBackend, GCSCredentials, IPFSCredentials, MegaCredentials, NextcloudCredentials,
     OAuthCredentials, OAuthTokenManager, PCloudCredentials, ProviderConfig, S3Credentials,
-    SFTPCredentials, SimulatedFallback, SyncMode, WebDAVCredentials,
+    SFTPCredentials, SimulatedFallback, WebDAVCredentials,
 };
 
 pub use cloud_sync_std::SyncIgnore;
@@ -43,7 +50,6 @@ pub fn create_backend(
 ) -> std::sync::Arc<dyn traits::StorageBackend> {
     BackendRegistry::create_backend(creds, sim_root)
 }
-pub use cloud_sync_core::{StorageBackend, StorageError, StorageItem, SyncPolicy};
 #[cfg(feature = "azure_blob")]
 pub use providers::{AzureBlobProvider, AzureBlobProviderBuilder};
 #[cfg(feature = "b2")]

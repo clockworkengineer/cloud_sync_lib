@@ -1,0 +1,131 @@
+//! TokenBucket rate limiter middleware layer.
+
+use super::StorageLayer;
+use crate::rate_limit::TokenBucket;
+use cloud_sync_core::{
+    RemoteChange, ResumableUploadSession, StorageBackend, StorageCapabilities, StorageError,
+    StorageItem,
+};
+use std::path::Path;
+use std::sync::Arc;
+
+pub struct RateLimitLayer {
+    upload_limiter: Option<TokenBucket>,
+    download_limiter: Option<TokenBucket>,
+}
+
+impl RateLimitLayer {
+    pub fn new(upload_limiter: Option<TokenBucket>, download_limiter: Option<TokenBucket>) -> Self {
+        Self {
+            upload_limiter,
+            download_limiter,
+        }
+    }
+}
+
+impl StorageLayer for RateLimitLayer {
+    fn layer(&self, backend: Arc<dyn StorageBackend>) -> Arc<dyn StorageBackend> {
+        Arc::new(RateLimitBackend {
+            inner: backend,
+            upload_limiter: self.upload_limiter.clone(),
+            download_limiter: self.download_limiter.clone(),
+        })
+    }
+}
+
+pub struct RateLimitBackend {
+    inner: Arc<dyn StorageBackend>,
+    upload_limiter: Option<TokenBucket>,
+    download_limiter: Option<TokenBucket>,
+}
+
+#[async_trait::async_trait]
+impl StorageBackend for RateLimitBackend {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn capabilities(&self) -> StorageCapabilities {
+        self.inner.capabilities()
+    }
+
+    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        if let Some(limiter) = &self.upload_limiter {
+            if let Ok(meta) = tokio::fs::metadata(local_path).await {
+                if let Some(delay) = limiter.consume(meta.len()) {
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+        self.inner.upload(local_path, remote_path).await
+    }
+
+    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        self.inner.download(remote_path, local_path).await?;
+        if let Some(limiter) = &self.download_limiter {
+            if let Ok(meta) = tokio::fs::metadata(local_path).await {
+                if let Some(delay) = limiter.consume(meta.len()) {
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+        self.inner.delete(remote_path).await
+    }
+
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        self.inner.list(remote_path).await
+    }
+
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        self.inner.create_folder(remote_path).await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.inner.rename(from, to).await
+    }
+
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.inner.copy(from, to).await
+    }
+
+    async fn start_resumable_upload(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+        chunk_size: usize,
+    ) -> Result<Box<dyn ResumableUploadSession>, StorageError> {
+        self.inner
+            .start_resumable_upload(local_path, remote_path, chunk_size)
+            .await
+    }
+
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
+        self.inner.compute_local_checksum(local_path).await
+    }
+
+    async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {
+        self.inner.get_latest_cursor().await
+    }
+
+    async fn fetch_changes(
+        &self,
+        cursor: &str,
+    ) -> Result<Option<(Vec<RemoteChange>, String)>, StorageError> {
+        self.inner.fetch_changes(cursor).await
+    }
+
+    fn is_simulated(&self) -> bool {
+        self.inner.is_simulated()
+    }
+
+    fn simulation_reason(&self) -> Option<String> {
+        self.inner.simulation_reason()
+    }
+}

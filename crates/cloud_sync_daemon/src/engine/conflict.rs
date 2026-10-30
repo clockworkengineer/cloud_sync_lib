@@ -2,7 +2,7 @@ use cloud_sync_lib::ConflictPolicy;
 use std::time::SystemTime;
 
 /// Action to be taken when a conflict between local and remote file is detected.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConflictResolutionAction {
     UploadLocal,
     DownloadRemote,

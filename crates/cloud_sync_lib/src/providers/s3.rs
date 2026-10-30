@@ -94,6 +94,42 @@ impl StorageBackend for S3Provider {
         "S3"
     }
 
+    fn capabilities(&self) -> cloud_sync_core::StorageCapabilities {
+        cloud_sync_core::StorageCapabilities::SERVER_SIDE_MOVE
+            .union(cloud_sync_core::StorageCapabilities::SERVER_SIDE_COPY)
+            .union(cloud_sync_core::StorageCapabilities::CHECKSUM_MD5)
+    }
+
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let clean_from = self.format_path(from);
+        let clean_to = self.format_path(to);
+        info!(
+            "[{}] S3 server-side copying '{}' -> '{}'",
+            self.name(),
+            clean_from,
+            clean_to
+        );
+        let res = self
+            .bucket
+            .copy_object_internal(&clean_from, &clean_to)
+            .await
+            .map_err(|e| StorageError::Provider {
+                message: format!("S3 copy error: {}", e),
+                status: None,
+            })?;
+        if res != 200 {
+            return Err(crate::providers::utils::translate_status_code_error(
+                res, "S3", "copy", None,
+            ));
+        }
+        Ok(())
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.copy(from, to).await?;
+        self.delete(from).await
+    }
+
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         let clean_path = self.format_path(remote_path);
         info!(

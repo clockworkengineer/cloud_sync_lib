@@ -156,6 +156,24 @@ impl LocalSimulation {
         Ok(())
     }
 
+    /// Simulates copying a file or folder in the local simulation folder.
+    pub async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let source = self.resolve(from);
+        let dest = self.resolve(to);
+        info!(
+            "[{}] (Simulated) Copying remote path '{}' to '{}'",
+            self.provider_name, from, to
+        );
+        if !source.exists() {
+            return Err(StorageError::NotFound(from.to_string()));
+        }
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::copy(source, dest).await?;
+        Ok(())
+    }
+
     /// Simulates renaming a file or folder in the local simulation folder.
     pub async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
         let source = self.resolve(from);
@@ -221,10 +239,55 @@ impl LocalSimulation {
     }
 }
 
+pub struct SimulatedResumableUploadSession {
+    local_path: std::path::PathBuf,
+    dest_path: std::path::PathBuf,
+    total_bytes: u64,
+    uploaded_bytes: u64,
+    chunk_size: usize,
+}
+
+#[async_trait]
+impl cloud_sync_core::ResumableUploadSession for SimulatedResumableUploadSession {
+    fn total_bytes(&self) -> u64 {
+        self.total_bytes
+    }
+    fn uploaded_bytes(&self) -> u64 {
+        self.uploaded_bytes
+    }
+    async fn upload_next_chunk(&mut self) -> Result<(u64, u64), StorageError> {
+        if self.is_complete() {
+            return Ok((self.uploaded_bytes, self.total_bytes));
+        }
+        let remaining = self.total_bytes - self.uploaded_bytes;
+        let to_upload = (self.chunk_size as u64).min(remaining);
+        self.uploaded_bytes += to_upload;
+        Ok((self.uploaded_bytes, self.total_bytes))
+    }
+    fn is_complete(&self) -> bool {
+        self.uploaded_bytes >= self.total_bytes
+    }
+    async fn finish(&mut self) -> Result<Option<String>, StorageError> {
+        if let Some(parent) = self.dest_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::copy(&self.local_path, &self.dest_path).await?;
+        let hash = crate::checksum::compute_sha256(&self.dest_path).await.ok();
+        Ok(hash)
+    }
+}
+
 #[async_trait]
 impl StorageBackend for LocalSimulation {
     fn name(&self) -> &str {
         &self.provider_name
+    }
+
+    fn capabilities(&self) -> cloud_sync_core::StorageCapabilities {
+        cloud_sync_core::StorageCapabilities::SERVER_SIDE_MOVE
+            .union(cloud_sync_core::StorageCapabilities::SERVER_SIDE_COPY)
+            .union(cloud_sync_core::StorageCapabilities::RESUMABLE_UPLOAD)
+            .union(cloud_sync_core::StorageCapabilities::CHECKSUM_SHA256)
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
@@ -249,6 +312,27 @@ impl StorageBackend for LocalSimulation {
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
         self.rename(from, to).await
+    }
+
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.copy(from, to).await
+    }
+
+    async fn start_resumable_upload(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+        chunk_size: usize,
+    ) -> Result<Box<dyn cloud_sync_core::ResumableUploadSession>, StorageError> {
+        let meta = tokio::fs::metadata(local_path).await?;
+        let dest = self.resolve(remote_path);
+        Ok(Box::new(SimulatedResumableUploadSession {
+            local_path: local_path.to_path_buf(),
+            dest_path: dest,
+            total_bytes: meta.len(),
+            uploaded_bytes: 0,
+            chunk_size: chunk_size.max(1024),
+        }))
     }
 
     async fn compute_local_checksum(

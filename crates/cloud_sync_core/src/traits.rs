@@ -140,9 +140,105 @@ pub trait ChecksumOps: Send + Sync {
     ) -> Result<Option<String>, StorageError>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct StorageCapabilities(pub u32);
+
+impl StorageCapabilities {
+    pub const NONE: Self = Self(0);
+    pub const RESUMABLE_UPLOAD: Self = Self(1 << 0);
+    pub const SERVER_SIDE_MOVE: Self = Self(1 << 1);
+    pub const SERVER_SIDE_COPY: Self = Self(1 << 2);
+    pub const STREAMING_READ: Self = Self(1 << 3);
+    pub const BATCH_DELETE: Self = Self(1 << 4);
+    pub const CHECKSUM_MD5: Self = Self(1 << 5);
+    pub const CHECKSUM_SHA256: Self = Self(1 << 6);
+    pub const CHANGE_CURSOR: Self = Self(1 << 7);
+
+    pub const fn contains(&self, other: Self) -> bool {
+        (self.0 & other.0) == other.0
+    }
+
+    pub fn insert(&mut self, other: Self) {
+        self.0 |= other.0;
+    }
+
+    pub fn remove(&mut self, other: Self) {
+        self.0 &= !other.0;
+    }
+
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub const fn bits(&self) -> u32 {
+        self.0
+    }
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self(bits)
+    }
+}
+
+impl std::ops::BitOr for StorageCapabilities {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for StorageCapabilities {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl std::ops::BitAnd for StorageCapabilities {
+    type Output = Self;
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Self(self.0 & rhs.0)
+    }
+}
+
+impl std::ops::BitAndAssign for StorageCapabilities {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
+    }
+}
+
+impl std::ops::Not for StorageCapabilities {
+    type Output = Self;
+    fn not(self) -> Self::Output {
+        Self(!self.0)
+    }
+}
+
+#[cfg(feature = "std")]
+#[async_trait::async_trait]
+pub trait ResumableUploadSession: Send + Sync {
+    /// Returns total file size in bytes.
+    fn total_bytes(&self) -> u64;
+
+    /// Returns the number of bytes successfully uploaded so far.
+    fn uploaded_bytes(&self) -> u64;
+
+    /// Uploads the next slice/chunk and returns (uploaded_so_far, total_bytes).
+    async fn upload_next_chunk(&mut self) -> Result<(u64, u64), StorageError>;
+
+    /// Returns true if the session has uploaded all parts.
+    fn is_complete(&self) -> bool;
+
+    /// Finalizes the upload and commits the file remotely, optionally returning remote checksum.
+    async fn finish(&mut self) -> Result<Option<String>, StorageError>;
+}
+
 #[async_trait::async_trait]
 pub trait StorageBackend: Send + Sync {
     fn name(&self) -> &str;
+
+    /// Returns the advertised capabilities of this backend.
+    fn capabilities(&self) -> StorageCapabilities {
+        StorageCapabilities::NONE
+    }
 
     #[cfg(feature = "std")]
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError>;
@@ -160,6 +256,22 @@ pub trait StorageBackend: Send + Sync {
 
     async fn rename(&self, _from: &str, _to: &str) -> Result<(), StorageError> {
         Err(StorageError::Conflict(String::from("Rename not supported")))
+    }
+
+    async fn copy(&self, _from: &str, _to: &str) -> Result<(), StorageError> {
+        Err(StorageError::Conflict(String::from("Copy not supported")))
+    }
+
+    #[cfg(feature = "std")]
+    async fn start_resumable_upload(
+        &self,
+        _local_path: &Path,
+        _remote_path: &str,
+        _chunk_size: usize,
+    ) -> Result<Box<dyn ResumableUploadSession>, StorageError> {
+        Err(StorageError::Conflict(String::from(
+            "Resumable upload not supported",
+        )))
     }
 
     #[cfg(feature = "std")]
@@ -200,6 +312,9 @@ impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
     fn name(&self) -> &str {
         (**self).name()
     }
+    fn capabilities(&self) -> StorageCapabilities {
+        (**self).capabilities()
+    }
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         (**self).upload(local_path, remote_path).await
     }
@@ -217,6 +332,19 @@ impl<B: StorageBackend + ?Sized> StorageBackend for Box<B> {
     }
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
         (**self).rename(from, to).await
+    }
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        (**self).copy(from, to).await
+    }
+    async fn start_resumable_upload(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+        chunk_size: usize,
+    ) -> Result<Box<dyn ResumableUploadSession>, StorageError> {
+        (**self)
+            .start_resumable_upload(local_path, remote_path, chunk_size)
+            .await
     }
     async fn compute_local_checksum(
         &self,
@@ -247,6 +375,9 @@ impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
     fn name(&self) -> &str {
         (**self).name()
     }
+    fn capabilities(&self) -> StorageCapabilities {
+        (**self).capabilities()
+    }
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         (**self).upload(local_path, remote_path).await
     }
@@ -264,6 +395,19 @@ impl<B: StorageBackend + ?Sized> StorageBackend for std::sync::Arc<B> {
     }
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
         (**self).rename(from, to).await
+    }
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        (**self).copy(from, to).await
+    }
+    async fn start_resumable_upload(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+        chunk_size: usize,
+    ) -> Result<Box<dyn ResumableUploadSession>, StorageError> {
+        (**self)
+            .start_resumable_upload(local_path, remote_path, chunk_size)
+            .await
     }
     async fn compute_local_checksum(
         &self,
@@ -394,6 +538,12 @@ mod tests {
         assert!(boxed.list("").await.unwrap().is_empty());
         boxed.create_folder("folder").await.unwrap();
         assert!(boxed.rename("from", "to").await.is_err());
+        assert!(boxed.copy("from", "to").await.is_err());
+        assert!(boxed
+            .start_resumable_upload(Path::new("local"), "remote", 1024)
+            .await
+            .is_err());
+        assert_eq!(boxed.capabilities(), StorageCapabilities::NONE);
         assert!(boxed
             .compute_local_checksum(Path::new("local"))
             .await
@@ -408,11 +558,38 @@ mod tests {
         assert!(arc.list("").await.unwrap().is_empty());
         arc.create_folder("folder").await.unwrap();
         assert!(arc.rename("from", "to").await.is_err());
+        assert!(arc.copy("from", "to").await.is_err());
+        assert!(arc
+            .start_resumable_upload(Path::new("local"), "remote", 1024)
+            .await
+            .is_err());
+        assert_eq!(arc.capabilities(), StorageCapabilities::NONE);
         assert!(arc
             .compute_local_checksum(Path::new("local"))
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn test_storage_capabilities() {
+        let mut caps = StorageCapabilities::NONE;
+        assert_eq!(caps.bits(), 0);
+        assert!(!caps.contains(StorageCapabilities::RESUMABLE_UPLOAD));
+
+        caps.insert(StorageCapabilities::RESUMABLE_UPLOAD);
+        caps.insert(StorageCapabilities::SERVER_SIDE_MOVE);
+        assert!(caps.contains(StorageCapabilities::RESUMABLE_UPLOAD));
+        assert!(caps.contains(StorageCapabilities::SERVER_SIDE_MOVE));
+        assert!(!caps.contains(StorageCapabilities::SERVER_SIDE_COPY));
+
+        caps.remove(StorageCapabilities::RESUMABLE_UPLOAD);
+        assert!(!caps.contains(StorageCapabilities::RESUMABLE_UPLOAD));
+        assert!(caps.contains(StorageCapabilities::SERVER_SIDE_MOVE));
+
+        let union_caps = caps.union(StorageCapabilities::SERVER_SIDE_COPY);
+        assert!(union_caps.contains(StorageCapabilities::SERVER_SIDE_MOVE));
+        assert!(union_caps.contains(StorageCapabilities::SERVER_SIDE_COPY));
     }
 
     #[test]

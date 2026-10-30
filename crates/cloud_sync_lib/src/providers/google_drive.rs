@@ -5,7 +5,7 @@
 
 use crate::providers::utils::translate_http_error;
 use crate::providers::OAuthCredentials;
-use crate::traits::{StorageBackend, StorageError, StorageItem};
+use crate::traits::{StorageBackend, StorageCapabilities, StorageError, StorageItem};
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -252,12 +252,173 @@ impl GoogleDriveProvider {
 
         Ok(parent_id)
     }
+
+    /// Resolves an existing path in Google Drive to its file ID and parent ID without creating missing elements.
+    async fn find_file_id_and_parent(
+        &self,
+        token: &str,
+        path: &str,
+    ) -> Result<Option<(String, String)>, StorageError> {
+        let normalized = super::utils::normalize_remote_path(path);
+        let parts: Vec<&str> = normalized.split('/').filter(|s| !s.is_empty()).collect();
+        if parts.is_empty() {
+            return Ok(None);
+        }
+
+        let mut parent_id = "root".to_string();
+        if let Some(ref dest_folder) = self.credentials.common.destination_folder {
+            let normalized_dest = super::utils::normalize_remote_path(dest_folder);
+            if !normalized_dest.is_empty() {
+                for seg in normalized_dest.split('/').filter(|s| !s.is_empty()) {
+                    let query = format!(
+                        "name = '{}' and '{}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+                        seg.replace('\'', "\\'"),
+                        parent_id
+                    );
+                    let res =
+                        super::utils::apply_bearer_auth(self.client.get(&self.api_url), token)
+                            .query(&[("q", &query), ("fields", &"files(id)".to_string())])
+                            .send()
+                            .await?
+                            .json::<serde_json::Value>()
+                            .await?;
+                    if let Some(files) = res["files"].as_array() {
+                        if !files.is_empty() {
+                            parent_id = files[0]["id"].as_str().unwrap().to_string();
+                            continue;
+                        }
+                    }
+                    return Ok(None);
+                }
+            }
+        }
+
+        for (i, part) in parts.iter().enumerate() {
+            let is_last = i == parts.len() - 1;
+            let query = if is_last {
+                format!(
+                    "name = '{}' and '{}' in parents and trashed = false",
+                    part.replace('\'', "\\'"),
+                    parent_id
+                )
+            } else {
+                format!(
+                    "name = '{}' and '{}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+                    part.replace('\'', "\\'"),
+                    parent_id
+                )
+            };
+
+            let res = super::utils::apply_bearer_auth(self.client.get(&self.api_url), token)
+                .query(&[("q", &query), ("fields", &"files(id)".to_string())])
+                .send()
+                .await?
+                .json::<serde_json::Value>()
+                .await?;
+
+            if let Some(files) = res["files"].as_array() {
+                if !files.is_empty() {
+                    let file_id = files[0]["id"].as_str().unwrap().to_string();
+                    if is_last {
+                        return Ok(Some((file_id, parent_id)));
+                    } else {
+                        parent_id = file_id;
+                        continue;
+                    }
+                }
+            }
+            return Ok(None);
+        }
+
+        Ok(None)
+    }
 }
 
 #[async_trait]
 impl StorageBackend for GoogleDriveProvider {
     fn name(&self) -> &str {
         "Google Drive"
+    }
+
+    fn capabilities(&self) -> StorageCapabilities {
+        StorageCapabilities::SERVER_SIDE_MOVE
+            | StorageCapabilities::SERVER_SIDE_COPY
+            | StorageCapabilities::RESUMABLE_UPLOAD
+            | StorageCapabilities::CHANGE_CURSOR
+            | StorageCapabilities::CHECKSUM_MD5
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "rename", || async {
+            let token = self.get_access_token().await?;
+            let (file_id, old_parent_id) = self
+                .find_file_id_and_parent(&token, from)
+                .await?
+                .ok_or_else(|| StorageError::NotFound(from.to_string()))?;
+
+            let (to_parent, to_name) = match to.rfind('/') {
+                Some(idx) => (&to[..idx], &to[idx + 1..]),
+                None => ("", to),
+            };
+
+            let dest_parent_id = self.get_or_create_file_id(&token, to_parent, true).await?;
+
+            let url = format!("{}/{}", self.api_url, file_id);
+            let mut query_params = Vec::new();
+            if dest_parent_id != old_parent_id {
+                query_params.push(("addParents", dest_parent_id.as_str()));
+                query_params.push(("removeParents", old_parent_id.as_str()));
+            }
+
+            let body = serde_json::json!({
+                "name": to_name
+            });
+
+            let req = super::utils::apply_bearer_auth(self.client.patch(&url), &token);
+            let res = req.query(&query_params).json(&body).send().await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "rename").await);
+            }
+
+            Ok(())
+        })
+        .await
+    }
+
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "copy", || async {
+            let token = self.get_access_token().await?;
+            let (file_id, _) = self
+                .find_file_id_and_parent(&token, from)
+                .await?
+                .ok_or_else(|| StorageError::NotFound(from.to_string()))?;
+
+            let (to_parent, to_name) = match to.rfind('/') {
+                Some(idx) => (&to[..idx], &to[idx + 1..]),
+                None => ("", to),
+            };
+
+            let dest_parent_id = self.get_or_create_file_id(&token, to_parent, true).await?;
+
+            let url = format!("{}/{}/copy", self.api_url, file_id);
+            let body = serde_json::json!({
+                "name": to_name,
+                "parents": [dest_parent_id]
+            });
+
+            let res = super::utils::apply_bearer_auth(self.client.post(&url), &token)
+                .json(&body)
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "copy").await);
+            }
+
+            Ok(())
+        })
+        .await
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {

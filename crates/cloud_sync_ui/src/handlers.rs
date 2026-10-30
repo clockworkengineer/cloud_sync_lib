@@ -403,6 +403,18 @@ pub async fn api_events() -> impl IntoResponse {
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 
+/// HTTP Endpoint: Returns active or preview synchronization plans across backends.
+pub async fn api_sync_plan() -> impl IntoResponse {
+    match send_daemon_cmd("get_plan").await {
+        Ok(raw) => {
+            let json_val: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|_| json!([]));
+            Json(json_val).into_response()
+        }
+        Err(_) => Json(json!([])).into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

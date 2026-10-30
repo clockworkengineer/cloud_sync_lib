@@ -54,6 +54,9 @@ pub struct AppConfig {
     pub error_recovery: Option<ErrorRecoveryConfig>,
     pub log_file: Option<String>,
     pub state_directory: Option<PathBuf>,
+    pub min_file_size_bytes: Option<u64>,
+    pub max_file_size_bytes: Option<u64>,
+    pub ignore_hidden: Option<bool>,
 }
 
 impl std::ops::Deref for AppConfig {
@@ -120,6 +123,9 @@ impl Default for AppConfig {
             error_recovery: None,
             log_file: Some("daemon.log".to_string()),
             state_directory: Some(PathBuf::from("sync_state")),
+            min_file_size_bytes: None,
+            max_file_size_bytes: None,
+            ignore_hidden: Some(false),
         }
     }
 }

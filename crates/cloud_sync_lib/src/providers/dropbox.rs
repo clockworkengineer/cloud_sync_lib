@@ -115,6 +115,67 @@ impl StorageBackend for DropboxProvider {
         "Dropbox"
     }
 
+    fn capabilities(&self) -> cloud_sync_core::StorageCapabilities {
+        cloud_sync_core::StorageCapabilities::SERVER_SIDE_MOVE
+            .union(cloud_sync_core::StorageCapabilities::SERVER_SIDE_COPY)
+            .union(cloud_sync_core::StorageCapabilities::RESUMABLE_UPLOAD)
+            .union(cloud_sync_core::StorageCapabilities::CHANGE_CURSOR)
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "rename", || async {
+            let token = self.get_access_token().await?;
+            let from_path = self.format_path(from);
+            let to_path = self.format_path(to);
+
+            let body = serde_json::json!({
+                "from_path": from_path,
+                "to_path": to_path,
+                "autorename": false
+            });
+
+            let move_url = format!("{}/move_v2", self.api_url);
+            let res = super::utils::apply_bearer_auth(self.client.post(&move_url), &token)
+                .json(&body)
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "rename").await);
+            }
+
+            Ok(())
+        })
+        .await
+    }
+
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        super::utils::execute_with_retry(self.name(), "copy", || async {
+            let token = self.get_access_token().await?;
+            let from_path = self.format_path(from);
+            let to_path = self.format_path(to);
+
+            let body = serde_json::json!({
+                "from_path": from_path,
+                "to_path": to_path,
+                "autorename": false
+            });
+
+            let copy_url = format!("{}/copy_v2", self.api_url);
+            let res = super::utils::apply_bearer_auth(self.client.post(&copy_url), &token)
+                .json(&body)
+                .send()
+                .await?;
+
+            if !res.status().is_success() {
+                return Err(translate_http_error(res, self.name(), "copy").await);
+            }
+
+            Ok(())
+        })
+        .await
+    }
+
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
         super::utils::execute_with_retry(self.name(), "upload", || async {
             let token = self.get_access_token().await?;

@@ -264,6 +264,56 @@ impl<B: StorageBackend> StorageBackend for SimulatedFallback<B> {
         }
     }
 
+    fn capabilities(&self) -> cloud_sync_core::StorageCapabilities {
+        if let Some(ref inner) = self.inner {
+            inner.capabilities()
+        } else {
+            self.local_sim.capabilities()
+        }
+    }
+
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        if let Some(ref inner) = self.inner {
+            match inner.copy(from, to).await {
+                Ok(()) => {
+                    *self.fallback_reason.write().unwrap() = None;
+                    Ok(())
+                }
+                Err(StorageError::Authentication(e))
+                | Err(StorageError::AuthenticationExpired(e)) => {
+                    tracing::warn!(
+                        "[{}] Authentication failed, falling back to local simulation for copy: {}",
+                        self.name,
+                        e
+                    );
+                    *self.fallback_reason.write().unwrap() =
+                        Some(format!("Authentication failed: {}", e));
+                    self.local_sim.copy(from, to).await
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            self.local_sim.copy(from, to).await
+        }
+    }
+
+    async fn start_resumable_upload(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+        chunk_size: usize,
+    ) -> Result<Box<dyn cloud_sync_core::ResumableUploadSession>, StorageError> {
+        if let Some(ref inner) = self.inner {
+            inner
+                .start_resumable_upload(local_path, remote_path, chunk_size)
+                .await
+        } else {
+            self.local_sim
+                .start_resumable_upload(local_path, remote_path, chunk_size)
+                .await
+        }
+    }
+
     fn is_simulated(&self) -> bool {
         self.inner.is_none() || self.fallback_reason.read().unwrap().is_some()
     }

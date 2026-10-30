@@ -492,6 +492,42 @@ pub async fn handle_control_command(
                 }
             }
         }
+        "get_plan" | "plan" => {
+            let s = state.lock().await;
+            let mut plans = Vec::new();
+            for active_backend in &s.backends {
+                let safe_name = active_backend
+                    .backend
+                    .name()
+                    .to_lowercase()
+                    .replace(' ', "_");
+                let state_file_path = crate::sync_engine::resolve_state_file_path(
+                    &s.state_dir,
+                    &s.watch_dir,
+                    &safe_name,
+                )
+                .await;
+                let filter = crate::engine::FileFilter::new(
+                    &s.gitignore,
+                    active_backend.selective_sync.as_deref(),
+                );
+                let orchestrator = crate::engine::SyncOrchestrator::default_real();
+                if let Ok(plan) = orchestrator
+                    .plan_sync(
+                        active_backend.backend.as_ref(),
+                        &s.watch_dir,
+                        &state_file_path,
+                        &filter,
+                        active_backend.policy,
+                        s.conflict_policy,
+                    )
+                    .await
+                {
+                    plans.push(plan);
+                }
+            }
+            serde_json::to_string(&plans).unwrap_or_else(|_| "[]".to_string()) + "\n"
+        }
         "stop" => {
             let _ = shutdown_tx.send(()).await;
             "Status: Stopping daemon...\n".to_string()

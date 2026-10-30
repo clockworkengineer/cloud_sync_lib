@@ -6,6 +6,8 @@ use std::path::Path;
 pub struct FileFilter<'a> {
     gitignore: &'a SyncIgnore,
     selective_sync: Option<&'a [String]>,
+    min_size: Option<u64>,
+    max_size: Option<u64>,
 }
 
 impl<'a> FileFilter<'a> {
@@ -13,7 +15,30 @@ impl<'a> FileFilter<'a> {
         Self {
             gitignore,
             selective_sync,
+            min_size: None,
+            max_size: None,
         }
+    }
+
+    pub fn with_size_limits(mut self, min_size: Option<u64>, max_size: Option<u64>) -> Self {
+        self.min_size = min_size;
+        self.max_size = max_size;
+        self
+    }
+
+    /// Checks if a file size falls within the configured min/max boundaries.
+    pub fn is_size_allowed(&self, size: u64) -> bool {
+        if let Some(min) = self.min_size {
+            if size < min {
+                return false;
+            }
+        }
+        if let Some(max) = self.max_size {
+            if size > max {
+                return false;
+            }
+        }
+        true
     }
 
     /// Checks whether a remote or local path contains unsafe path traversal characters.

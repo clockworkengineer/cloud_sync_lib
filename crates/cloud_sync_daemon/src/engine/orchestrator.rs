@@ -5,8 +5,14 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use crate::engine::conflict::{create_conflict_resolver, ConflictResolutionAction};
+use crate::engine::executor::{ExecutionResult, PlanExecutor};
 use crate::engine::filter::FileFilter;
+use crate::engine::plan::SyncPlan;
+use crate::engine::planner::SyncPlanner;
+use crate::engine::scanner::DirectoryScanner;
 use crate::engine::state_repository::SyncStateRepository;
+use crate::engine::versioning::TrashManager;
+use cloud_sync_lib::StorageBackend;
 
 /// Orchestrator coordinating synchronization operations across local filesystems and remote backends (SRP & DIP).
 pub struct SyncOrchestrator {
@@ -38,6 +44,43 @@ impl SyncOrchestrator {
 
     pub fn state_repo(&self) -> &SyncStateRepository {
         &self.state_repo
+    }
+
+    /// Scans local and remote trees and computes a deterministic `SyncPlan`.
+    pub async fn plan_sync(
+        &self,
+        backend: &dyn StorageBackend,
+        watch_dir: &std::path::Path,
+        state_file: &std::path::Path,
+        filter: &FileFilter<'_>,
+        policy: cloud_sync_lib::SyncPolicy,
+        conflict_policy: ConflictPolicy,
+    ) -> Result<SyncPlan, Box<dyn std::error::Error + Send + Sync>> {
+        let base_state = self.state_repo.load(state_file).await;
+        let remote_tree = DirectoryScanner::scan_remote(backend, filter).await?;
+        let local_tree = DirectoryScanner::scan_local(watch_dir, filter).await?;
+
+        Ok(SyncPlanner::plan(
+            backend.name(),
+            backend.capabilities(),
+            watch_dir,
+            &local_tree,
+            &remote_tree,
+            &base_state,
+            policy,
+            conflict_policy,
+        ))
+    }
+
+    /// Executes a computed `SyncPlan` with optional trash can versioning.
+    pub async fn execute_sync(
+        &self,
+        backend: Arc<dyn StorageBackend>,
+        plan: &SyncPlan,
+        trash_mgr: Option<&TrashManager>,
+        dry_run: bool,
+    ) -> Result<ExecutionResult, cloud_sync_lib::StorageError> {
+        PlanExecutor::execute(backend, plan, trash_mgr, dry_run).await
     }
 
     /// Resolves a file conflict using an injected ConflictResolver strategy.

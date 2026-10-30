@@ -334,6 +334,18 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         self.inner.fetch_changes(cursor).await
     }
 
+    fn capabilities(&self) -> cloud_sync_core::StorageCapabilities {
+        self.inner.capabilities()
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.inner.rename(from, to).await
+    }
+
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.inner.copy(from, to).await
+    }
+
     fn is_simulated(&self) -> bool {
         self.inner.is_simulated()
     }
