@@ -222,6 +222,21 @@ impl StorageError {
 > - Added 4th runnable example [`examples/circuit_breaker.rs`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/examples/circuit_breaker.rs) verifying circuit tripping, local fast-fail interception, and HalfOpen probe recovery.
 > - 100% test coverage passing: 59 unit and integration tests passing in `cloud_sync_lib`, 0 Clippy warnings under `-D warnings`.
 
+### Phase 3: Security & Portability (Attributes 7 & 9) [COMPLETED]
+
+> [!NOTE]
+> **Status: COMPLETED**
+> - Implemented robust segment-based path validation in [`NormalizedPath`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_core/src/path.rs#L13):
+>   - Safely allows legitimate filenames containing double dots (`backup..v1.tar`).
+>   - Strictly blocks traversal segments (`..`, `.`).
+>   - Prohibits Windows Alternate Data Streams (`:`).
+>   - Prohibits DOS / Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1..9`, `LPT1..9`).
+>   - Prohibits null byte injections (`\0`).
+> - Implemented memory zeroization of OAuth access and refresh tokens using `zeroize::Zeroizing<String>` in [`OAuthTokenManager`](file:///C:/Projects/cloud_sync_lib/crates/cloud_sync_lib/src/providers/utils.rs#L84), with custom `Debug` log redaction preventing secret exposure.
+> - Removed `sftp` (which triggers C `openssl-sys` compilation with `perl`) from default feature sets of `cloud_sync_daemon` and `cloud_sync_backup`, while preserving all 13 pure-Rust cross-platform cloud storage backends by default.
+> - Resolved Windows MSVC build failures: `cargo test -p cloud_sync_daemon` and `cargo test -p cloud_sync_backup` now compile and pass out-of-the-box on Windows without requiring Perl or OpenSSL toolchains.
+> - 100% test coverage passing: 19 tests in `cloud_sync_core`, 33 tests in `cloud_sync_daemon`, all tests in `cloud_sync_backup`, 0 Clippy warnings under `-D warnings`.
+
 ---
 
 ```mermaid

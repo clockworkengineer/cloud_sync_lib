@@ -86,10 +86,22 @@ pub struct OAuthTokenManager {
     token_url: String,
     client_id: String,
     client_secret: String,
-    refresh_token: tokio::sync::RwLock<String>,
+    refresh_token: tokio::sync::RwLock<zeroize::Zeroizing<String>>,
     provider_name: String,
-    cache: tokio::sync::RwLock<Option<(String, std::time::Instant)>>,
+    cache: tokio::sync::RwLock<Option<(zeroize::Zeroizing<String>, std::time::Instant)>>,
     on_refresh: Option<TokenRefreshCallback>,
+}
+
+impl std::fmt::Debug for OAuthTokenManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthTokenManager")
+            .field("provider_name", &self.provider_name)
+            .field("token_url", &self.token_url)
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"[REDACTED]")
+            .field("refresh_token", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl OAuthTokenManager {
@@ -126,7 +138,7 @@ impl OAuthTokenManager {
             token_url: token_url.to_string(),
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
-            refresh_token: tokio::sync::RwLock::new(refresh_token.to_string()),
+            refresh_token: tokio::sync::RwLock::new(zeroize::Zeroizing::new(refresh_token.to_string())),
             provider_name: provider_name.to_string(),
             cache: tokio::sync::RwLock::new(None),
             on_refresh,
@@ -138,7 +150,7 @@ impl OAuthTokenManager {
             let cache = self.cache.read().await;
             if let Some((ref token, expiry)) = *cache {
                 if std::time::Instant::now() + std::time::Duration::from_secs(30) < expiry {
-                    return Ok(token.clone());
+                    return Ok((**token).clone());
                 }
             }
         }
@@ -146,7 +158,7 @@ impl OAuthTokenManager {
         let mut cache = self.cache.write().await;
         if let Some((ref token, expiry)) = *cache {
             if std::time::Instant::now() + std::time::Duration::from_secs(30) < expiry {
-                return Ok(token.clone());
+                return Ok((**token).clone());
             }
         }
 
@@ -164,7 +176,7 @@ impl OAuthTokenManager {
 
         if let Some(ref new_ref) = new_refresh_token {
             let mut ref_guard = self.refresh_token.write().await;
-            *ref_guard = new_ref.clone();
+            *ref_guard = zeroize::Zeroizing::new(new_ref.clone());
             if let Some(ref cb) = self.on_refresh {
                 cb(new_ref);
             }
@@ -175,7 +187,7 @@ impl OAuthTokenManager {
         let expiry = std::time::Instant::now()
             + std::time::Duration::from_secs(ttl.saturating_sub(safety_margin));
 
-        *cache = Some((token.clone(), expiry));
+        *cache = Some((zeroize::Zeroizing::new(token.clone()), expiry));
         Ok(token)
     }
 

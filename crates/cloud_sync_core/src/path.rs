@@ -12,12 +12,51 @@ use alloc::string::ToString;
 )]
 pub struct NormalizedPath(String);
 
+fn is_reserved_dos_name(name: &str) -> bool {
+    let stem = match name.split_once('.') {
+        Some((prefix, _)) => prefix,
+        None => name,
+    };
+    if stem.eq_ignore_ascii_case("CON")
+        || stem.eq_ignore_ascii_case("PRN")
+        || stem.eq_ignore_ascii_case("AUX")
+        || stem.eq_ignore_ascii_case("NUL")
+    {
+        return true;
+    }
+    if stem.len() == 4 {
+        let prefix = &stem[..3];
+        let suffix = stem.as_bytes()[3];
+        if (prefix.eq_ignore_ascii_case("COM") || prefix.eq_ignore_ascii_case("LPT"))
+            && (b'1'..=b'9').contains(&suffix)
+        {
+            return true;
+        }
+    }
+    false
+}
+
 impl NormalizedPath {
     pub fn new(path: &str) -> Result<Self, &'static str> {
+        if path.contains('\0') {
+            return Err("Null bytes are prohibited in paths");
+        }
         let normalized = path.replace('\\', "/");
         let trimmed = normalized.trim_start_matches('/');
-        if trimmed.contains("..") || trimmed.contains("./") {
-            return Err("Unsafe path traversal sequence detected");
+        if trimmed.is_empty() {
+            return Ok(Self(String::new()));
+        }
+
+        for segment in trimmed.split('/') {
+            if segment == "." || segment == ".." {
+                return Err("Unsafe path traversal sequence detected");
+            }
+            if segment.contains(':') {
+                return Err("Alternate Data Stream or colon prohibited in paths");
+            }
+            if is_reserved_dos_name(segment) {
+                return Err("DOS reserved device name prohibited in paths");
+            }
         }
         Ok(Self(trimmed.to_string()))
     }
@@ -237,6 +276,33 @@ mod tests {
     fn test_normalize_remote_path() {
         assert_eq!(normalize_remote_path("foo\\bar"), "foo/bar");
         assert_eq!(normalize_remote_path("foo/bar"), "foo/bar");
+    }
+
+    #[test]
+    fn test_normalized_path_security() {
+        // Valid paths with double dots in filename must be allowed
+        assert!(NormalizedPath::new("backup..v1.tar").is_ok());
+        assert!(NormalizedPath::new("documents/report..final.pdf").is_ok());
+        assert_eq!(NormalizedPath::new("docs/my..file.txt").unwrap().as_str(), "docs/my..file.txt");
+
+        // Traversal sequences must be rejected
+        assert!(NormalizedPath::new("../secret.txt").is_err());
+        assert!(NormalizedPath::new("docs/../../etc/passwd").is_err());
+        assert!(NormalizedPath::new("docs/./file.txt").is_err());
+
+        // Windows Alternate Data Streams must be rejected
+        assert!(NormalizedPath::new("file.txt:hidden").is_err());
+        assert!(NormalizedPath::new("c:/path/file.txt:stream").is_err());
+
+        // Reserved DOS device names must be rejected
+        assert!(NormalizedPath::new("nul").is_err());
+        assert!(NormalizedPath::new("folder/nul.txt").is_err());
+        assert!(NormalizedPath::new("com1").is_err());
+        assert!(NormalizedPath::new("nested/aux.dat").is_err());
+        assert!(NormalizedPath::new("con").is_err());
+
+        // Null bytes must be rejected
+        assert!(NormalizedPath::new("file\0.txt").is_err());
     }
 
     #[test]
