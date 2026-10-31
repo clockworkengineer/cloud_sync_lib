@@ -61,7 +61,7 @@ For systems requiring fine-grained capabilities:
 
 ```toml
 [dependencies.cloud_sync_core]
-version = "0.2.0"
+version = "0.3.0"
 default-features = false # Enables pure no_std mode!
 features = ["std"]      # Enables std file system and tokio integration
 ```

@@ -13,7 +13,7 @@ homepage.workspace = true
 workspace = true
 
 [dependencies]
-cloud_sync_core = { path = "../cloud_sync_core", version = "0.2.0" }
+cloud_sync_core = { path = "../cloud_sync_core", version = "0.3.0" }
 ignore = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util"] }
 ring = { workspace = true, features = ["alloc"] }

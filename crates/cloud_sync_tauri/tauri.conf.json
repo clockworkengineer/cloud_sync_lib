@@ -1,6 +1,6 @@
 {
   "productName": "Cloud Sync",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "com.cloudsync.app",
   "build": {
     "frontendDist": "dist"
