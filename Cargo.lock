@@ -1204,6 +1204,7 @@ dependencies = [
 name = "cloud_sync_egui"
 version = "0.3.0"
 dependencies = [
+ "chrono",
  "cloud_sync_ui",
  "eframe",
  "serde_json",

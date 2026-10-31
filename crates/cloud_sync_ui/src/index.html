@@ -967,6 +967,10 @@
             <div class="logo-text">CloudSync Control Center</div>
         </div>
         <div style="display: flex; align-items: center; gap: 0.85rem;">
+            <button class="btn btn-secondary" id="btn-open-help" onclick="openHelpModal()" style="padding: 0.5rem 0.9rem; font-size: 0.85rem; border-radius: 50px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.35); color: #a5b4fc; display: flex; align-items: center; gap: 0.4rem; cursor: pointer; transition: all 0.2s ease;" title="Help & Shortcuts (F1)">
+                <span>❓</span>
+                <span>Help</span>
+            </button>
             <button class="btn btn-secondary" id="btn-open-settings" onclick="openSettingsModal()" style="padding: 0.5rem 1rem; font-size: 0.85rem; border-radius: 50px; background: rgba(139, 92, 246, 0.15); border: 1px solid rgba(139, 92, 246, 0.35); color: #c084fc; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; transition: all 0.2s ease;">
                 <span style="font-size: 1rem;">⚙️</span>
                 <span>Settings & Providers</span>
@@ -1256,6 +1260,73 @@
                     <span>✓</span>
                     <span>Select This Folder</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Dialog Modal (Principle 5: Error Prevention) -->
+    <div class="modal-backdrop" id="confirm-modal" onclick="handleModalBackdropClick(event, 'confirm-modal')">
+        <div class="modal-window" style="max-width: 480px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span id="confirm-modal-icon">⚠️</span>
+                    <span id="confirm-modal-title">Confirm Action</span>
+                </div>
+                <button class="modal-close-btn" onclick="closeConfirmModal()" title="Close">✕</button>
+            </div>
+            <div class="modal-body" style="gap: 0.75rem;">
+                <p id="confirm-modal-message" style="font-size: 0.95rem; color: #fff; line-height: 1.5;"></p>
+                <p id="confirm-modal-subtext" style="font-size: 0.82rem; color: var(--text-secondary);"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancel</button>
+                <button class="btn btn-danger" id="confirm-modal-btn" onclick="executeConfirmedAction()" style="background: var(--gradient-danger);">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help & Documentation Modal (Principle 10: Help and Documentation) -->
+    <div class="modal-backdrop" id="help-modal" onclick="handleModalBackdropClick(event, 'help-modal')">
+        <div class="modal-window" style="max-width: 720px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>📖</span>
+                    <span>CloudSync User Guide & Shortcuts</span>
+                </div>
+                <button class="modal-close-btn" onclick="closeHelpModal()" title="Close">✕</button>
+            </div>
+            <div class="modal-body" style="gap: 1.25rem;">
+                <div>
+                    <h3 style="font-size: 1rem; color: var(--accent-indigo); margin-bottom: 0.5rem;">⌨️ Keyboard Shortcuts (Accelerators)</h3>
+                    <div style="display: grid; grid-template-columns: 140px 1fr; gap: 0.6rem; font-size: 0.85rem; background: rgba(0,0,0,0.3); padding: 0.85rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                        <code style="color: var(--accent-teal);">Space</code><span>Toggle Pause / Resume synchronization</span>
+                        <code style="color: var(--accent-teal);">F5 / Ctrl + R</code><span>Trigger manual synchronization scan</span>
+                        <code style="color: var(--accent-teal);">F1 / ?</code><span>Open this Help and Documentation guide</span>
+                        <code style="color: var(--accent-teal);">Escape</code><span>Close any active modal or dialog</span>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 style="font-size: 1rem; color: var(--accent-indigo); margin-bottom: 0.5rem;">🟢 Backend Status Indicators</h3>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
+                        <div><strong style="color: #5eead4;">● Live Cloud:</strong> Connected to official provider API with valid authentication tokens.</div>
+                        <div><strong style="color: #fde68a;">● Simulated:</strong> Credentials absent, placeholder, or on hold. Changes mirror safely into local folder <code>./cloud_simulation/&lt;provider&gt;</code> without network errors.</div>
+                        <div><strong style="color: #fca5a5;">● Attention / Failed:</strong> Token expired or rejected by provider. Re-generate token using the Python scripts in <code>scripts/</code> or verify provider portal.</div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 style="font-size: 1rem; color: var(--accent-indigo); margin-bottom: 0.5rem;">🛠️ Troubleshooting & Setup Guides</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5;">
+                        Full markdown documentation is included in the <code>docs/</code> repository folder:
+                    </p>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem;">
+                        <a href="/api/logs" target="_blank" class="btn-mini" style="text-decoration: none;">📄 Live Logs Stream</a>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeHelpModal()">Got It</button>
             </div>
         </div>
     </div>
@@ -1659,18 +1730,24 @@
         }
 
         async function stopDaemon() {
-            if (confirm('Are you sure you want to stop the background sync daemon? The daemon process will exit.')) {
-                const btn = document.getElementById('btn-stop');
-                btn.innerHTML = '<span class="spinner"></span> Stopping...';
-                btn.disabled = true;
-                
-                addLogEntry('info', "Sending stop command to daemon...");
-                await apiCall('/stop', 'POST');
-                setTimeout(async () => {
-                    addLogEntry('info', "Daemon shutdown initiated.");
-                    await pollStatus();
-                }, 1500);
-            }
+            showConfirmModal(
+                "Stop Background Service?",
+                "Are you sure you want to shut down the background synchronization daemon?",
+                "File monitoring and automatic cloud updates will halt until the daemon is restarted.",
+                "Yes, Stop Service",
+                async () => {
+                    const btn = document.getElementById('btn-stop');
+                    btn.innerHTML = '<span class="spinner"></span> Stopping...';
+                    btn.disabled = true;
+                    
+                    addLogEntry('info', "Sending stop command to daemon...");
+                    await apiCall('/stop', 'POST');
+                    setTimeout(async () => {
+                        addLogEntry('info', "Daemon shutdown initiated.");
+                        await pollStatus();
+                    }, 1500);
+                }
+            );
         }
 
         async function pollConflicts() {
@@ -1947,12 +2024,102 @@
             }, 3500);
         }
 
+        let pendingConfirmAction = null;
+
+        function showConfirmModal(title, message, subtext, btnText, onConfirm) {
+            document.getElementById('confirm-modal-title').textContent = title;
+            document.getElementById('confirm-modal-message').textContent = message;
+            document.getElementById('confirm-modal-subtext').textContent = subtext || "";
+            document.getElementById('confirm-modal-btn').textContent = btnText || "Confirm";
+            pendingConfirmAction = onConfirm;
+            document.getElementById('confirm-modal').classList.add('open');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirm-modal').classList.remove('open');
+            pendingConfirmAction = null;
+        }
+
+        function executeConfirmedAction() {
+            if (pendingConfirmAction) {
+                pendingConfirmAction();
+            }
+            closeConfirmModal();
+        }
+
+        function openHelpModal() {
+            document.getElementById('help-modal').classList.add('open');
+        }
+
         function handleModalBackdropClick(event, modalId) {
             if (event.target && event.target.id === modalId) {
                 if (modalId === 'settings-modal') closeSettingsModal();
                 if (modalId === 'folder-picker-modal') closeFolderPickerModal();
+                if (modalId === 'confirm-modal') closeConfirmModal();
+                if (modalId === 'help-modal') closeHelpModal();
             }
         }
+
+        function initEventSource() {
+            try {
+                const eventSource = new EventSource('/api/events');
+                eventSource.onopen = () => {
+                    console.log("SSE connected to /api/events");
+                };
+                eventSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'sync_event' || data.type === 'file_event') {
+                            addLogEntry('info', `Event: ${data.action || 'sync'} on ${data.path || ''}`);
+                            const pulse = document.getElementById('status-pulse');
+                            if (pulse) {
+                                pulse.className = 'status-dot syncing';
+                                setTimeout(() => {
+                                    if (!isSyncing) pulse.className = isPaused ? 'status-dot disconnected' : 'status-dot';
+                                }, 1500);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Failed to parse SSE event payload:", e);
+                    }
+                };
+                eventSource.onerror = () => {
+                    console.warn("SSE connection error; browser will auto-reconnect.");
+                };
+            } catch (err) {
+                console.warn("EventSource not initialized:", err);
+            }
+        }
+
+        // Global keyboard accelerators (Principle 7: Flexibility and Efficiency of Use)
+        document.addEventListener('keydown', (e) => {
+            // Ignore keystrokes when editing text inputs
+            const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+            const isEditing = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
+
+            // Escape closes open modals (Principle 3: User Control and Freedom)
+            if (e.key === 'Escape') {
+                closeSettingsModal();
+                closeFolderPickerModal();
+                closeConfirmModal();
+                closeHelpModal();
+                return;
+            }
+
+            if (isEditing) return;
+
+            // Space: Toggle Pause / Resume
+            if (e.key === ' ' || e.code === 'Space') {
+                e.preventDefault();
+                togglePause();
+            } else if (e.key === 'F5' || (e.ctrlKey && e.key === 'r')) {
+                e.preventDefault();
+                triggerSync();
+            } else if (e.key === 'F1' || e.key === '?') {
+                e.preventDefault();
+                openHelpModal();
+            }
+        });
 
         function switchSettingsTab(tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
