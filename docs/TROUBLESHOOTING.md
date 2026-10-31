@@ -93,6 +93,26 @@ When cloud provider tokens expire, API calls fail with `401 Unauthorized` or `in
    refresh_token = "your_box_refresh_token"
    ```
 
+### 2.5 MEGA Provider: Resolving `EBLOCKED (-16)` & Verification Holds
+
+When using the MEGA provider, login may authenticate successfully via the `cs` endpoint, but subsequent operations fail with:
+```text
+StorageError::Authentication { message: "MEGA error: blocked" }
+ErrorCode::EBLOCKED (-16)
+```
+
+#### Why This Occurs:
+MEGA returns `ErrorCode::EBLOCKED` (`-16`) when an account is subject to an administrative hold, unconfirmed email registration, or terms of service verification. The API response returns `"ach": 1` (Account Check Required), which blocks programmatic API sessions from reading or writing nodes.
+
+#### Resolution Steps:
+1. Open a browser and log in directly to [https://mega.nz](https://mega.nz) using your configured MEGA email and password.
+2. Complete any pending email verification banner, phone confirmation, or terms-of-service acknowledgment prompt.
+3. Once the web dashboard is accessible without prompts, run the standalone verifier to confirm access:
+   ```bash
+   cargo run --bin test_mega -p cloud_sync_daemon --features mega
+   ```
+4. If the account remains held, `cloud_sync_lib` will automatically fall back to `LocalSimulation` in `./cloud_simulation/mega` so other enabled backends and local file syncing continue uninterrupted.
+
 ---
 
 ## 3. Resolving `[Simulated]` Provider Status
@@ -100,17 +120,14 @@ When cloud provider tokens expire, API calls fail with `401 Unauthorized` or `in
 ### 3.1 What Does `[Simulated]` Mean?
 In the Web Dashboard and desktop UI, you may see backends labeled with `[Simulated]` (e.g., `Google Drive [Simulated]`).
 
-`cloud_sync_lib` uses an automated fallback design (`FallbackProvider`):
-- When a provider is marked `enabled = true` in the configuration, but credentials are empty, contain placeholder text (e.g., `"your_client_id"`, `"placeholder"`, `"dummy"`), or fail network initialization, the daemon **does not crash**.
-- Instead, it falls back to an in-memory simulation backend so you can test local syncing logic safely without valid cloud credentials.
+`cloud_sync_lib` uses an automated fallback design (`SimulatedFallback`):
+- When a provider is marked `enabled = true` in the configuration, but credentials are empty, contain placeholder text (e.g., `"your_client_id"`, `"placeholder"`, `"dummy"`), or encounter authentication holds (`e.is_auth()`), the daemon **does not crash**.
+- Instead, it falls back to an isolated directory simulation backend (`./cloud_simulation/<provider>`) so local syncing logic and other active providers operate safely.
 
 ### 3.2 How to Switch to Real Cloud Syncing
 1. Open `private_config.toml` (or `config.toml`).
-2. Verify that:
-   - `client_id` is NOT `"your_client_id"` or `"placeholder"`.
-   - `client_secret` is populated with real provider credentials.
-   - `refresh_token` contains a valid, newly generated token (see Section 2).
-3. Restart or reload the daemon:
+2. Verify that credentials are fully populated with genuine tokens and secrets.
+3. Reload or restart the daemon:
    ```bash
    echo "reload" | nc 127.0.0.1 8081
    # or click "Reload Config" in the Web UI
@@ -119,36 +136,20 @@ In the Web Dashboard and desktop UI, you may see backends labeled with `[Simulat
 
 ---
 
-## 4. Windows Console Windows & Windowless Launching
+## 4. Windows MSVC Build & OpenSSL Prerequisites
 
-### 4.1 Why Console Windows Appear
-On Windows, Rust binaries compiled with the default `console` subsystem automatically allocate an attached Win32 console window when spawned. Additionally, spawning child processes without the `CREATE_NO_WINDOW` flag causes visible command prompts to flash.
+When compiling crates with the `sftp` feature on Windows (`cloud_sync_lib` or `test_sftp`), the build may depend on `openssl-sys` or `ssh2`:
 
-### 4.2 Solution in Codebase
-1. **Desktop GUI Crates**: Both `cloud_sync_egui` and `cloud_sync_ui` are configured with:
-   ```rust
-   #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-   ```
-2. **Process Spawning**: Child processes (such as starting the daemon or opening external editors) use the Win32 process creation flag:
-   ```rust
-   use std::os::windows::process::CommandExt;
-   const CREATE_NO_WINDOW: u32 = 0x08000000;
-   cmd.creation_flags(CREATE_NO_WINDOW);
-   ```
+### 4.1 Missing Perl Warning (`openssl-sys`)
+If `cargo build --features sftp` fails with:
+```text
+Error configuring OpenSSL build: Command 'perl' not found. Is perl installed?
+```
+`openssl-src` requires Perl to execute `./Configure` on Windows.
 
-### 4.3 Clean Zero-Console Launch Scripts
-To launch the user interfaces without visible background consoles, use the included Windows batch scripts from the `scripts/` directory:
-
-* **Egui Desktop Client**:
-  ```cmd
-  scripts\launch_egui.cmd
-  ```
-* **Web UI Dashboard**:
-  ```cmd
-  scripts\launch_web_ui.cmd
-  ```
-
-These scripts check for existing compiled binaries in `target/release` or `target/debug` and launch them windowless using VBScript (`wscript.exe`), falling back cleanly to `cargo run` if binaries have not been compiled yet.
+#### Resolution:
+- Install Strawberry Perl or Git for Windows (which provides Perl in `C:\Program Files\Git\usr\bin\perl.exe`).
+- Alternatively, set `OPENSSL_DIR` to point to a pre-compiled OpenSSL v3 installation (e.g. from vcpkg: `vcpkg install openssl:x64-windows-static`).
 
 ---
 
@@ -175,28 +176,25 @@ netstat -ano | findstr 8082
 taskkill /PID <PID> /F
 ```
 
-### 5.3 Overriding Port Addresses
-You can bind to alternate ports using environment variables:
+---
 
-```powershell
-# In PowerShell
-$env:CLOUDSYNC_DAEMON_ADDR="127.0.0.1:9081"
-$env:CLOUDSYNC_UI_ADDR="127.0.0.1:9082"
+## 6. Circuit Breaker Trips & Sustained Outage Handling
 
-# Start daemon with custom port in config.toml
-cargo run --bin cloud_sync_daemon
-```
+When a cloud provider experiences downtime or API timeouts, `CircuitBreakerLayer` trips into `Open` state:
+- **Symptom in Logs**: `WARN ... Circuit breaker tripped to OPEN for provider '<NAME>' after N failures`.
+- **Behavior**: Subsequent sync calls fail immediately with `StorageError::CircuitBreakerOpen` without wasting network connections or retries.
+- **Recovery**: The circuit will remain open for `recovery_timeout` (default: 15–30 seconds), then enter `HalfOpen` to test if the remote service has recovered. No manual restart is required.
 
 ---
 
-## 6. State Desynchronization & Catalog Recovery
+## 7. State Desynchronization & Catalog Recovery
 
-### 6.1 Symptoms of Corrupted State
+### 7.1 Symptoms of Corrupted State
 * Repeated conflict warnings on every sync cycle for files that have not changed.
 * Deleted local files continually reappearing from remote backups or vice-versa.
 * Error message in `daemon.log`: `Error loading state database: unexpected end of file`.
 
-### 6.2 Recovery Procedures
+### 7.2 Recovery Procedures
 
 #### Step 1: Automatic `.bak` Fallback
 The daemon automatically checks for `.sync_state_<backend>.bak` if the `.bin` database is corrupt. If you suspect only the primary `.bin` was damaged, delete the `.bin` and copy `.bak`:
@@ -218,7 +216,7 @@ If catalog state is desynchronized across machines:
 
 ---
 
-## 7. Useful Diagnostic Commands
+## 8. Useful Diagnostic Commands
 
 | Goal | Command |
 | :--- | :--- |
@@ -226,7 +224,7 @@ If catalog state is desynchronized across machines:
 | **Fetch Live Logs** | `echo "get_log" \| nc 127.0.0.1 8081` |
 | **Trigger Immediate Sync** | `echo "sync" \| nc 127.0.0.1 8081` |
 | **Reload Configuration** | `echo "reload" \| nc 127.0.0.1 8081` |
-| **Pause Synchronizer** | `echo "pause" \| nc 127.0.0.1 8081` |
-| **Resume Synchronizer** | `echo "resume" \| nc 127.0.0.1 8081` |
+| **Check All Backends** | `cargo run --bin check_backends -p cloud_sync_daemon` |
+| **Test MEGA Backend** | `cargo run --bin test_mega -p cloud_sync_daemon --features mega` |
 | **Tail Log File in PowerShell** | `Get-Content daemon.log -Tail 50 -Wait` |
 | **View Web UI Log Stream** | Open `http://127.0.0.1:8082/api/logs` in browser |

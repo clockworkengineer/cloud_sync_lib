@@ -11,15 +11,15 @@ A high-performance, modular Rust workspace designed to watch local folders and s
 
 ## Workspace Structure
 
-The workspace is split into modular crates:
+The repository is organized as an 8-crate workspace strictly adhering to SOLID principles and clean separation of concerns:
 
-1. **[`cloud_sync_lib`](crates/cloud_sync_lib/README.md)**: Core provider client integrations, client-side encryption, rate limiting, and backend factories.
-2. **[`cloud_sync_daemon`](crates/cloud_sync_daemon/README.md)**: Synchronization engine library and background CLI service watching local directories with 3-way catalog management.
-3. **[`cloud_sync_ui`](crates/cloud_sync_ui/README.md)**: Axum-based HTTP web server and REST/SSE API gateway serving an embedded management dashboard.
-4. **[`cloud_sync_egui`](crates/cloud_sync_egui/README.md)**: Native GPU-accelerated immediate-mode desktop GUI built on `egui` and `eframe`.
-5. **[`cloud_sync_tauri`](crates/cloud_sync_tauri/README.md)**: Tauri 2.0 cross-platform desktop and mobile shell with in-process synchronization engine and direct IPC commands.
-6. **[`cloud_sync_backup`](crates/cloud_sync_backup/README.md)**: Unidirectional periodic backup client for one-off CLI or cron-based jobs.
-7. **[`cloud_sync_core`](crates/cloud_sync_core/README.md)**: Zero-dependency, `no_std`-compatible storage traits (`StorageBackend`), domain data types, and path security.
+1. **[`cloud_sync_lib`](crates/cloud_sync_lib/README.md)**: High-level consumer client facade (`CloudSyncClient`, `CloudSyncBuilder`), layered middleware pipeline, `DynamicBackendRegistry`, and zero-copy `BufferPool`.
+2. **[`cloud_sync_core`](crates/cloud_sync_core/README.md)**: Zero-dependency, `no_std`-compatible domain types, granular storage role traits (`StorageReader`, `StorageWriter`, `DirectoryLister`, `ServerSideOperations`), error taxonomy, `NormalizedPath` security newtype, and `StateStore` trait (`PostcardStateStore` CSTX v1).
+3. **[`cloud_sync_daemon`](crates/cloud_sync_daemon/README.md)**: Background synchronization engine and OS daemon service watching local directories via `notify`, listening on TCP port 8081, managing state catalogs, and providing diagnostic verification binaries.
+4. **[`cloud_sync_ui`](crates/cloud_sync_ui/README.md)**: Decoupled Axum-based HTTP web server and REST/SSE API gateway (:8082) serving an embedded management dashboard.
+5. **[`cloud_sync_egui`](crates/cloud_sync_egui/README.md)**: Native GPU-accelerated immediate-mode desktop GUI built on `egui` and `eframe`.
+6. **[`cloud_sync_tauri`](crates/cloud_sync_tauri/README.md)**: Tauri 2.0 cross-platform desktop and mobile shell with in-process synchronization engine and direct IPC commands.
+7. **[`cloud_sync_backup`](crates/cloud_sync_backup/README.md)**: Unidirectional periodic backup client for one-off CLI or cron-based jobs.
 8. **[`cloud_sync_std`](crates/cloud_sync_std/README.md)**: Standard library helpers, asynchronous checksum hashers (`compute_sha256`, `compute_md5`), and Ripgrep-based `SyncIgnore` engine.
 
 ---
@@ -54,7 +54,7 @@ For Android mobile architecture, permissions, and deployment workflows, see the 
 * **Dropbox**: Full API v2 integration with custom prefix folders support.
 * **OneDrive**: Microsoft Graph REST API integration.
 * **Box**: Custom app integration via OAuth 2.0 with token rotation and persistence.
-* **MEGA**: Client-side encrypted sync utilizing the `mega` library.
+* **MEGA**: Client-side encrypted sync utilizing the `mega` library, with automatic semantic mapping and simulation fallback for `EBLOCKED (-16)` verification holds.
 * **WebDAV**: Sync to WebDAV-compliant servers.
 * **Amazon S3**: AWS S3 or S3-compatible backend storage (e.g., MinIO).
 * **SFTP**: Secure File Transfer Protocol sync.
@@ -69,13 +69,16 @@ For Android mobile architecture, permissions, and deployment workflows, see the 
 
 ## Key Features
 
-* **3-Way Synchronization**: Evaluates base catalog snapshot, local disk state, and remote cloud state to execute deterministic updates and handle collisions.
-* **State Catalog Isolation**: Keeps `.sync_state_<backend>.bin` and `.bak` catalog files in an isolated `sync_state/` directory, eliminating filesystem watcher loops and accidental cloud pollution.
+* **Ergonomic Client Facade**: `CloudSyncClient` and `CloudSyncBuilder` provide a simple, unified API for file operations across all providers.
+* **Layered Middleware Pipeline**: OpenDAL-style composable layers (`RetryLayer`, `CircuitBreakerLayer`, `RateLimitLayer`, `LoggingLayer`, `MetricsLayer`).
+* **3-Way Synchronization**: Evaluates base catalog snapshot, local disk state, and remote cloud state to execute deterministic updates and resolve conflicts.
+* **State Catalog Isolation**: Keeps `.sync_state_<backend>.bin` (CSTX v1 format with CRC32 integrity check) and `.bak` catalog files in an isolated `sync_state/` directory.
+* **Path Traversal Defense**: Strong path sanitization through `NormalizedPath` eliminating directory traversal, null-byte injection, Alternate Data Streams, and DOS device names.
 * **Configurable Logging & Observability**: Non-blocking `tracing-appender` file sink (`daemon.log`), queryable via TCP `get_log`, HTTP `GET /api/logs`, or desktop modal log viewers.
 * **Dual GUI Frontends**: Run either the decoupled Axum web dashboard (`cloud_sync_ui`) in any browser or the native desktop GUI (`cloud_sync_egui`).
-* **Client-Side Zero-Knowledge Encryption**: Optional client-side AES-256-GCM encryption of file payloads before uploading, with automatic decryption on download. Keys derived via PBKDF2-HMAC-SHA256.
+* **Client-Side Zero-Knowledge Encryption**: Optional client-side AES-256-GCM authenticated chunk streaming encryption with PBKDF2-HMAC-SHA256 (100,000 iterations) and memory zeroization (`zeroize`).
 * **Bandwidth Rate-Limiting**: Flexible upload and download bandwidth ceilings using a Token Bucket implementation.
-* **Automated Legacy Migration**: Automatically discovers and moves older `.sync_state` databases from watched folders into `sync_state/` on startup.
+* **Standalone Diagnostic Verifiers**: Rapid credential and connectivity validation via `check_backends` and provider-specific test binaries (`test_mega`, `test_box`, etc.).
 
 ---
 
@@ -84,10 +87,14 @@ For Android mobile architecture, permissions, and deployment workflows, see the 
 | Guide | Description |
 | :--- | :--- |
 | 📖 **[User Guide](docs/USER_GUIDE.md)** | Step-by-step instructions for running the daemon, Web UI, Egui app, and CLI commands. |
-| 🏗️ **[Architecture Guide](docs/ARCHITECTURE.md)** | Comprehensive architectural diagram, component interactions, and state flow. |
-| 📘 **[Logging & Diagnostics Guide](docs/LOGGING_AND_DIAGNOSTICS.md)** | Tracing configuration, non-blocking file sinks, TCP/HTTP log endpoints, and Windows sharing lock handling. |
-| 🗄️ **[State Catalog & Storage Guide](docs/STATE_AND_STORAGE.md)** | 3-way synchronization algorithm, catalog isolation in `sync_state/`, atomic `.bak` crash recovery, and migration. |
-| 🛠️ **[Troubleshooting & Operations Guide](docs/TROUBLESHOOTING.md)** | OAuth 2.0 token regeneration, resolving `[Simulated]` mode, port collisions, and database recovery. |
+| 🏗️ **[Architecture Guide](docs/ARCHITECTURE.md)** | Comprehensive 8-crate topology, layered middleware pipeline, state flow, and component interactions. |
+| 📘 **[Client API Guide](docs/CLIENT_API.md)** | `CloudSyncClient`, `CloudSyncBuilder`, middleware configuration, buffer pools, and code examples. |
+| 🔒 **[Security & Reliability Guide](docs/SECURITY_AND_RELIABILITY.md)** | Client-side AEAD encryption, memory zeroization, `NormalizedPath` defenses, full jitter backoff, and circuit breakers. |
+| 🗄️ **[State Catalog & Storage Guide](docs/STATE_AND_STORAGE.md)** | 3-way synchronization algorithm, catalog isolation in `sync_state/`, `PostcardStateStore` CSTX v1 format, and atomic crash recovery. |
+| 📊 **[Logging & Diagnostics Guide](docs/LOGGING_AND_DIAGNOSTICS.md)** | Tracing spans, non-blocking file sinks, TCP/HTTP log endpoints, and diagnostic checklist. |
+| 🔍 **[Diagnostics & Verifiers Reference](docs/DIAGNOSTICS_AND_VERIFIERS.md)** | `check_backends` CLI, standalone provider verifiers (`test_*`), and contract compliance testing. |
+| 🧩 **[Extending & Testing Guide](docs/EXTENDING_AND_TESTING.md)** | Custom provider implementations, granular traits, custom middleware layers, and compliance suites. |
+| 🛠️ **[Troubleshooting & Operations Guide](docs/TROUBLESHOOTING.md)** | OAuth renewal, MEGA `EBLOCKED (-16)` resolution, circuit breaker states, and port conflict remedies. |
 
 ---
 
@@ -97,74 +104,14 @@ For Android mobile architecture, permissions, and deployment workflows, see the 
    ```bash
    cp config.toml.example config.toml
    ```
-2. **Configure General & Provider Settings**:
-   ```toml
-   [sync]
-   watch_directory = "watched_folder"
-   interval_seconds = 30
-   conflict_policy = "newer_wins"
-   log_file = "daemon.log"
-   state_directory = "sync_state"
-
-   [providers.google_drive]
-   enabled = true
-   client_id = "..."
-   client_secret = "..."
-   refresh_token = "..."
-   destination_folder = "MySyncFolder"
+2. **Configure General & Provider Settings**: Add credentials to `private_config.toml` or `config.toml`.
+3. **Verify Connectivity**:
+   ```bash
+   cargo run --bin check_backends -p cloud_sync_daemon
    ```
-3. **Follow API Setup Guides**:
-   * Refer to the [Google Drive API Setup Guide](docs/setup/GOOGLE_DRIVE_SETUP.md)
-   * Refer to the [Dropbox API Setup Guide](docs/setup/dropBOX_SETUP.md)
-   * Refer to the [OneDrive API Setup Guide](docs/setup/ONEDRIVE_SETUP.md)
-   * Refer to the [Box API Setup Guide](docs/setup/BOX_SETUP.md)
-   * Refer to the [MEGA Setup Guide](docs/setup/MEGA_SETUP.md)
-   * Refer to the [WebDAV Setup Guide](docs/setup/WEBDAV_SETUP.md)
-   * Refer to the [S3 Setup Guide](docs/setup/S3_SETUP.md)
-   * Refer to the [SFTP Setup Guide](docs/setup/SFTP_SETUP.md)
-   * Refer to the [Nextcloud Setup Guide](docs/setup/NEXTCLOUD_SETUP.md)
-   * Refer to the [Azure Blob Storage Setup Guide](docs/setup/AZURE_BLOB_STORAGE_SETUP.md)
-   * Refer to the [Google Cloud Storage Setup Guide](docs/setup/GOOGLE_CLOUD_STORAGE_SETUP.md)
-   * Refer to the [Backblaze B2 Setup Guide](docs/setup/BACKBLAZE_B2_SETUP.md)
-   * Refer to the [pCloud Setup Guide](docs/setup/PCLOUD_SETUP.md)
-   * Refer to the [IPFS Pinning Service Setup Guide](docs/setup/IPFS_PINNING_SERVICE_SETUP.md)
-
-4. **Automated OAuth Token Retrieval**:
-   Run the Python helper scripts to retrieve and save refresh tokens:
-   * **Google Drive**: `python scripts/get_refresh_token.py`
-   * **Dropbox**: `python scripts/get_dropbox_token.py`
-   * **OneDrive**: `python scripts/get_onedrive_token.py`
-   * **Box**: `python scripts/get_box_token.py`
-
----
-
-## Running the Applications
-
-### 1. Start the Sync Daemon
-```bash
-cargo run --bin cloud_sync_daemon
-```
-
-### 2. Launch the Desktop Frontends
-```bash
-# Native Egui Desktop GUI
-scripts\launch_egui.cmd       # Windows
-./scripts/launch_egui.sh      # Linux / macOS
-
-# Axum Web Dashboard
-scripts\launch_web_ui.cmd     # Windows
-./scripts/launch_web_ui.sh    # Linux / macOS
-```
-
-### 3. Run Workspace Tests
-```bash
-cargo test --workspace --all-targets
-```
-
----
-
-## Support
-
-If you find this project useful, consider supporting its development:
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/roberttizz1)
+4. **Launch Daemon & Interface**:
+   ```bash
+   scripts\launch_egui.cmd # Windows
+   # or
+   ./scripts/launch_egui.sh # Linux / macOS
+   ```

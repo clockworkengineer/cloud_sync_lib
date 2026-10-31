@@ -1,7 +1,7 @@
 # Logging, Observability & Diagnostics Guide
 
 **Project**: `cloud_sync_lib`  
-**Applies to**: `cloud_sync_daemon`, `cloud_sync_ui`, `cloud_sync_egui`
+**Applies to**: `cloud_sync_daemon`, `cloud_sync_ui`, `cloud_sync_egui`, `cloud_sync_middleware`
 
 ---
 
@@ -12,8 +12,9 @@
 The observability system supports:
 1. **Configurable Log Destinations**: Log output can be routed to stdout, a designated local file, or both simultaneously.
 2. **Non-Blocking File I/O**: File logging operates through an asynchronous background worker thread using `tracing-appender`, preventing disk I/O latency from stalling file watchers or network transfers.
-3. **Multi-Interface Access**: Logs can be inspected directly on disk, streamed over TCP socket commands, queried via an HTTP REST endpoint (`GET /api/logs`), or viewed live inside the native desktop application (`cloud_sync_egui`).
-4. **Cross-Platform File Sharing**: Log files remain accessible for concurrent inspection by external text editors (such as Notepad, VS Code, or `tail`) while the daemon continues appending log records.
+3. **Structured Tracing Spans**: OpenTelemetry-compatible spans capturing provider names, operations, target paths, byte sizes, and duration.
+4. **Multi-Interface Access**: Logs can be inspected directly on disk, streamed over TCP socket commands, queried via an HTTP REST endpoint (`GET /api/logs`), or viewed live inside the native desktop application (`cloud_sync_egui`).
+5. **Cross-Platform File Sharing**: Log files remain accessible for concurrent inspection by external text editors (such as Notepad, VS Code, or `tail`) without file lock contention.
 
 ---
 
@@ -61,7 +62,7 @@ Log verbosity is controlled via the standard `RUST_LOG` environment variable:
 
 ```bash
 # Windows PowerShell
-$env:RUST_LOG="cloud_sync_daemon=debug,cloud_sync_lib=trace,info"
+$env:RUST_LOG="cloud_sync_daemon=debug,cloud_sync_lib=trace,cloud_sync_middleware=trace,info"
 cargo run --bin cloud_sync_daemon
 
 # Linux / macOS
@@ -97,7 +98,6 @@ If `RUST_LOG` is unset, the daemon defaults to `info` level logging.
                                   e.g., daemon.log
                                            │
          ┌─────────────────────────────────┼────────────────────────────────┐
-         │                                 │                                │
          ▼                                 ▼                                ▼
    Direct Disk                       Daemon TCP Socket                 Web UI Server
    Inspection                     (cmd: "get_log\n")                (GET /api/logs)
@@ -117,10 +117,28 @@ On Windows, file canonicalization prepends `\\?\` (Extended-Length Path Syntax).
 
 ---
 
-## 4. Querying & Consuming Logs
+## 4. Standardized Tracing Fields & Metrics
 
-### 4.1 Direct File Inspection
-Because the log file is flushed continuously, standard system tools can tail or inspect it:
+Storage operations instrumented via `LoggingLayer` and `MetricsLayer` in `cloud_sync_middleware` emit structured key-value attributes:
+
+| Tracing Field | Description | Example Values |
+| :--- | :--- | :--- |
+| `storage.provider` | Backend identifier | `"google_drive"`, `"mega"`, `"s3"`, `"local"` |
+| `storage.operation` | Name of the storage operation | `"upload"`, `"download"`, `"delete"`, `"list"`, `"create_folder"` |
+| `storage.path` | Normalized remote relative path | `"documents/report.pdf"`, `"backups/archive.zip"` |
+| `storage.bytes` | Size in bytes for uploads/downloads | `65536`, `10485760` |
+| `storage.duration_ms` | Operation execution duration in milliseconds | `142.5` |
+| `sync.action` | SyncEngine decision action | `Upload`, `Download`, `DeleteLocal`, `DeleteRemote`, `Conflict` |
+
+### OpenTelemetry Export Integration
+The structured fields follow the OpenTelemetry semantic conventions for object storage. Downstream telemetry collectors (`tracing-opentelemetry`) can ingest these events to visualize request waterfall traces and transfer latencies.
+
+---
+
+## 5. Querying & Consuming Logs
+
+### 5.1 Direct File Inspection
+Because the log file is flushed continuously by the non-blocking appender, standard system tools can tail or inspect it:
 
 ```powershell
 # PowerShell
@@ -130,7 +148,7 @@ Get-Content -Path daemon.log -Tail 50 -Wait
 tail -f daemon.log
 ```
 
-### 4.2 TCP Socket Control Protocol (`get_log`)
+### 5.2 TCP Socket Control Protocol (`get_log`)
 The daemon control socket (listening by default on `127.0.0.1:8081`) responds to the `get_log` text command:
 
 ```bash
@@ -138,30 +156,13 @@ The daemon control socket (listening by default on `127.0.0.1:8081`) responds to
 echo "get_log" | nc 127.0.0.1 8081
 ```
 
-**Response Format**:
-```text
-Status: OK
-Log File: "C:\Projects\cloud_sync_lib\daemon.log"
-
-2026-10-13T12:00:00.123456Z  INFO cloud_sync_daemon: Starting Cloud Sync Daemon...
-2026-10-13T12:00:00.124567Z  INFO cloud_sync_daemon: Active log file: daemon.log
-2026-10-13T12:00:00.125678Z  INFO cloud_sync_daemon: Sync state directory: "sync_state"
-...
-```
-
-If the log file cannot be read, the daemon returns:
-```text
-Status: Error
-Could not read log file 'daemon.log': The system cannot find the file specified. (os error 2)
-```
-
-### 4.3 Web UI REST API (`GET /api/logs`)
+### 5.3 Web UI REST API (`GET /api/logs`)
 The decoupled Axum Web UI (`cloud_sync_ui`) exposes `GET /api/logs`:
-- **When Daemon is Online**: The web server sends `get_log` over the TCP socket, extracts the log payload, and streams it with `Content-Type: text/plain; charset=utf-8`.
-- **When Daemon is Offline**: The web server detects socket closure and reads the local log file directly from disk, returning recent offline log history.
+- **When Daemon is Online**: Sends `get_log` over the TCP socket, extracts the log payload, and streams it with `Content-Type: text/plain; charset=utf-8`.
+- **When Daemon is Offline**: Falls back to reading the local log file directly from disk, returning recent offline log history.
 - **Accessing via Browser**: Open `http://127.0.0.1:8082/api/logs` in any browser or click **📄 View Log** in the Web UI dashboard top bar.
 
-### 4.4 Native Desktop UI (`cloud_sync_egui`)
+### 5.4 Native Desktop UI (`cloud_sync_egui`)
 The immediate-mode desktop app provides dual log capabilities:
 1. **In-App Modal Viewer**: Click **Logs** in the Operations card to open a scrollable, searchable dialog with real-time log refresh.
 2. **External Editor Delegation**: Click **Open in External Editor** inside the modal. On Windows, this launches a non-blocking process:
@@ -172,26 +173,16 @@ The immediate-mode desktop app provides dual log capabilities:
 
 ---
 
-## 5. Windows File-Sharing & Lock Diagnostics
-
-### 5.1 The Sharing Violation Issue
-On Windows, opening a file for writing can result in `ERROR_SHARING_VIOLATION` (`os error 32`) if other processes attempt to read or write without compatible sharing modes (`FILE_SHARE_READ | FILE_SHARE_WRITE`).
-
-### 5.2 How `cloud_sync_lib` Avoids Lock Contention
-- `tracing-appender` opens files allowing read sharing.
-- External editor launching delegates through Windows Shell (`Start-Process`), prompting the registered system text editor (VS Code, Notepad++, Notepad) to open the file in read-shared mode.
-- When querying via HTTP or TCP, the daemon and web UI read files asynchronously with Tokio (`tokio::fs::read_to_string`), ensuring zero interference with the logging worker thread.
-
----
-
-## 6. Diagnostic Checklist
+## 6. Diagnostic Signatures & Troubleshooting Checklist
 
 When investigating sync anomalies, look for the following signatures in `daemon.log`:
 
 | Log Signature | Meaning | Remediation |
 | :--- | :--- | :--- |
 | `INFO ... Active log file: ...` | Successful startup and logger initialization | Verify expected directory location. |
-| `WARN ... Falling back to Simulated backend ...` | Provider credentials missing or placeholder | Check `config.toml` / `private_config.toml`. Run token generation script. |
+| `WARN ... Falling back to Simulated backend ...` | Provider credentials missing, placeholder, or auth error | Check `config.toml` / `private_config.toml`. Run token generation script or verify provider portal. |
+| `WARN ... Circuit breaker tripped to OPEN ...` | Remote provider sustained failures reached threshold | Provider outage detected; subsequent calls fast-fail until recovery timeout expires. |
 | `INFO ... Migrated legacy state file ...` | Older state file successfully moved into `sync_state/` | Normal automated migration. |
 | `WARN ... Conflict detected on ...` | File modified concurrently on both local and remote | Inspect `conflict_policy` or resolve in Web UI. |
+| `WARN ... Operation 'upload' failed on attempt 1/3 (transient) ...` | Network hiccup or HTTP 503/429 | RetryLayer will back off with jitter and retry automatically. |
 | `ERROR ... Rate limit exceeded (429) ...` | Cloud provider API rate limit encountered | Backoff retry will occur automatically; check provider quotas. |

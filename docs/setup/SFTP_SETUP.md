@@ -1,6 +1,6 @@
 # SFTP Provider Setup Guide
 
-This guide describes how to configure and verify synchronization using the SFTP (SSH File Transfer Protocol) storage provider.
+This guide describes how to configure, build, and verify synchronization using the SFTP (SSH File Transfer Protocol) storage provider.
 
 ---
 
@@ -12,7 +12,7 @@ The SFTP provider supports two authentication methods:
 This is the most secure method.
 
 1. Ensure your SSH public key is added to the remote server's `authorized_keys` file (typically at `~/.ssh/authorized_keys`).
-2. Identify the absolute path to your local private key (e.g., `/home/username/.ssh/id_rsa`).
+2. Identify the absolute path to your local private key (e.g., `/home/username/.ssh/id_rsa` or `C:\Users\User\.ssh\id_rsa`).
 3. Configure `private_config.toml` using `private_key_path` and leave `password` empty.
 
 ### Method B: Password-Based Authentication
@@ -35,6 +35,29 @@ private_key_path = ""             # Optional: Path to private key if using key a
 destination_folder = "SyncBackup" # Prefix directory on the remote server
 enabled = true
 sync = true
+```
+
+---
+
+## Setup 3: Windows MSVC OpenSSL Build Prerequisites
+
+When compiling the SFTP provider crate feature on Windows, `ssh2` and `openssl-sys` compile native C libraries:
+
+- **Perl Dependency**: Ensure Perl is present in your system `PATH` (e.g. from Strawberry Perl or Git for Windows: `C:\Program Files\Git\usr\bin`).
+- **Precompiled OpenSSL**: If you prefer not to build OpenSSL from source, point `OPENSSL_DIR` to a valid OpenSSL installation or install OpenSSL via `vcpkg`:
+  ```powershell
+  vcpkg install openssl:x64-windows-static
+  $env:OPENSSL_NO_VENDOR=1
+  ```
+
+---
+
+## Setup 4: Verifying Connectivity
+
+Test connectivity against the remote SFTP host without starting the full daemon:
+
+```bash
+cargo run --bin test_sftp -p cloud_sync_daemon --features sftp
 ```
 
 ---

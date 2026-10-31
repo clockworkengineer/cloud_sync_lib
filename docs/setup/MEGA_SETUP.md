@@ -9,7 +9,8 @@ Unlike other storage providers that use OAuth 2.0 or dedicated API tokens, MEGA 
 ## Step 1: Prepare your MEGA Account
 
 1. Register or log into your account at [MEGA](https://mega.nz/).
-2. (Optional) Create a specific sub-folder inside your MEGA drive where you want the daemon to sync files (e.g. `PiSync`). If not specified, the daemon will default to syncing with your Cloud Drive root.
+2. Complete any pending email verification banner, phone confirmation, or terms-of-service acknowledgment prompt in the browser.
+3. (Optional) Create a specific sub-folder inside your MEGA drive where you want the daemon to sync files (e.g. `PiSync`). If not specified, the daemon will default to syncing with your Cloud Drive root.
 
 ---
 
@@ -18,8 +19,6 @@ Unlike other storage providers that use OAuth 2.0 or dedicated API tokens, MEGA 
 To enable the MEGA provider, add the `[mega_credentials]` section to your configuration file (typically `private_config.toml` or `config.toml`).
 
 ### Configuration Schema
-
-Add the following block to your configuration file:
 
 ```toml
 [mega_credentials]
@@ -40,11 +39,36 @@ sync = true                   # Set to false to disable deletion syncing
 
 ---
 
-## Step 3: Simulation Fallback (Offline Mode)
+## Step 3: Verifying Connectivity
 
-If you do not specify credentials, or if you disable the credentials block, the daemon automatically falls back to **Simulation Mode**.
+You can verify that your MEGA credentials and network path are working properly without launching the daemon using the standalone diagnostic binary:
 
-In simulation mode, the daemon redirects read/write operations to a local mock folder specified by the `mega_root` setting:
+```bash
+cargo run --bin test_mega -p cloud_sync_daemon --features mega
+```
+
+---
+
+## Step 4: Troubleshooting `EBLOCKED (-16)` & Verification Holds
+
+If the verifier or daemon reports:
+```text
+StorageError::Authentication { message: "MEGA error: blocked" }
+ErrorCode::EBLOCKED (-16)
+```
+
+1. **Why It Happens**: MEGA returns `-16` (`EBLOCKED`) with `"ach": 1` when the account has an unverified email address, an administrative hold, or pending terms confirmation that must be resolved via the official web UI.
+2. **Remediation**:
+   - Log into [https://mega.nz](https://mega.nz) using your credentials in a web browser.
+   - Click the verification link in your confirmation email or accept the banner prompts in the web dashboard.
+   - Re-run `cargo run --bin test_mega -p cloud_sync_daemon --features mega`.
+3. **Automated Simulation Fallback**: While the account is in a held or blocked state, `cloud_sync_lib` automatically redirects read/write operations to `./cloud_simulation/mega`, preventing synchronization failures from blocking your other active cloud storage providers.
+
+---
+
+## Step 5: Simulation Fallback (Offline Mode)
+
+If credentials are omitted, marked `enabled = false`, or experience authentication errors, the daemon redirects read/write operations to a local mock folder specified by the `mega_root` setting:
 
 ```toml
 mega_root = "./cloud_simulation/mega"
