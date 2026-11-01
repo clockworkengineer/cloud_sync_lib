@@ -25,7 +25,11 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 xmlparser = { version = "0.13", optional = true }
 rust-s3 = { version = "0.33", default-features = false, features = ["tokio-rustls-tls"], optional = true }
+[target.'cfg(not(windows))'.dependencies]
 ssh2 = { version = "0.9", optional = true, features = ["vendored-openssl"] }
+
+[target.'cfg(windows)'.dependencies]
+ssh2 = { version = "0.9", optional = true }
 bytes = "1"
 mega = { version = "0.4", optional = true }
 tokio-util = { version = "0.7", features = ["compat"] }
