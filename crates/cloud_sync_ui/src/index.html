@@ -1397,7 +1397,8 @@
                         console.warn(`Tauri direct invocation of '${cmd}' failed:`, e);
                     }
                 }
-                const response = await fetch(`/api${endpoint}`, { method });
+                const baseUrl = (window.__TAURI_INTERNALS__ || window.location.protocol === 'tauri:') ? 'http://127.0.0.1:8082' : '';
+                const response = await fetch(`${baseUrl}/api${endpoint}`, { method });
                 if (!response.ok) throw new Error('API server returned error');
                 setConnected(true);
                 return await response.json();

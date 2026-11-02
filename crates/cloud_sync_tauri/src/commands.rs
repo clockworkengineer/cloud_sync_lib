@@ -8,45 +8,74 @@ pub type SharedDaemonState = Arc<Mutex<cloud_sync_daemon::DaemonState>>;
 
 #[tauri::command]
 pub async fn status(
-    state: tauri::State<'_, SharedDaemonState>,
+    _state: tauri::State<'_, SharedDaemonState>,
 ) -> Result<serde_json::Value, String> {
-    let lock = state.lock().await;
-
-    let active_backends: Vec<String> = lock
-        .backends
-        .iter()
-        .map(|b| b.backend.name().to_string())
-        .collect();
-
-    let mut simulated_backends = Vec::new();
-    let mut failed_backends = Vec::new();
-
-    for b in &lock.backends {
-        let name = b.backend.name().to_string();
-        if let Some(err) = lock.connection_errors.get(&name) {
-            if err.contains("Simulated") || err.contains("Fallback") {
-                simulated_backends.push(name);
-            } else {
-                failed_backends.push(name);
-            }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        if let Ok(raw) = client.send_command("status").await {
+            let mut val = cloud_sync_ui::parser::parse_status(&raw);
+            val["daemon_running"] = serde_json::Value::Bool(true);
+            return Ok(val);
         }
+
+        // Daemon is not running or stopped
+        return Ok(serde_json::json!({
+            "paused": false,
+            "watch_directory": "-",
+            "config_file": "-",
+            "active_backends": [],
+            "failed_backends": [],
+            "simulated_backends": [],
+            "backend_details": [],
+            "syncing": false,
+            "daemon_running": false,
+            "web_ui_address": "-",
+            "log_file": "daemon.log",
+        }));
     }
 
-    Ok(serde_json::json!({
-        "daemon_running": true,
-        "paused": lock.paused,
-        "syncing": lock.syncing,
-        "watch_directory": lock.watch_dir.to_string_lossy(),
-        "watched_directory": lock.watch_dir.to_string_lossy(),
-        "config_file": lock.config_file,
-        "web_ui_address": lock.ui_addr.as_deref().unwrap_or("Tauri Direct IPC"),
-        "active_backends": active_backends,
-        "simulated_backends": simulated_backends,
-        "failed_backends": failed_backends,
-        "log_file": lock.log_file,
-        "dry_run": lock.dry_run,
-        "conflict_policy": format!("{:?}", lock.conflict_policy),
-    }))
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let lock = state.lock().await;
+
+        let active_backends: Vec<String> = lock
+            .backends
+            .iter()
+            .map(|b| b.backend.name().to_string())
+            .collect();
+
+        let mut simulated_backends = Vec::new();
+        let mut failed_backends = Vec::new();
+
+        for b in &lock.backends {
+            let name = b.backend.name().to_string();
+            if let Some(err) = lock.connection_errors.get(&name) {
+                if err.contains("Simulated") || err.contains("Fallback") {
+                    simulated_backends.push(name);
+                } else {
+                    failed_backends.push(name);
+                }
+            }
+        }
+
+        Ok(serde_json::json!({
+            "daemon_running": !lock.paused,
+            "paused": lock.paused,
+            "syncing": lock.syncing,
+            "watch_directory": lock.watch_dir.to_string_lossy(),
+            "watched_directory": lock.watch_dir.to_string_lossy(),
+            "config_file": lock.config_file,
+            "web_ui_address": lock.ui_addr.as_deref().unwrap_or("Tauri Direct IPC"),
+            "active_backends": active_backends,
+            "simulated_backends": simulated_backends,
+            "failed_backends": failed_backends,
+            "log_file": lock.log_file,
+            "dry_run": lock.dry_run,
+            "conflict_policy": format!("{:?}", lock.conflict_policy),
+        }))
+    }
 }
 
 #[tauri::command]
@@ -112,6 +141,15 @@ pub async fn sync(state: tauri::State<'_, SharedDaemonState>) -> Result<serde_js
 pub async fn pause(
     state: tauri::State<'_, SharedDaemonState>,
 ) -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        if let Ok(raw) = client.send_command("pause").await {
+            return Ok(serde_json::json!({ "status": raw.trim() }));
+        }
+    }
+
     let mut lock = state.lock().await;
     lock.paused = true;
     Ok(serde_json::json!({ "status": "paused" }))
@@ -121,9 +159,97 @@ pub async fn pause(
 pub async fn resume(
     state: tauri::State<'_, SharedDaemonState>,
 ) -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        if let Ok(raw) = client.send_command("resume").await {
+            return Ok(serde_json::json!({ "status": raw.trim() }));
+        }
+    }
+
     let mut lock = state.lock().await;
     lock.paused = false;
     Ok(serde_json::json!({ "status": "resumed" }))
+}
+
+#[tauri::command]
+pub async fn stop(
+    state: tauri::State<'_, SharedDaemonState>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        let _ = client.send_command("stop").await;
+    }
+
+    let mut lock = state.lock().await;
+    lock.paused = true;
+    lock.syncing = false;
+    Ok(serde_json::json!({ "status": "stopped", "daemon_running": false }))
+}
+
+#[tauri::command]
+pub async fn start() -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let config_file = if std::path::Path::new(cloud_sync_ui::PRIVATE_CONFIG_FILE).exists() {
+            cloud_sync_ui::PRIVATE_CONFIG_FILE
+        } else {
+            cloud_sync_ui::DEFAULT_CONFIG_FILE
+        };
+
+        let daemon_exe_name = if cfg!(target_os = "windows") {
+            "cloud_sync_daemon.exe"
+        } else {
+            "cloud_sync_daemon"
+        };
+
+        let mut daemon_bin_path = None;
+        if let Ok(current_exe) = std::env::current_exe() {
+            if let Some(parent) = current_exe.parent() {
+                let path = parent.join(daemon_exe_name);
+                if path.exists() {
+                    daemon_bin_path = Some(path);
+                }
+            }
+        }
+
+        let exe_to_run = daemon_bin_path
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| daemon_exe_name.to_string());
+
+        let mut cmd = std::process::Command::new(&exe_to_run);
+        cmd.arg(config_file);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let _ = cmd.spawn().map_err(|e| format!("Failed to spawn daemon process: {}", e))?;
+        tokio::time::sleep(tokio::time::Duration::from_millis(cloud_sync_ui::DAEMON_SPAWN_DELAY_MS)).await;
+        return Ok(serde_json::json!({ "status": "started", "daemon_running": true }));
+    }
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        Ok(serde_json::json!({ "status": "started", "daemon_running": true }))
+    }
+}
+
+#[tauri::command]
+pub async fn reload() -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        if let Ok(raw) = client.send_command("reload").await {
+            return Ok(serde_json::json!({ "status": raw.trim() }));
+        }
+    }
+    Ok(serde_json::json!({ "status": "reloaded" }))
 }
 
 #[tauri::command]
