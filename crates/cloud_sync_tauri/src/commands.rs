@@ -21,7 +21,7 @@ pub async fn status(
         }
 
         // Daemon is not running or stopped
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "paused": false,
             "watch_directory": "-",
             "config_file": "-",
@@ -33,7 +33,7 @@ pub async fn status(
             "daemon_running": false,
             "web_ui_address": "-",
             "log_file": "daemon.log",
-        }));
+        }))
     }
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -230,7 +230,7 @@ pub async fn start() -> Result<serde_json::Value, String> {
         }
         let _ = cmd.spawn().map_err(|e| format!("Failed to spawn daemon process: {}", e))?;
         tokio::time::sleep(tokio::time::Duration::from_millis(cloud_sync_ui::DAEMON_SPAWN_DELAY_MS)).await;
-        return Ok(serde_json::json!({ "status": "started", "daemon_running": true }));
+        Ok(serde_json::json!({ "status": "started", "daemon_running": true }))
     }
 
     #[cfg(any(target_os = "android", target_os = "ios"))]
