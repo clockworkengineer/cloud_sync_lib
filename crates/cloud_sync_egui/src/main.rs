@@ -35,6 +35,7 @@ struct CloudSyncApp {
     log_content: Arc<Mutex<Option<String>>>,
     is_loading_log: Arc<Mutex<bool>>,
     action_feedback: Option<(String, Instant)>,
+    app_icon_texture: Option<egui::TextureHandle>,
 }
 
 impl CloudSyncApp {
@@ -83,6 +84,16 @@ impl CloudSyncApp {
             }
         });
 
+        let app_icon_texture = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon_64.png"))
+            .ok()
+            .map(|icon| {
+                let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                    [icon.width as usize, icon.height as usize],
+                    &icon.rgba,
+                );
+                cc.egui_ctx.load_texture("app_icon", color_image, Default::default())
+            });
+
         Self {
             client,
             runtime,
@@ -92,6 +103,7 @@ impl CloudSyncApp {
             log_content: Arc::new(Mutex::new(None)),
             is_loading_log: Arc::new(Mutex::new(false)),
             action_feedback: None,
+            app_icon_texture,
         }
     }
 
@@ -354,8 +366,12 @@ impl eframe::App for CloudSyncApp {
             .show(ctx, |ui| {
                 // Top Header Section with Help & Log Actions
                 ui.horizontal(|ui| {
+                    if let Some(ref texture) = self.app_icon_texture {
+                        ui.image((texture.id(), egui::vec2(28.0, 28.0)));
+                        ui.add_space(4.0);
+                    }
                     ui.label(
-                        egui::RichText::new("☁  CloudSync Control Center")
+                        egui::RichText::new("CloudSync Control Center")
                             .font(egui::FontId::proportional(22.0))
                             .strong()
                             .color(egui::Color32::from_rgb(240, 244, 252)),
@@ -1099,11 +1115,21 @@ impl eframe::App for CloudSyncApp {
     }
 }
 
+fn load_icon() -> Option<egui::IconData> {
+    eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon_256.png")).ok()
+}
+
 fn main() -> eframe::Result<()> {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([720.0, 620.0])
+        .with_resizable(true);
+
+    if let Some(icon) = load_icon() {
+        viewport = viewport.with_icon(icon);
+    }
+
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([720.0, 620.0])
-            .with_resizable(true),
+        viewport,
         ..Default::default()
     };
 
