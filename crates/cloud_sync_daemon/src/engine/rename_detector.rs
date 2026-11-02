@@ -45,7 +45,7 @@ impl RenameDetector {
                     p1.is_some() && p1 == p2
                 };
 
-                if (checksum_matches && size_matches) || (size_matches && filename_matches) {
+                if size_matches && (checksum_matches || filename_matches) {
                     matched_idx = Some(idx);
                     break;
                 }
