@@ -100,3 +100,42 @@ impl SyncPlan {
         self.actions.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sync_plan_accumulators() {
+        let mut plan = SyncPlan::new("test_backend".into());
+        assert!(plan.is_empty());
+        assert_eq!(plan.action_count(), 0);
+
+        plan.add_action(SyncAction::Upload {
+            local_path: PathBuf::from("a.txt"),
+            remote_path: "a.txt".into(),
+            size: 500,
+        });
+
+        plan.add_action(SyncAction::Download {
+            remote_path: "b.txt".into(),
+            local_path: PathBuf::from("b.txt"),
+            size: 300,
+            checksum: None,
+            permissions: None,
+        });
+
+        plan.add_action(SyncAction::Conflict {
+            rel_path: "c.txt".into(),
+            action: ConflictResolutionAction::RenameLocalAndDownloadRemote(
+                "c.local-conflict".into(),
+            ),
+        });
+
+        assert!(!plan.is_empty());
+        assert_eq!(plan.action_count(), 3);
+        assert_eq!(plan.total_upload_bytes, 500);
+        assert_eq!(plan.total_download_bytes, 300);
+        assert_eq!(plan.conflicts_count, 1);
+    }
+}

@@ -82,3 +82,61 @@ impl<'a> FileFilter<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_filter_size_limits() {
+        let ignore = SyncIgnore::empty();
+        let filter = FileFilter::new(&ignore, None).with_size_limits(Some(100), Some(1000));
+
+        assert!(!filter.is_size_allowed(50));
+        assert!(filter.is_size_allowed(100));
+        assert!(filter.is_size_allowed(500));
+        assert!(filter.is_size_allowed(1000));
+        assert!(!filter.is_size_allowed(1001));
+
+        let unconstrained = FileFilter::new(&ignore, None);
+        assert!(unconstrained.is_size_allowed(0));
+        assert!(unconstrained.is_size_allowed(u64::MAX));
+    }
+
+    #[test]
+    fn test_file_filter_unsafe_paths() {
+        assert!(FileFilter::is_unsafe_path("../secret.txt"));
+        assert!(FileFilter::is_unsafe_path("foo/../bar"));
+        assert!(FileFilter::is_unsafe_path("./file.txt"));
+        assert!(FileFilter::is_unsafe_path("/absolute/path"));
+        assert!(!FileFilter::is_unsafe_path("normal/path/file.txt"));
+    }
+
+    #[test]
+    fn test_file_filter_state_files() {
+        assert!(FileFilter::is_state_file(".sync_state.json"));
+        assert!(FileFilter::is_state_file(".sync_state.bin"));
+        assert!(FileFilter::is_state_file(".syncignore"));
+        assert!(FileFilter::is_state_file(".sync_state_dropbox.json"));
+        assert!(FileFilter::is_state_file(".sync_state_gdrive.bin"));
+        assert!(!FileFilter::is_state_file("document.pdf"));
+        assert!(!FileFilter::is_state_file(".git/config"));
+    }
+
+    #[test]
+    fn test_file_filter_selective_sync() {
+        let ignore = SyncIgnore::empty();
+        let prefixes = vec!["documents".to_string(), "photos/2026".to_string()];
+        let filter = FileFilter::new(&ignore, Some(&prefixes));
+
+        assert!(filter.is_path_selected("documents"));
+        assert!(filter.is_path_selected("documents/taxes.pdf"));
+        assert!(filter.is_path_selected("photos/2026/vacation.jpg"));
+        assert!(!filter.is_path_selected("photos/2025/old.jpg"));
+        assert!(!filter.is_path_selected("downloads/installer.exe"));
+
+        // When selective_sync is None, all paths are selected
+        let open_filter = FileFilter::new(&ignore, None);
+        assert!(open_filter.is_path_selected("anything.txt"));
+    }
+}

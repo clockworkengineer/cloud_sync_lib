@@ -78,4 +78,21 @@ mod tests {
 
         assert!(!gitignore.is_ignored(watch_path.join("test.txt"), false));
     }
+
+    #[test]
+    fn test_sync_ignore_from_file_with_negation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let watch_path = temp_dir.path();
+
+        let syncignore_content = "# Comments should be ignored\n*.bak\nbuild/\n!build/keep.txt\n";
+        std::fs::write(watch_path.join(".syncignore"), syncignore_content).unwrap();
+
+        let gitignore = SyncIgnore::new(watch_path, &[]);
+
+        assert!(gitignore.is_ignored(watch_path.join("file.bak"), false));
+        assert!(gitignore.is_ignored(watch_path.join("build/artifact.o"), false));
+        assert!(!gitignore.is_ignored(watch_path.join("build/keep.txt"), false));
+        assert!(!gitignore.is_ignored(watch_path.join("src/main.rs"), false));
+        assert!(gitignore.is_ignored(watch_path.join("build"), true));
+    }
 }

@@ -205,3 +205,39 @@ impl StorageBackend for LoggingBackend {
         self.inner.simulation_reason()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::local_sim::LocalSimulation;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_logging_layer_delegation() {
+        let dir = tempdir().unwrap();
+        let sim_root = dir.path().join("sim_storage");
+        tokio::fs::create_dir_all(&sim_root).await.unwrap();
+
+        let local_sim: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(sim_root, "local_sim".to_string()));
+        let layer = LoggingLayer;
+        let wrapped = layer.layer(local_sim);
+
+        assert_eq!(wrapped.name(), "local_sim");
+        assert!(wrapped.is_simulated());
+
+        let file_path = dir.path().join("log_test.txt");
+        tokio::fs::write(&file_path, b"test content").await.unwrap();
+
+        // Test upload, list, download, delete through LoggingLayer
+        wrapped.upload(&file_path, "logs/test.txt").await.expect("upload should succeed");
+        let items = wrapped.list("logs").await.expect("list should succeed");
+        assert_eq!(items.len(), 1);
+
+        let dl_path = dir.path().join("downloaded.txt");
+        wrapped.download("logs/test.txt", &dl_path).await.expect("download should succeed");
+        assert_eq!(tokio::fs::read(&dl_path).await.unwrap(), b"test content");
+
+        wrapped.delete("logs/test.txt").await.expect("delete should succeed");
+        assert!(wrapped.list("logs").await.unwrap().is_empty());
+    }
+}

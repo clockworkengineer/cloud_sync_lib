@@ -148,4 +148,66 @@ mod tests {
             hex_encode(ring::digest::digest(&ring::digest::SHA256, block_hash.as_ref()).as_ref());
         assert_eq!(dbx_val, expected_dbx);
     }
+
+    #[tokio::test]
+    async fn test_checksum_non_existent_file_returns_error() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("missing.bin");
+
+        assert!(compute_md5(&missing).await.is_err());
+        assert!(compute_sha256(&missing).await.is_err());
+        assert!(compute_sha1(&missing).await.is_err());
+        assert!(compute_dropbox_hash(&missing).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_checksum_empty_file() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("empty.bin");
+        File::create(&file_path).unwrap();
+
+        let md5_val = compute_md5(&file_path).await.unwrap();
+        assert_eq!(md5_val, "d41d8cd98f00b204e9800998ecf8427e");
+
+        let sha256_val = compute_sha256(&file_path).await.unwrap();
+        assert_eq!(
+            sha256_val,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+
+        let sha1_val = compute_sha1(&file_path).await.unwrap();
+        assert_eq!(sha1_val, "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+
+        let dbx_val = compute_dropbox_hash(&file_path).await.unwrap();
+        assert_eq!(
+            dbx_val,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_dropbox_hash_multi_block() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("multiblock.bin");
+
+        // Write 4.5 MB to cross the 4MB block threshold in compute_dropbox_hash
+        let mut file = File::create(&file_path).unwrap();
+        let block_size = 4 * 1024 * 1024;
+        let block1 = vec![0x41u8; block_size]; // 'A'
+        let block2 = vec![0x42u8; 512 * 1024]; // 'B' (512 KB)
+        file.write_all(&block1).unwrap();
+        file.write_all(&block2).unwrap();
+        drop(file);
+
+        let dbx_val = compute_dropbox_hash(&file_path).await.unwrap();
+
+        let h1 = ring::digest::digest(&ring::digest::SHA256, &block1);
+        let h2 = ring::digest::digest(&ring::digest::SHA256, &block2);
+        let mut combined = Vec::new();
+        combined.extend_from_slice(h1.as_ref());
+        combined.extend_from_slice(h2.as_ref());
+        let expected = hex_encode(ring::digest::digest(&ring::digest::SHA256, &combined).as_ref());
+
+        assert_eq!(dbx_val, expected);
+    }
 }

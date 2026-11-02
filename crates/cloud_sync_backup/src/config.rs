@@ -80,3 +80,65 @@ pub async fn load_config(path: &str) -> Result<BackupConfig, Box<dyn std::error:
 
     Ok(config)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_expand_path() {
+        let plain = std::path::PathBuf::from("/var/data");
+        assert_eq!(expand_path(plain.clone()), plain);
+
+        let tilde_exact = std::path::PathBuf::from("~");
+        let expanded_exact = expand_path(tilde_exact);
+        assert!(!expanded_exact.to_string_lossy().starts_with('~'));
+
+        let tilde_sub = std::path::PathBuf::from("~/my_backup");
+        let expanded_sub = expand_path(tilde_sub);
+        assert!(expanded_sub.to_string_lossy().ends_with("my_backup"));
+    }
+
+    #[test]
+    fn test_get_default_backup_config_path() {
+        let p = get_default_backup_config_path();
+        assert!(p.to_string_lossy().ends_with("backup_config.toml"));
+    }
+
+    #[tokio::test]
+    async fn test_load_config_valid() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("backup.toml");
+
+        let toml_content = r#"
+max_upload_rate = 1000000
+max_download_rate = 2000000
+max_concurrency = 8
+exclude = ["*.tmp", ".git/*"]
+
+[backup]
+source_provider = "local"
+source_path = "source_dir"
+destination_provider = "google_drive"
+destination_path = "dest_dir"
+backup_interval_secs = 60
+"#;
+
+        tokio::fs::write(&config_path, toml_content).await.unwrap();
+
+        let cfg = load_config(config_path.to_str().unwrap()).await.expect("config should load");
+        assert_eq!(cfg.backup.source_provider, "local");
+        assert_eq!(cfg.backup.destination_provider, "google_drive");
+        assert_eq!(cfg.backup.backup_interval_secs, Some(60));
+        assert_eq!(cfg.max_upload_rate, Some(1000000));
+        assert_eq!(cfg.max_concurrency, Some(8));
+        assert_eq!(cfg.exclude.as_ref().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_load_config_missing_file() {
+        let res = load_config("non_existent_path_xyz_123.toml").await;
+        assert!(res.is_err());
+    }
+}

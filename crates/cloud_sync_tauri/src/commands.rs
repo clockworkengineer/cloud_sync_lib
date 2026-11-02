@@ -482,3 +482,45 @@ pub async fn create_directory(path: String) -> Result<serde_json::Value, String>
         .map_err(|e| format!("Failed to create directory '{}': {}", path, e))?;
     Ok(serde_json::json!({ "status": "created", "path": path }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_create_directory_and_list_directory() {
+        let dir = tempdir().unwrap();
+        let base_path = dir.path().to_path_buf();
+
+        let sub1 = base_path.join("alpha");
+        let sub2 = base_path.join("beta");
+        let hidden = base_path.join(".hidden");
+        tokio::fs::create_dir(&sub1).await.unwrap();
+        tokio::fs::create_dir(&sub2).await.unwrap();
+        tokio::fs::create_dir(&hidden).await.unwrap();
+
+        // Also write a file (should not appear in subdirectories list)
+        tokio::fs::write(base_path.join("file.txt"), b"data").await.unwrap();
+
+        let listing = list_directory(Some(base_path.to_str().unwrap().to_string()))
+            .await
+            .expect("list_directory should succeed");
+
+        assert_eq!(listing.subdirectories, vec!["alpha", "beta"]);
+        assert!(listing.presets.len() >= 4);
+
+        // Test create_directory
+        let new_sub = base_path.join("gamma/delta");
+        let res = create_directory(new_sub.to_str().unwrap().to_string()).await.unwrap();
+        assert_eq!(res["status"], "created");
+        assert!(new_sub.is_dir());
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_default_home() {
+        let listing = list_directory(None).await.expect("listing home should succeed");
+        assert!(!listing.current.is_empty());
+        assert!(!listing.presets.is_empty());
+    }
+}

@@ -238,3 +238,127 @@ impl StateStore for JsonStateStore {
         Ok(())
     }
 }
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+    use crate::state::FileState;
+    use tempfile::tempdir;
+
+    fn make_test_file_state(size: u64, hash: Option<&str>) -> FileState {
+        FileState {
+            size,
+            local_modified: std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1700000000),
+            remote_modified: std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1700000000),
+            is_dir: Some(false),
+            checksum: hash.map(|h| h.into()),
+            permissions: Some(0o644),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_postcard_state_store_roundtrip() {
+        let dir = tempdir().unwrap();
+        let state_path = dir.path().join("state.bin");
+        let store = PostcardStateStore::new();
+
+        let mut state = SyncState::default();
+        state.files.insert(
+            "docs/report.pdf".into(),
+            make_test_file_state(1024, Some("sha256:abc123")),
+        );
+
+        // 1. Initial save
+        store.save(&state_path, &state).await.expect("save should succeed");
+        assert!(state_path.exists());
+
+        // 2. Load
+        let loaded = store.load(&state_path).await.expect("load should succeed");
+        assert_eq!(loaded.files.len(), 1);
+        let meta = loaded.files.get("docs/report.pdf").expect("file should be present");
+        assert_eq!(meta.size, 1024);
+        assert_eq!(meta.checksum.as_deref(), Some("sha256:abc123"));
+    }
+
+    #[tokio::test]
+    async fn test_postcard_state_store_corrupt_recovers_from_backup() {
+        let dir = tempdir().unwrap();
+        let state_path = dir.path().join("catalog.bin");
+        let store = PostcardStateStore::new();
+
+        let mut state_v1 = SyncState::default();
+        state_v1.files.insert(
+            "v1.txt".into(),
+            make_test_file_state(10, None),
+        );
+
+        // Save v1 -> creates state_path
+        store.save(&state_path, &state_v1).await.unwrap();
+
+        let mut state_v2 = SyncState::default();
+        state_v2.files.insert(
+            "v2.txt".into(),
+            make_test_file_state(20, None),
+        );
+
+        // Save v2 -> copies state_path to .bak and writes new state_path
+        store.save(&state_path, &state_v2).await.unwrap();
+        let bak_path = state_path.with_extension("bak");
+        assert!(bak_path.exists());
+
+        // Corrupt main state file
+        tokio::fs::write(&state_path, b"CORRUPTED_GARBAGE_DATA_12345").await.unwrap();
+
+        // Load should detect corruption and gracefully recover from .bak
+        let recovered = store.load(&state_path).await.expect("should recover from .bak");
+        assert!(recovered.files.contains_key("v1.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_postcard_state_store_non_existent_returns_default() {
+        let dir = tempdir().unwrap();
+        let non_existent = dir.path().join("does_not_exist.bin");
+        let store = PostcardStateStore::new();
+
+        let loaded = store.load(&non_existent).await.expect("missing file should yield default");
+        assert!(loaded.files.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_json_state_store_roundtrip_and_bak() {
+        let dir = tempdir().unwrap();
+        let state_path = dir.path().join("state.json");
+        let store = JsonStateStore::new();
+
+        let mut state = SyncState::default();
+        state.files.insert(
+            "notes.txt".into(),
+            make_test_file_state(55, Some("md5:999")),
+        );
+
+        // Save
+        store.save(&state_path, &state).await.expect("save should succeed");
+        assert!(state_path.exists());
+
+        // Load
+        let loaded = store.load(&state_path).await.expect("load should succeed");
+        assert_eq!(loaded.files.len(), 1);
+        assert_eq!(loaded.files.get("notes.txt").unwrap().size, 55);
+
+        // Corrupt main file and verify .bak recovery
+        let bak_path = state_path.with_extension("bak");
+        tokio::fs::copy(&state_path, &bak_path).await.unwrap();
+        tokio::fs::write(&state_path, b"{ invalid json ...").await.unwrap();
+
+        let recovered = store.load(&state_path).await.expect("should recover from json .bak");
+        assert_eq!(recovered.files.get("notes.txt").unwrap().size, 55);
+    }
+
+    #[tokio::test]
+    async fn test_json_state_store_non_existent_returns_default() {
+        let dir = tempdir().unwrap();
+        let store = JsonStateStore::new();
+        let loaded = store.load(&dir.path().join("missing.json")).await.unwrap();
+        assert!(loaded.files.is_empty());
+    }
+}

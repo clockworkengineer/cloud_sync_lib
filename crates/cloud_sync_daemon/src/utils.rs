@@ -16,3 +16,23 @@ pub fn get_remote_path(path: &Path, watch_dir: &Path) -> Option<String> {
     };
     Some(relative_path.to_string_lossy().replace('\\', "/"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_remote_path_matching() {
+        let watch_dir = Path::new("/home/user/sync");
+        let file_path = Path::new("/home/user/sync/docs/sub/notes.txt");
+        let remote = get_remote_path(file_path, watch_dir);
+        assert_eq!(remote, Some("docs/sub/notes.txt".to_string()));
+    }
+
+    #[test]
+    fn test_get_remote_path_non_matching() {
+        let watch_dir = Path::new("/home/user/sync");
+        let outside = Path::new("/home/user/other/file.txt");
+        assert_eq!(get_remote_path(outside, watch_dir), None);
+    }
+}

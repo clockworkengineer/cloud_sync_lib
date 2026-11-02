@@ -482,4 +482,87 @@ mod tests {
         let conflicts_resp = api_conflicts(State(client)).await.into_response();
         assert_eq!(conflicts_resp.status(), axum::http::StatusCode::OK);
     }
+
+    #[tokio::test]
+    async fn test_api_reload_and_stop() {
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
+            match cmd {
+                "reload" => Ok("Configuration reloaded".to_string()),
+                "stop" => Ok("Daemon stopping".to_string()),
+                _ => Err(crate::client::DaemonClientError::CommandFailed("fail".into())),
+            }
+        }));
+
+        let reload_resp = api_reload(State(client.clone())).await.into_response();
+        assert_eq!(reload_resp.status(), axum::http::StatusCode::OK);
+
+        let stop_resp = api_stop(State(client)).await.into_response();
+        assert_eq!(stop_resp.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_api_clear_and_resolve_conflict() {
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
+            if cmd.starts_with("clear ") {
+                Ok("Cleared provider".to_string())
+            } else if cmd.starts_with("resolve_conflict ") {
+                Ok("Resolved successfully".to_string())
+            } else {
+                Err(crate::client::DaemonClientError::CommandFailed("fail".into()))
+            }
+        }));
+
+        let clear_payload = axum::Json(ClearRequest {
+            provider: "dropbox".into(),
+        });
+        let clear_resp = api_clear(State(client.clone()), clear_payload).await.into_response();
+        assert_eq!(clear_resp.status(), axum::http::StatusCode::OK);
+
+        let resolve_payload = axum::Json(ResolveConflictRequest {
+            rel_path: "conflict.txt".into(),
+            resolution: "use_local".into(),
+        });
+        let resolve_resp = api_resolve_conflict(State(client), resolve_payload).await.into_response();
+        assert_eq!(resolve_resp.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_api_sync_plan_and_logs() {
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
+            if cmd == "get_plan" {
+                Ok(r#"[{"action":"upload","path":"test.txt"}]"#.to_string())
+            } else if cmd == "get_log" {
+                Ok("Status: OK\n\nLog line 1\nLog line 2".to_string())
+            } else {
+                Err(crate::client::DaemonClientError::CommandFailed("fail".into()))
+            }
+        }));
+
+        let plan_resp = api_sync_plan(State(client.clone())).await.into_response();
+        assert_eq!(plan_resp.status(), axum::http::StatusCode::OK);
+
+        let logs_resp = api_logs(State(client)).await.into_response();
+        assert_eq!(logs_resp.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_serve_index() {
+        let html = serve_index().await;
+        assert!(html.0.contains("CloudSync Control Center"));
+    }
+
+    #[test]
+    fn test_daemon_client_error_display() {
+        let conn_err = crate::client::DaemonClientError::ConnectionFailed("refused".into());
+        assert!(format!("{}", conn_err).contains("refused"));
+
+        let io_err: crate::client::DaemonClientError = std::io::Error::other("disk fault").into();
+        assert!(format!("{}", io_err).contains("disk fault"));
+
+        let ser_err = crate::client::DaemonClientError::Serialization("bad json".into());
+        assert!(format!("{}", ser_err).contains("bad json"));
+
+        let cmd_err = crate::client::DaemonClientError::CommandFailed("bad command".into());
+        assert!(format!("{}", cmd_err).contains("bad command"));
+    }
 }
