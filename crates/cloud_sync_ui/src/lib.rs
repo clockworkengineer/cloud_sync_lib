@@ -7,6 +7,7 @@ pub mod handlers;
 pub mod parser;
 
 pub use client::{DaemonClientError, DaemonClientPort, MockDaemonClient, TcpDaemonClient};
+pub use handlers::get_offline_log_path;
 
 use axum::{
     routing::{get, post},

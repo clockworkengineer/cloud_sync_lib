@@ -37,7 +37,7 @@ pub async fn send_daemon_cmd(cmd: &str) -> Result<String, std::io::Error> {
 }
 
 /// Helper to determine active configured log file path when daemon is offline.
-fn get_offline_log_path() -> String {
+pub fn get_offline_log_path() -> String {
     let config_file = if std::path::Path::new(PRIVATE_CONFIG_FILE).exists() {
         PRIVATE_CONFIG_FILE
     } else {

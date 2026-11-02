@@ -1022,7 +1022,7 @@
                     <span class="info-label">Log File Destination</span>
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
                         <span class="info-value mono-text" id="log-file" style="flex: 1;">-</span>
-                        <a href="/api/logs" target="_blank" rel="noopener noreferrer" class="btn-mini" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem;">📄 View Log</a>
+                        <button type="button" onclick="openLogModal()" class="btn-mini" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem;">📄 View Log</button>
                     </div>
                 </div>
 
@@ -1102,7 +1102,7 @@
             <div class="logs-header">
                 <div class="logs-header-left" style="display: flex; align-items: center; gap: 0.75rem;">
                     <span>🗎 Command Execution Logs</span>
-                    <a href="/api/logs" target="_blank" rel="noopener noreferrer" class="btn-mini" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 500;">📄 Open Daemon Log File</a>
+                    <button type="button" onclick="openLogModal()" class="btn-mini" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem; font-weight: 500;">📄 Open Daemon Log File</button>
                 </div>
                 <div class="logs-actions">
                     <button class="btn-mini active" id="log-filter-all" onclick="setLogFilter('all')">All</button>
@@ -1323,12 +1323,55 @@
                         Full markdown documentation is included in the <code>docs/</code> repository folder:
                     </p>
                     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.4rem;">
-                        <a href="/api/logs" target="_blank" class="btn-mini" style="text-decoration: none;">📄 Live Logs Stream</a>
+                        <button type="button" onclick="closeHelpModal(); openLogModal();" class="btn-mini" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem;">📄 Live Logs Stream</button>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeHelpModal()">Got It</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Daemon Logs Viewer Modal -->
+    <div class="modal-backdrop" id="log-modal" onclick="handleModalBackdropClick(event, 'log-modal')">
+        <div class="modal-window" style="max-width: 900px; height: 85vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>📄</span>
+                    <span>Daemon Execution Log</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <button type="button" class="btn-mini" onclick="fetchDaemonLogs()" title="Refresh Logs" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem;">
+                        🔄 Refresh
+                    </button>
+                    <button type="button" class="btn-mini" id="btn-copy-log" onclick="copyDaemonLogs()" title="Copy to Clipboard" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem;">
+                        📋 Copy
+                    </button>
+                    <button type="button" class="btn-mini" onclick="openExternalLogUrl()" title="Open in Browser / External Window" style="cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem;">
+                        ↗ Browser
+                    </button>
+                    <button type="button" class="modal-close-btn" onclick="closeLogModal()" title="Close">✕</button>
+                </div>
+            </div>
+
+            <div style="padding: 0.75rem 1.75rem; border-bottom: 1px solid var(--card-border); background: rgba(0,0,0,0.25); display: flex; gap: 0.75rem; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+                <input type="text" id="log-search-input" oninput="filterDaemonLogs()" placeholder="🔍 Filter log lines..." class="form-input mono" style="padding: 0.4rem 0.75rem; font-size: 0.825rem; max-width: 320px;">
+                <div style="display: flex; align-items: center; gap: 0.75rem; font-size: 0.8rem; color: var(--text-secondary);">
+                    <label style="display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+                        <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+                    </label>
+                    <span id="log-line-count">0 lines</span>
+                </div>
+            </div>
+
+            <div class="modal-body" style="flex: 1; padding: 0; overflow: hidden; background: #080710;">
+                <pre id="daemon-log-view" style="margin: 0; padding: 1.25rem; height: 100%; overflow: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.5; color: #e5e7eb; white-space: pre-wrap; word-break: break-all; -webkit-overflow-scrolling: touch;"></pre>
+            </div>
+            
+            <div class="modal-footer" style="padding: 0.75rem 1.75rem; display: flex; justify-content: space-between; align-items: center;">
+                <span id="log-fetch-status" style="font-size: 0.8rem; color: var(--text-secondary);">Ready</span>
+                <button type="button" class="btn btn-secondary" onclick="closeLogModal()">Close</button>
             </div>
         </div>
     </div>
@@ -2054,12 +2097,122 @@
             document.getElementById('help-modal').classList.add('open');
         }
 
+        function closeHelpModal() {
+            const m = document.getElementById('help-modal');
+            if (m) m.classList.remove('open');
+        }
+
+        let rawDaemonLogText = "";
+
+        async function openLogModal() {
+            const modal = document.getElementById('log-modal');
+            if (!modal) return;
+            modal.classList.add('open');
+            await fetchDaemonLogs();
+        }
+
+        function closeLogModal() {
+            const modal = document.getElementById('log-modal');
+            if (modal) modal.classList.remove('open');
+        }
+
+        async function fetchDaemonLogs() {
+            const view = document.getElementById('daemon-log-view');
+            const statusEl = document.getElementById('log-fetch-status');
+            if (statusEl) statusEl.textContent = 'Fetching daemon logs...';
+
+            let logText = "";
+            try {
+                // 1. Try Tauri direct IPC command if running inside Tauri
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    try {
+                        logText = await window.__TAURI_INTERNALS__.invoke('logs');
+                    } catch (e) {
+                        console.warn("Tauri invoke('logs') failed, falling back to HTTP:", e);
+                    }
+                }
+
+                // 2. Fall back to Axum HTTP /api/logs
+                if (!logText) {
+                    const baseUrl = (window.__TAURI_INTERNALS__ || window.location.protocol === 'tauri:') ? 'http://127.0.0.1:8082' : '';
+                    const res = await fetch(`${baseUrl}/api/logs`);
+                    if (res.ok) {
+                        logText = await res.text();
+                    } else {
+                        logText = `(API returned status ${res.status}: ${res.statusText})`;
+                    }
+                }
+            } catch (err) {
+                console.error("fetchDaemonLogs error:", err);
+                logText = `(Could not connect to daemon or fetch log file: ${err})`;
+            }
+
+            rawDaemonLogText = logText || "(Log file is empty)";
+            renderDaemonLogView();
+            if (statusEl) {
+                const now = new Date().toLocaleTimeString();
+                statusEl.textContent = `Last updated: ${now}`;
+            }
+        }
+
+        function renderDaemonLogView() {
+            const view = document.getElementById('daemon-log-view');
+            if (!view) return;
+            const countEl = document.getElementById('log-line-count');
+            const searchInput = document.getElementById('log-search-input');
+            const filterTerm = searchInput ? searchInput.value.toLowerCase().trim() : "";
+
+            let lines = rawDaemonLogText.split('\n');
+            if (countEl) countEl.textContent = `${lines.length} lines`;
+
+            if (filterTerm) {
+                lines = lines.filter(l => l.toLowerCase().includes(filterTerm));
+            }
+
+            view.textContent = lines.join('\n');
+
+            const autoscroll = document.getElementById('log-autoscroll');
+            if (autoscroll && autoscroll.checked) {
+                view.scrollTop = view.scrollHeight;
+            }
+        }
+
+        function filterDaemonLogs() {
+            renderDaemonLogView();
+        }
+
+        async function copyDaemonLogs() {
+            const view = document.getElementById('daemon-log-view');
+            const btn = document.getElementById('btn-copy-log');
+            if (!view) return;
+            try {
+                await navigator.clipboard.writeText(view.textContent || rawDaemonLogText);
+                if (btn) {
+                    const orig = btn.innerHTML;
+                    btn.innerHTML = '✓ Copied!';
+                    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+                }
+                showToast("Logs copied to clipboard!", "📋");
+            } catch (err) {
+                console.error("Clipboard copy error:", err);
+                showToast("Failed to copy to clipboard", "⚠️");
+            }
+        }
+
+        function openExternalLogUrl() {
+            const url = (window.__TAURI_INTERNALS__ || window.location.protocol === 'tauri:')
+                ? 'http://127.0.0.1:8082/api/logs'
+                : '/api/logs';
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+
         function handleModalBackdropClick(event, modalId) {
             if (event.target && event.target.id === modalId) {
                 if (modalId === 'settings-modal') closeSettingsModal();
                 if (modalId === 'folder-picker-modal') closeFolderPickerModal();
                 if (modalId === 'confirm-modal') closeConfirmModal();
                 if (modalId === 'help-modal') closeHelpModal();
+                if (modalId === 'log-modal') closeLogModal();
             }
         }
 
@@ -2106,6 +2259,7 @@
                 closeFolderPickerModal();
                 closeConfirmModal();
                 closeHelpModal();
+                closeLogModal();
                 return;
             }
 

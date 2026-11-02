@@ -236,7 +236,8 @@ pub fn run() {
             commands::get_config,
             commands::save_config,
             commands::list_directory,
-            commands::create_directory
+            commands::create_directory,
+            commands::logs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

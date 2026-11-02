@@ -483,10 +483,63 @@ pub async fn create_directory(path: String) -> Result<serde_json::Value, String>
     Ok(serde_json::json!({ "status": "created", "path": path }))
 }
 
+#[tauri::command]
+pub async fn logs(_state: tauri::State<'_, SharedDaemonState>) -> Result<String, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        if let Ok(resp) = client.send_command("get_log").await {
+            if resp.starts_with("Status: OK") {
+                if let Some(pos) = resp.find("\n\n") {
+                    return Ok(resp[pos + 2..].to_string());
+                }
+            }
+        }
+
+        let offline_path = cloud_sync_ui::get_offline_log_path();
+        match tokio::fs::read_to_string(&offline_path).await {
+            Ok(content) => Ok(content),
+            Err(e) => Ok(format!(
+                "(Daemon is offline and could not read local log file '{}': {})",
+                offline_path, e
+            )),
+        }
+    }
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let lock = state.lock().await;
+        let log_file = &lock.log_file;
+        let path = lock.state_dir.join(log_file);
+        match tokio::fs::read_to_string(&path).await {
+            Ok(content) => Ok(content),
+            Err(_) => match tokio::fs::read_to_string(log_file).await {
+                Ok(content) => Ok(content),
+                Err(e) => Ok(format!(
+                    "(Could not read mobile log file '{}': {})",
+                    path.display(),
+                    e
+                )),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_offline_log_fallback() {
+        let dir = tempdir().unwrap();
+        let log_file = dir.path().join("test_daemon.log");
+        tokio::fs::write(&log_file, "2026-11-02 [INFO] Test log line").await.unwrap();
+
+        let content = tokio::fs::read_to_string(&log_file).await.unwrap();
+        assert!(content.contains("[INFO] Test log line"));
+    }
 
     #[tokio::test]
     async fn test_create_directory_and_list_directory() {
