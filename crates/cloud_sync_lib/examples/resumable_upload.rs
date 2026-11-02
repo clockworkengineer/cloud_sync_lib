@@ -18,8 +18,12 @@ async fn main() -> Result<(), StorageError> {
     let sandbox = tempdir().map_err(StorageError::Io)?;
     let cloud_sim_dir = sandbox.path().join("cloud_storage");
     let local_dir = sandbox.path().join("local_cache");
-    tokio::fs::create_dir_all(&cloud_sim_dir).await.map_err(StorageError::Io)?;
-    tokio::fs::create_dir_all(&local_dir).await.map_err(StorageError::Io)?;
+    tokio::fs::create_dir_all(&cloud_sim_dir)
+        .await
+        .map_err(StorageError::Io)?;
+    tokio::fs::create_dir_all(&local_dir)
+        .await
+        .map_err(StorageError::Io)?;
 
     // Create a 2MB test payload
     let large_file = local_dir.join("large_archive.bin");
@@ -47,10 +51,12 @@ async fn main() -> Result<(), StorageError> {
     // 2. Verify stored size
     let items = client.list("backups").await?;
     for item in &items {
-        println!(" - Confirmed remote file {:?}: {} bytes", item.path, item.size);
+        println!(
+            " - Confirmed remote file {:?}: {} bytes",
+            item.path, item.size
+        );
     }
 
     println!("=== Resumable Upload & Rate Limiting Example completed! ===");
     Ok(())
 }
-

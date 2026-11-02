@@ -11,7 +11,10 @@ pub trait HttpTransport: Send + Sync {
     async fn execute(&self, request: reqwest::Request) -> Result<reqwest::Response, StorageError>;
 
     /// Executes a reqwest RequestBuilder, converting build errors and network failures into `StorageError`.
-    async fn send(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::Response, StorageError> {
+    async fn send(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, StorageError> {
         let request = builder.build().map_err(StorageError::Reqwest)?;
         self.execute(request).await
     }
@@ -42,10 +45,16 @@ impl From<reqwest::Client> for ReqwestHttpTransport {
 #[async_trait]
 impl HttpTransport for ReqwestHttpTransport {
     async fn execute(&self, request: reqwest::Request) -> Result<reqwest::Response, StorageError> {
-        self.client.execute(request).await.map_err(StorageError::Reqwest)
+        self.client
+            .execute(request)
+            .await
+            .map_err(StorageError::Reqwest)
     }
 
-    async fn send(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::Response, StorageError> {
+    async fn send(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, StorageError> {
         builder.send().await.map_err(StorageError::Reqwest)
     }
 }
@@ -56,7 +65,10 @@ impl HttpTransport for reqwest::Client {
         self.execute(request).await.map_err(StorageError::Reqwest)
     }
 
-    async fn send(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::Response, StorageError> {
+    async fn send(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, StorageError> {
         builder.send().await.map_err(StorageError::Reqwest)
     }
 }
@@ -67,7 +79,10 @@ impl<T: HttpTransport + ?Sized> HttpTransport for Arc<T> {
         (**self).execute(request).await
     }
 
-    async fn send(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::Response, StorageError> {
+    async fn send(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, StorageError> {
         (**self).send(builder).await
     }
 }
@@ -137,4 +152,3 @@ mod tests {
         assert_eq!(res.status(), reqwest::StatusCode::NO_CONTENT);
     }
 }
-

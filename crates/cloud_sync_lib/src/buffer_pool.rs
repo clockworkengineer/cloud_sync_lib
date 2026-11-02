@@ -136,4 +136,3 @@ mod tests {
         assert_eq!(pool.idle_count(), 1);
     }
 }
-

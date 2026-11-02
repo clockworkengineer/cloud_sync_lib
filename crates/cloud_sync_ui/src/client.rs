@@ -43,7 +43,8 @@ pub trait DaemonClientPort: Send + Sync {
     async fn get_status(&self) -> Result<serde_json::Value, DaemonClientError> {
         let raw = self.send_command("status").await?;
         let parsed = crate::parser::parse_status(&raw);
-        Ok(serde_json::to_value(parsed).map_err(|e| DaemonClientError::Serialization(e.to_string()))?)
+        Ok(serde_json::to_value(parsed)
+            .map_err(|e| DaemonClientError::Serialization(e.to_string()))?)
     }
 
     /// Fetches the current synchronization plan.
@@ -68,8 +69,13 @@ pub trait DaemonClientPort: Send + Sync {
     }
 
     /// Resolves a file conflict with a choice ("local" or "remote").
-    async fn resolve_conflict(&self, rel_path: &str, choice: &str) -> Result<String, DaemonClientError> {
-        self.send_command(&format!("resolve_conflict {} {}", rel_path, choice)).await
+    async fn resolve_conflict(
+        &self,
+        rel_path: &str,
+        choice: &str,
+    ) -> Result<String, DaemonClientError> {
+        self.send_command(&format!("resolve_conflict {} {}", rel_path, choice))
+            .await
     }
 }
 
@@ -124,7 +130,11 @@ impl<T: DaemonClientPort + ?Sized> DaemonClientPort for Arc<T> {
     async fn resume(&self) -> Result<String, DaemonClientError> {
         (**self).resume().await
     }
-    async fn resolve_conflict(&self, rel_path: &str, choice: &str) -> Result<String, DaemonClientError> {
+    async fn resolve_conflict(
+        &self,
+        rel_path: &str,
+        choice: &str,
+    ) -> Result<String, DaemonClientError> {
         (**self).resolve_conflict(rel_path, choice).await
     }
 }
@@ -154,4 +164,3 @@ impl DaemonClientPort for MockDaemonClient {
         (self.handler)(cmd)
     }
 }
-

@@ -25,10 +25,10 @@ pub use state_io::{JsonStateStore, PostcardStateStore, StateStore};
 pub use sys::{Clock, FileSystem, RealFileSystem, SystemClock};
 #[cfg(feature = "std")]
 pub use testing::verify_backend_compliance;
-#[cfg(feature = "std")]
-pub use traits::{ResumableUploadSession, ResumableUploader};
 pub use traits::{
     ChangeFeed, ChecksumOps, ConflictPolicy, DirectoryLister, FolderOps, RemoteChange,
     ServerSideOperations, StorageBackend, StorageCapabilities, StorageError, StorageItem,
     StorageReader, StorageWriter, SyncMode, SyncPolicy,
 };
+#[cfg(feature = "std")]
+pub use traits::{ResumableUploadSession, ResumableUploader};

@@ -503,11 +503,8 @@ mod tests {
     #[test]
     fn test_dynamic_registry_default_providers() {
         let registry = DynamicBackendRegistry::with_defaults();
-        let res = registry.create_backend(
-            "local",
-            &serde_json::json!({}),
-            PathBuf::from("sim_dir"),
-        );
+        let res =
+            registry.create_backend("local", &serde_json::json!({}), PathBuf::from("sim_dir"));
         assert!(res.is_ok());
     }
 }

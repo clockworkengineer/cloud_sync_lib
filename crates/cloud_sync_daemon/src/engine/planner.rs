@@ -280,7 +280,9 @@ mod tests {
 
         assert_eq!(plan.action_count(), 1);
         match &plan.actions[0] {
-            SyncAction::Upload { remote_path, size, .. } => {
+            SyncAction::Upload {
+                remote_path, size, ..
+            } => {
                 assert_eq!(remote_path, "new_file.txt");
                 assert_eq!(*size, 100);
             }
@@ -309,7 +311,9 @@ mod tests {
 
         assert_eq!(plan.action_count(), 1);
         match &plan.actions[0] {
-            SyncAction::Download { remote_path, size, .. } => {
+            SyncAction::Download {
+                remote_path, size, ..
+            } => {
                 assert_eq!(remote_path, "from_cloud.txt");
                 assert_eq!(*size, 250);
             }
@@ -321,9 +325,15 @@ mod tests {
     fn test_sync_planner_both_modified_conflict() {
         let watch_dir = Path::new("/sync");
         let mut local_tree = HashMap::new();
-        local_tree.insert("shared.txt".into(), make_scanned(100, 2000, Some("hash_local")));
+        local_tree.insert(
+            "shared.txt".into(),
+            make_scanned(100, 2000, Some("hash_local")),
+        );
         let mut remote_tree = HashMap::new();
-        remote_tree.insert("shared.txt".into(), make_scanned(200, 3000, Some("hash_remote")));
+        remote_tree.insert(
+            "shared.txt".into(),
+            make_scanned(200, 3000, Some("hash_remote")),
+        );
 
         let mut base_state = SyncState::default();
         base_state.files.insert(
@@ -350,7 +360,10 @@ mod tests {
         );
 
         assert_eq!(plan.conflicts_count, 1);
-        let conflict_action = plan.actions.iter().find(|a| matches!(a, SyncAction::Conflict { .. }));
+        let conflict_action = plan
+            .actions
+            .iter()
+            .find(|a| matches!(a, SyncAction::Conflict { .. }));
         assert!(conflict_action.is_some());
     }
 

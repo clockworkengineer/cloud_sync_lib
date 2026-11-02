@@ -150,10 +150,16 @@ impl CloudSyncBuilder {
     }
 
     /// Configures a local directory simulation fallback backend.
-    pub fn with_local_sim(mut self, sim_root: impl Into<PathBuf>, provider_name: impl Into<String>) -> Self {
+    pub fn with_local_sim(
+        mut self,
+        sim_root: impl Into<PathBuf>,
+        provider_name: impl Into<String>,
+    ) -> Self {
         let root = sim_root.into();
         let name = provider_name.into();
-        let backend = Arc::new(crate::providers::local_sim::LocalSimulation::new(root, name));
+        let backend = Arc::new(crate::providers::local_sim::LocalSimulation::new(
+            root, name,
+        ));
         self.backend = Some(backend);
         self
     }
@@ -178,7 +184,12 @@ impl CloudSyncBuilder {
     }
 
     /// Configures automatic retry middleware with exponential backoff.
-    pub fn with_retry(mut self, max_attempts: u32, base_delay: Duration, max_delay: Duration) -> Self {
+    pub fn with_retry(
+        mut self,
+        max_attempts: u32,
+        base_delay: Duration,
+        max_delay: Duration,
+    ) -> Self {
         self.retry = Some(RetryConfig {
             max_attempts,
             base_delay,
@@ -188,7 +199,11 @@ impl CloudSyncBuilder {
     }
 
     /// Configures circuit breaker middleware for fast-failing during sustained outages.
-    pub fn with_circuit_breaker(mut self, failure_threshold: u32, recovery_timeout: Duration) -> Self {
+    pub fn with_circuit_breaker(
+        mut self,
+        failure_threshold: u32,
+        recovery_timeout: Duration,
+    ) -> Self {
         self.circuit_breaker = Some(CircuitBreakerConfig {
             failure_threshold,
             recovery_timeout,
@@ -225,11 +240,9 @@ impl CloudSyncBuilder {
     pub fn build(self) -> Result<CloudSyncClient, StorageError> {
         let mut backend = if let Some(b) = self.backend {
             b
-        } else if let (Some(name), Some(cfg), Some(root)) = (
-            self.provider_name,
-            self.provider_config,
-            self.sim_root,
-        ) {
+        } else if let (Some(name), Some(cfg), Some(root)) =
+            (self.provider_name, self.provider_config, self.sim_root)
+        {
             let registry = self
                 .registry
                 .unwrap_or_else(|| Arc::new(DynamicBackendRegistry::with_defaults()));
@@ -251,8 +264,16 @@ impl CloudSyncBuilder {
         }
 
         if let Some((up, down)) = self.rate_limits {
-            let up_bucket = if up > 0 { Some(TokenBucket::new(up)) } else { None };
-            let down_bucket = if down > 0 { Some(TokenBucket::new(down)) } else { None };
+            let up_bucket = if up > 0 {
+                Some(TokenBucket::new(up))
+            } else {
+                None
+            };
+            let down_bucket = if down > 0 {
+                Some(TokenBucket::new(down))
+            } else {
+                None
+            };
             backend = backend.with_layer(RateLimitLayer::new(up_bucket, down_bucket));
         }
 
@@ -288,7 +309,9 @@ mod tests {
 
         // Write a test file
         let local_file = dir.path().join("source.txt");
-        tokio::fs::write(&local_file, b"Hello CloudSync").await.unwrap();
+        tokio::fs::write(&local_file, b"Hello CloudSync")
+            .await
+            .unwrap();
 
         // Test upload through client facade
         client
@@ -298,7 +321,9 @@ mod tests {
 
         // Test list through client facade
         let items = client.list("").await.expect("List failed");
-        assert!(items.iter().any(|i| i.path.to_str().unwrap().contains("destination.txt")));
+        assert!(items
+            .iter()
+            .any(|i| i.path.to_str().unwrap().contains("destination.txt")));
 
         // Test download through client facade
         let downloaded_file = dir.path().join("downloaded.txt");
@@ -310,4 +335,3 @@ mod tests {
         assert_eq!(content, "Hello CloudSync");
     }
 }
-

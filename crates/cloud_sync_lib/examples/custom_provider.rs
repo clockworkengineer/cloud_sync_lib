@@ -10,8 +10,8 @@
 
 use async_trait::async_trait;
 use cloud_sync_lib::{
-    BackendFactory, CloudSyncClient, DynamicBackendRegistry, StorageBackend,
-    StorageCapabilities, StorageError, StorageItem,
+    BackendFactory, CloudSyncClient, DynamicBackendRegistry, StorageBackend, StorageCapabilities,
+    StorageError, StorageItem,
 };
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -50,7 +50,11 @@ impl StorageBackend for InMemoryBackend {
         {
             let mut lock = self.files.write().unwrap();
             lock.insert(remote_path.to_string(), bytes);
-            println!("[InMemoryBackend] Stored {} bytes at '{}'", lock.get(remote_path).unwrap().len(), remote_path);
+            println!(
+                "[InMemoryBackend] Stored {} bytes at '{}'",
+                lock.get(remote_path).unwrap().len(),
+                remote_path
+            );
         }
         Ok(())
     }
@@ -65,10 +69,16 @@ impl StorageBackend for InMemoryBackend {
             tokio::fs::write(local_path, bytes)
                 .await
                 .map_err(StorageError::Io)?;
-            println!("[InMemoryBackend] Downloaded '{}' -> {:?}", remote_path, local_path);
+            println!(
+                "[InMemoryBackend] Downloaded '{}' -> {:?}",
+                remote_path, local_path
+            );
             Ok(())
         } else {
-            Err(StorageError::NotFound(format!("File '{}' not in memory", remote_path)))
+            Err(StorageError::NotFound(format!(
+                "File '{}' not in memory",
+                remote_path
+            )))
         }
     }
 
@@ -150,9 +160,11 @@ async fn main() -> Result<(), StorageError> {
     let content = tokio::fs::read(&restored_file)
         .await
         .map_err(StorageError::Io)?;
-    println!("Successfully verified custom provider data: {} bytes", content.len());
+    println!(
+        "Successfully verified custom provider data: {} bytes",
+        content.len()
+    );
 
     println!("=== Custom Provider Example completed! ===");
     Ok(())
 }
-

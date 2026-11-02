@@ -78,7 +78,9 @@ mod tests {
         let fs = RealFileSystem;
 
         let sub_dir = dir.path().join("sub/nested");
-        fs.create_dir_all(&sub_dir).await.expect("create_dir_all should succeed");
+        fs.create_dir_all(&sub_dir)
+            .await
+            .expect("create_dir_all should succeed");
         assert!(sub_dir.is_dir());
 
         let file_a = sub_dir.join("test.txt");
@@ -88,14 +90,21 @@ mod tests {
         assert_eq!(meta.len(), 11);
 
         let file_b = sub_dir.join("copy.txt");
-        let bytes_copied = fs.copy(&file_a, &file_b).await.expect("copy should succeed");
+        let bytes_copied = fs
+            .copy(&file_a, &file_b)
+            .await
+            .expect("copy should succeed");
         assert_eq!(bytes_copied, 11);
         assert!(file_b.is_file());
 
-        fs.remove_file(&file_b).await.expect("remove_file should succeed");
+        fs.remove_file(&file_b)
+            .await
+            .expect("remove_file should succeed");
         assert!(!file_b.exists());
 
-        fs.remove_dir_all(&sub_dir).await.expect("remove_dir_all should succeed");
+        fs.remove_dir_all(&sub_dir)
+            .await
+            .expect("remove_dir_all should succeed");
         assert!(!sub_dir.exists());
     }
 }

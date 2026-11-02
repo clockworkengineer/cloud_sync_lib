@@ -138,7 +138,9 @@ impl OAuthTokenManager {
             token_url: token_url.to_string(),
             client_id: client_id.to_string(),
             client_secret: client_secret.to_string(),
-            refresh_token: tokio::sync::RwLock::new(zeroize::Zeroizing::new(refresh_token.to_string())),
+            refresh_token: tokio::sync::RwLock::new(zeroize::Zeroizing::new(
+                refresh_token.to_string(),
+            )),
             provider_name: provider_name.to_string(),
             cache: tokio::sync::RwLock::new(None),
             on_refresh,

@@ -20,7 +20,10 @@ pub async fn verify_backend_compliance<B: StorageBackend + ?Sized>(
     backend: &B,
     temp_dir: &Path,
 ) -> Result<(), StorageError> {
-    assert!(!backend.name().trim().is_empty(), "Provider name must not be empty");
+    assert!(
+        !backend.name().trim().is_empty(),
+        "Provider name must not be empty"
+    );
 
     let test_filename = "test_contract_probe.txt";
     let remote_path = "contract_suite/probe.txt";
@@ -42,7 +45,11 @@ pub async fn verify_backend_compliance<B: StorageBackend + ?Sized>(
     });
     assert!(found.is_some(), "Uploaded file must be returned in list()");
     let item = found.unwrap();
-    assert_eq!(item.size, payload.len() as u64, "Listed size must match uploaded byte length");
+    assert_eq!(
+        item.size,
+        payload.len() as u64,
+        "Listed size must match uploaded byte length"
+    );
 
     // 3. Download & Verify Content
     let downloaded_file = temp_dir.join("downloaded_probe.txt");
@@ -50,15 +57,24 @@ pub async fn verify_backend_compliance<B: StorageBackend + ?Sized>(
     let read_back = tokio::fs::read(&downloaded_file)
         .await
         .map_err(StorageError::Io)?;
-    assert_eq!(read_back, payload, "Downloaded payload must match uploaded content exactly");
+    assert_eq!(
+        read_back, payload,
+        "Downloaded payload must match uploaded content exactly"
+    );
 
     // 4. Verify NotFound Contract
     let non_existent = "contract_suite/non_existent_file_xyz_123.bin";
     let bogus_dest = temp_dir.join("bogus.bin");
     let missing_err = backend.download(non_existent, &bogus_dest).await;
-    assert!(missing_err.is_err(), "Downloading non-existent path must return an error");
+    assert!(
+        missing_err.is_err(),
+        "Downloading non-existent path must return an error"
+    );
     let err = missing_err.unwrap_err();
-    assert!(err.is_not_found(), "Error on non-existent file must satisfy err.is_not_found()");
+    assert!(
+        err.is_not_found(),
+        "Error on non-existent file must satisfy err.is_not_found()"
+    );
 
     // 5. Delete & Verify Removal
     backend.delete(remote_path).await?;

@@ -179,7 +179,12 @@ impl SyncOrchestrator {
         let sel_ref = selective_sync.as_deref();
         let filter = self.create_filter(gitignore, sel_ref);
 
-        broadcast_event("status", "Scanning files and computing plan...", Some(15.0), None);
+        broadcast_event(
+            "status",
+            "Scanning files and computing plan...",
+            Some(15.0),
+            None,
+        );
         let plan = self
             .plan_sync(
                 backend.as_ref(),
@@ -321,7 +326,9 @@ mod tests {
 
         // Write a test local file
         let local_file = watch_dir.path().join("document.txt");
-        tokio::fs::write(&local_file, b"Hello Cloud Sync SRP Engine!").await.unwrap();
+        tokio::fs::write(&local_file, b"Hello Cloud Sync SRP Engine!")
+            .await
+            .unwrap();
 
         let backend: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(
             sim_dir.path().to_path_buf(),

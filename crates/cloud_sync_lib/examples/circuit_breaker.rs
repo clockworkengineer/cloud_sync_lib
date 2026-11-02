@@ -9,8 +9,8 @@
 //! ```
 
 use cloud_sync_lib::{
-    CircuitBreakerConfig, CircuitBreakerLayer, CloudSyncClient, LayeredBackendExt,
-    StorageBackend, StorageCapabilities, StorageError, StorageItem,
+    CircuitBreakerConfig, CircuitBreakerLayer, CloudSyncClient, LayeredBackendExt, StorageBackend,
+    StorageCapabilities, StorageError, StorageItem,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -36,11 +36,19 @@ impl StorageBackend for OutageBackend {
     async fn upload(&self, _local: &Path, _remote: &str) -> Result<(), StorageError> {
         let count = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
         if self.service_restored.load(Ordering::SeqCst) {
-            println!("  -> [OutageBackend] Attempt #{}: Service restored! Request processed.", count);
+            println!(
+                "  -> [OutageBackend] Attempt #{}: Service restored! Request processed.",
+                count
+            );
             Ok(())
         } else {
-            println!("  -> [OutageBackend] Attempt #{}: 503 Service Unavailable / Timeout", count);
-            Err(StorageError::ConnectionFailed("503 Service Unavailable".into()))
+            println!(
+                "  -> [OutageBackend] Attempt #{}: 503 Service Unavailable / Timeout",
+                count
+            );
+            Err(StorageError::ConnectionFailed(
+                "503 Service Unavailable".into(),
+            ))
         }
     }
 
@@ -73,7 +81,9 @@ async fn main() -> Result<(), StorageError> {
         probe_success_threshold: 1,
     };
 
-    let protected_backend = outage_backend.clone().with_layer(CircuitBreakerLayer::new(cb_config));
+    let protected_backend = outage_backend
+        .clone()
+        .with_layer(CircuitBreakerLayer::new(cb_config));
     let client = CloudSyncClient::new(protected_backend);
 
     let dummy_file = Path::new("invoice.pdf");
@@ -89,12 +99,17 @@ async fn main() -> Result<(), StorageError> {
     println!("\nPhase 2: Circuit breaker is now OPEN; attempting immediate 4th call:");
     let fast_fail_err = client.upload(dummy_file, "invoice.pdf").await.unwrap_err();
     println!("Fast-fail response: {}", fast_fail_err);
-    println!("Total requests dispatched to backend: {} (Notice call #4 was intercepted locally!)", outage_backend.attempts.load(Ordering::SeqCst));
+    println!(
+        "Total requests dispatched to backend: {} (Notice call #4 was intercepted locally!)",
+        outage_backend.attempts.load(Ordering::SeqCst)
+    );
 
     // 4. Simulate outage recovery after recovery timeout
     println!("\nPhase 3: Waiting 250ms for circuit recovery window...");
     tokio::time::sleep(Duration::from_millis(250)).await;
-    outage_backend.service_restored.store(true, Ordering::SeqCst);
+    outage_backend
+        .service_restored
+        .store(true, Ordering::SeqCst);
     println!("Simulated cloud service status: RESTORED.");
 
     // 5. Next call acts as a probe in HalfOpen state, succeeds, and resets circuit to Closed
@@ -105,4 +120,3 @@ async fn main() -> Result<(), StorageError> {
     println!("\n=== Circuit Breaker Resilience Example finished cleanly! ===");
     Ok(())
 }
-

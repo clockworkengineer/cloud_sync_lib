@@ -101,7 +101,10 @@ impl CircuitBreakerBackend {
                     guard.consecutive_successes = 0;
                     Ok(())
                 } else {
-                    let remaining = self.config.recovery_timeout.saturating_sub(opened_at.elapsed());
+                    let remaining = self
+                        .config
+                        .recovery_timeout
+                        .saturating_sub(opened_at.elapsed());
                     Err(StorageError::ConnectionFailed(format!(
                         "Circuit breaker open for provider '{}'; fast-failing for another {:.1?}",
                         self.inner.name(),
@@ -117,25 +120,23 @@ impl CircuitBreakerBackend {
     fn after_call<T>(&self, result: &Result<T, StorageError>) {
         let mut guard = self.internal.lock().unwrap();
         match result {
-            Ok(_) => {
-                match guard.state {
-                    State::HalfOpen => {
-                        guard.consecutive_successes += 1;
-                        if guard.consecutive_successes >= self.config.probe_success_threshold {
-                            info!(
-                                "[{}] Circuit breaker recovered: HalfOpen -> Closed",
-                                self.inner.name()
-                            );
-                            guard.state = State::Closed;
-                            guard.consecutive_failures = 0;
-                        }
-                    }
-                    State::Closed => {
+            Ok(_) => match guard.state {
+                State::HalfOpen => {
+                    guard.consecutive_successes += 1;
+                    if guard.consecutive_successes >= self.config.probe_success_threshold {
+                        info!(
+                            "[{}] Circuit breaker recovered: HalfOpen -> Closed",
+                            self.inner.name()
+                        );
+                        guard.state = State::Closed;
                         guard.consecutive_failures = 0;
                     }
-                    State::Open(_) => {}
                 }
-            }
+                State::Closed => {
+                    guard.consecutive_failures = 0;
+                }
+                State::Open(_) => {}
+            },
             Err(err) => {
                 if err.is_transient() {
                     guard.consecutive_failures += 1;
@@ -187,11 +188,13 @@ impl StorageBackend for CircuitBreakerBackend {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        self.execute(|| self.inner.upload(local_path, remote_path)).await
+        self.execute(|| self.inner.upload(local_path, remote_path))
+            .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        self.execute(|| self.inner.download(remote_path, local_path)).await
+        self.execute(|| self.inner.download(remote_path, local_path))
+            .await
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
@@ -220,7 +223,11 @@ impl StorageBackend for CircuitBreakerBackend {
         remote_path: &str,
         chunk_size: usize,
     ) -> Result<Box<dyn ResumableUploadSession>, StorageError> {
-        self.execute(|| self.inner.start_resumable_upload(local_path, remote_path, chunk_size)).await
+        self.execute(|| {
+            self.inner
+                .start_resumable_upload(local_path, remote_path, chunk_size)
+        })
+        .await
     }
 
     async fn get_latest_cursor(&self) -> Result<Option<String>, StorageError> {

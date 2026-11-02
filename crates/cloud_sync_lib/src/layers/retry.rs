@@ -84,8 +84,11 @@ impl RetryBackend {
                         None => {
                             let max_delay_ms = self.config.max_delay.as_millis() as u64;
                             let base_delay_ms = self.config.base_delay.as_millis() as u64;
-                            let exp_factor = 1u64.checked_shl(attempts.saturating_sub(1)).unwrap_or(u64::MAX);
-                            let ceiling = base_delay_ms.saturating_mul(exp_factor).min(max_delay_ms);
+                            let exp_factor = 1u64
+                                .checked_shl(attempts.saturating_sub(1))
+                                .unwrap_or(u64::MAX);
+                            let ceiling =
+                                base_delay_ms.saturating_mul(exp_factor).min(max_delay_ms);
                             let jittered_ms = if ceiling > 0 {
                                 rand::random::<u64>() % (ceiling + 1)
                             } else {

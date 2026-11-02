@@ -246,7 +246,8 @@ mod tests {
         let sim_root = dir.path().join("sim_storage");
         tokio::fs::create_dir_all(&sim_root).await.unwrap();
 
-        let local_sim: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(sim_root, "local_sim".to_string()));
+        let local_sim: Arc<dyn StorageBackend> =
+            Arc::new(LocalSimulation::new(sim_root, "local_sim".to_string()));
         let collector = MetricsCollector::new();
         let layer = MetricsLayer::new(collector.clone());
         let wrapped = layer.layer(local_sim);
@@ -260,23 +261,38 @@ mod tests {
         let payload = b"Hello telemetry tracking!";
         tokio::fs::write(&file_path, payload).await.unwrap();
 
-        wrapped.upload(&file_path, "telemetry/file.txt").await.expect("upload should succeed");
+        wrapped
+            .upload(&file_path, "telemetry/file.txt")
+            .await
+            .expect("upload should succeed");
         assert_eq!(collector.total_upload_bytes(), payload.len() as u64);
         assert_eq!(collector.metrics().upload_count.load(Ordering::Relaxed), 1);
 
         // List
-        let items = wrapped.list("telemetry").await.expect("list should succeed");
+        let items = wrapped
+            .list("telemetry")
+            .await
+            .expect("list should succeed");
         assert_eq!(items.len(), 1);
         assert_eq!(collector.metrics().list_count.load(Ordering::Relaxed), 1);
 
         // Download
         let dl_path = dir.path().join("downloaded.txt");
-        wrapped.download("telemetry/file.txt", &dl_path).await.expect("download should succeed");
+        wrapped
+            .download("telemetry/file.txt", &dl_path)
+            .await
+            .expect("download should succeed");
         assert_eq!(collector.total_download_bytes(), payload.len() as u64);
-        assert_eq!(collector.metrics().download_count.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            collector.metrics().download_count.load(Ordering::Relaxed),
+            1
+        );
 
         // Delete
-        wrapped.delete("telemetry/file.txt").await.expect("delete should succeed");
+        wrapped
+            .delete("telemetry/file.txt")
+            .await
+            .expect("delete should succeed");
         assert_eq!(collector.metrics().delete_count.load(Ordering::Relaxed), 1);
 
         // Error tracking on missing download

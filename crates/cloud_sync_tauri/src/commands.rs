@@ -174,9 +174,7 @@ pub async fn resume(
 }
 
 #[tauri::command]
-pub async fn stop(
-    state: tauri::State<'_, SharedDaemonState>,
-) -> Result<serde_json::Value, String> {
+pub async fn stop(state: tauri::State<'_, SharedDaemonState>) -> Result<serde_json::Value, String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         use cloud_sync_ui::client::DaemonClientPort;
@@ -228,8 +226,13 @@ pub async fn start() -> Result<serde_json::Value, String> {
             const CREATE_NO_WINDOW: u32 = 0x08000000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
-        let _ = cmd.spawn().map_err(|e| format!("Failed to spawn daemon process: {}", e))?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(cloud_sync_ui::DAEMON_SPAWN_DELAY_MS)).await;
+        let _ = cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn daemon process: {}", e))?;
+        tokio::time::sleep(tokio::time::Duration::from_millis(
+            cloud_sync_ui::DAEMON_SPAWN_DELAY_MS,
+        ))
+        .await;
         return Ok(serde_json::json!({ "status": "started", "daemon_running": true }));
     }
 
@@ -535,7 +538,9 @@ mod tests {
     async fn test_offline_log_fallback() {
         let dir = tempdir().unwrap();
         let log_file = dir.path().join("test_daemon.log");
-        tokio::fs::write(&log_file, "2026-11-02 [INFO] Test log line").await.unwrap();
+        tokio::fs::write(&log_file, "2026-11-02 [INFO] Test log line")
+            .await
+            .unwrap();
 
         let content = tokio::fs::read_to_string(&log_file).await.unwrap();
         assert!(content.contains("[INFO] Test log line"));
@@ -554,7 +559,9 @@ mod tests {
         tokio::fs::create_dir(&hidden).await.unwrap();
 
         // Also write a file (should not appear in subdirectories list)
-        tokio::fs::write(base_path.join("file.txt"), b"data").await.unwrap();
+        tokio::fs::write(base_path.join("file.txt"), b"data")
+            .await
+            .unwrap();
 
         let listing = list_directory(Some(base_path.to_str().unwrap().to_string()))
             .await
@@ -565,14 +572,18 @@ mod tests {
 
         // Test create_directory
         let new_sub = base_path.join("gamma/delta");
-        let res = create_directory(new_sub.to_str().unwrap().to_string()).await.unwrap();
+        let res = create_directory(new_sub.to_str().unwrap().to_string())
+            .await
+            .unwrap();
         assert_eq!(res["status"], "created");
         assert!(new_sub.is_dir());
     }
 
     #[tokio::test]
     async fn test_list_directory_default_home() {
-        let listing = list_directory(None).await.expect("listing home should succeed");
+        let listing = list_directory(None)
+            .await
+            .expect("listing home should succeed");
         assert!(!listing.current.is_empty());
         assert!(!listing.presets.is_empty());
     }

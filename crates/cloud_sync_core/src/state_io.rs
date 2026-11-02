@@ -1,15 +1,15 @@
 //! Transactional disk persistence and recovery for SyncState catalog (SRP).
 
 #[cfg(feature = "std")]
+use crate::state::{compute_checksum, SyncState};
+#[cfg(feature = "std")]
+use crate::traits::StorageError;
+#[cfg(feature = "std")]
 use alloc::boxed::Box;
 #[cfg(feature = "std")]
 use alloc::format;
 #[cfg(feature = "std")]
 use alloc::string::ToString;
-#[cfg(feature = "std")]
-use crate::state::{compute_checksum, SyncState};
-#[cfg(feature = "std")]
-use crate::traits::StorageError;
 #[cfg(feature = "std")]
 use std::path::Path;
 
@@ -248,8 +248,10 @@ mod tests {
     fn make_test_file_state(size: u64, hash: Option<&str>) -> FileState {
         FileState {
             size,
-            local_modified: std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1700000000),
-            remote_modified: std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1700000000),
+            local_modified: std::time::SystemTime::UNIX_EPOCH
+                + std::time::Duration::from_secs(1700000000),
+            remote_modified: std::time::SystemTime::UNIX_EPOCH
+                + std::time::Duration::from_secs(1700000000),
             is_dir: Some(false),
             checksum: hash.map(|h| h.into()),
             permissions: Some(0o644),
@@ -269,13 +271,19 @@ mod tests {
         );
 
         // 1. Initial save
-        store.save(&state_path, &state).await.expect("save should succeed");
+        store
+            .save(&state_path, &state)
+            .await
+            .expect("save should succeed");
         assert!(state_path.exists());
 
         // 2. Load
         let loaded = store.load(&state_path).await.expect("load should succeed");
         assert_eq!(loaded.files.len(), 1);
-        let meta = loaded.files.get("docs/report.pdf").expect("file should be present");
+        let meta = loaded
+            .files
+            .get("docs/report.pdf")
+            .expect("file should be present");
         assert_eq!(meta.size, 1024);
         assert_eq!(meta.checksum.as_deref(), Some("sha256:abc123"));
     }
@@ -287,19 +295,17 @@ mod tests {
         let store = PostcardStateStore::new();
 
         let mut state_v1 = SyncState::default();
-        state_v1.files.insert(
-            "v1.txt".into(),
-            make_test_file_state(10, None),
-        );
+        state_v1
+            .files
+            .insert("v1.txt".into(), make_test_file_state(10, None));
 
         // Save v1 -> creates state_path
         store.save(&state_path, &state_v1).await.unwrap();
 
         let mut state_v2 = SyncState::default();
-        state_v2.files.insert(
-            "v2.txt".into(),
-            make_test_file_state(20, None),
-        );
+        state_v2
+            .files
+            .insert("v2.txt".into(), make_test_file_state(20, None));
 
         // Save v2 -> copies state_path to .bak and writes new state_path
         store.save(&state_path, &state_v2).await.unwrap();
@@ -307,10 +313,15 @@ mod tests {
         assert!(bak_path.exists());
 
         // Corrupt main state file
-        tokio::fs::write(&state_path, b"CORRUPTED_GARBAGE_DATA_12345").await.unwrap();
+        tokio::fs::write(&state_path, b"CORRUPTED_GARBAGE_DATA_12345")
+            .await
+            .unwrap();
 
         // Load should detect corruption and gracefully recover from .bak
-        let recovered = store.load(&state_path).await.expect("should recover from .bak");
+        let recovered = store
+            .load(&state_path)
+            .await
+            .expect("should recover from .bak");
         assert!(recovered.files.contains_key("v1.txt"));
     }
 
@@ -320,7 +331,10 @@ mod tests {
         let non_existent = dir.path().join("does_not_exist.bin");
         let store = PostcardStateStore::new();
 
-        let loaded = store.load(&non_existent).await.expect("missing file should yield default");
+        let loaded = store
+            .load(&non_existent)
+            .await
+            .expect("missing file should yield default");
         assert!(loaded.files.is_empty());
     }
 
@@ -337,7 +351,10 @@ mod tests {
         );
 
         // Save
-        store.save(&state_path, &state).await.expect("save should succeed");
+        store
+            .save(&state_path, &state)
+            .await
+            .expect("save should succeed");
         assert!(state_path.exists());
 
         // Load
@@ -348,9 +365,14 @@ mod tests {
         // Corrupt main file and verify .bak recovery
         let bak_path = state_path.with_extension("bak");
         tokio::fs::copy(&state_path, &bak_path).await.unwrap();
-        tokio::fs::write(&state_path, b"{ invalid json ...").await.unwrap();
+        tokio::fs::write(&state_path, b"{ invalid json ...")
+            .await
+            .unwrap();
 
-        let recovered = store.load(&state_path).await.expect("should recover from json .bak");
+        let recovered = store
+            .load(&state_path)
+            .await
+            .expect("should recover from json .bak");
         assert_eq!(recovered.files.get("notes.txt").unwrap().size, 55);
     }
 

@@ -127,7 +127,9 @@ backup_interval_secs = 60
 
         tokio::fs::write(&config_path, toml_content).await.unwrap();
 
-        let cfg = load_config(config_path.to_str().unwrap()).await.expect("config should load");
+        let cfg = load_config(config_path.to_str().unwrap())
+            .await
+            .expect("config should load");
         assert_eq!(cfg.backup.source_provider, "local");
         assert_eq!(cfg.backup.destination_provider, "google_drive");
         assert_eq!(cfg.backup.backup_interval_secs, Some(60));

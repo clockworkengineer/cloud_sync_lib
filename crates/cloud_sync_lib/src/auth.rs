@@ -57,8 +57,14 @@ mod tests {
     #[tokio::test]
     async fn test_static_token_provider() {
         let provider = StaticTokenProvider::new("test_secret_token_abc");
-        assert_eq!(provider.get_access_token().await.unwrap(), "test_secret_token_abc");
-        assert_eq!(provider.force_refresh().await.unwrap(), "test_secret_token_abc");
+        assert_eq!(
+            provider.get_access_token().await.unwrap(),
+            "test_secret_token_abc"
+        );
+        assert_eq!(
+            provider.force_refresh().await.unwrap(),
+            "test_secret_token_abc"
+        );
     }
 
     #[tokio::test]
@@ -67,4 +73,3 @@ mod tests {
         assert_eq!(provider.get_access_token().await.unwrap(), "token_xyz");
     }
 }
-

@@ -427,7 +427,9 @@ mod tests {
             if cmd == "conflicts" {
                 Ok(r#"[{"path":"file.txt","reason":"ModifiedBoth"}]"#.to_string())
             } else {
-                Err(crate::client::DaemonClientError::CommandFailed("unknown".into()))
+                Err(crate::client::DaemonClientError::CommandFailed(
+                    "unknown".into(),
+                ))
             }
         }));
 
@@ -439,9 +441,14 @@ mod tests {
     async fn test_api_status_with_mock() {
         let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
             if cmd == "status" {
-                Ok("Watch Dir: /sync\nBackends: [local (ok)]\nSyncing: false\nPaused: false".to_string())
+                Ok(
+                    "Watch Dir: /sync\nBackends: [local (ok)]\nSyncing: false\nPaused: false"
+                        .to_string(),
+                )
             } else {
-                Err(crate::client::DaemonClientError::CommandFailed("unknown".into()))
+                Err(crate::client::DaemonClientError::CommandFailed(
+                    "unknown".into(),
+                ))
             }
         }));
 
@@ -451,13 +458,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_api_pause_resume_sync_with_mock() {
-        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
-            match cmd {
-                "pause" => Ok("Paused".to_string()),
-                "resume" => Ok("Resumed".to_string()),
-                "sync" => Ok("Sync initiated".to_string()),
-                _ => Err(crate::client::DaemonClientError::CommandFailed("unknown".into())),
-            }
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| match cmd {
+            "pause" => Ok("Paused".to_string()),
+            "resume" => Ok("Resumed".to_string()),
+            "sync" => Ok("Sync initiated".to_string()),
+            _ => Err(crate::client::DaemonClientError::CommandFailed(
+                "unknown".into(),
+            )),
         }));
 
         let pause_resp = api_pause(State(client.clone())).await.into_response();
@@ -473,7 +480,9 @@ mod tests {
     #[tokio::test]
     async fn test_api_disconnected_graceful_fallback() {
         let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|_| {
-            Err(crate::client::DaemonClientError::ConnectionFailed("Connection refused".into()))
+            Err(crate::client::DaemonClientError::ConnectionFailed(
+                "Connection refused".into(),
+            ))
         }));
 
         let status_resp = api_status(State(client.clone())).await.into_response();
@@ -485,12 +494,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_api_reload_and_stop() {
-        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
-            match cmd {
-                "reload" => Ok("Configuration reloaded".to_string()),
-                "stop" => Ok("Daemon stopping".to_string()),
-                _ => Err(crate::client::DaemonClientError::CommandFailed("fail".into())),
-            }
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| match cmd {
+            "reload" => Ok("Configuration reloaded".to_string()),
+            "stop" => Ok("Daemon stopping".to_string()),
+            _ => Err(crate::client::DaemonClientError::CommandFailed(
+                "fail".into(),
+            )),
         }));
 
         let reload_resp = api_reload(State(client.clone())).await.into_response();
@@ -508,21 +517,27 @@ mod tests {
             } else if cmd.starts_with("resolve_conflict ") {
                 Ok("Resolved successfully".to_string())
             } else {
-                Err(crate::client::DaemonClientError::CommandFailed("fail".into()))
+                Err(crate::client::DaemonClientError::CommandFailed(
+                    "fail".into(),
+                ))
             }
         }));
 
         let clear_payload = axum::Json(ClearRequest {
             provider: "dropbox".into(),
         });
-        let clear_resp = api_clear(State(client.clone()), clear_payload).await.into_response();
+        let clear_resp = api_clear(State(client.clone()), clear_payload)
+            .await
+            .into_response();
         assert_eq!(clear_resp.status(), axum::http::StatusCode::OK);
 
         let resolve_payload = axum::Json(ResolveConflictRequest {
             rel_path: "conflict.txt".into(),
             resolution: "use_local".into(),
         });
-        let resolve_resp = api_resolve_conflict(State(client), resolve_payload).await.into_response();
+        let resolve_resp = api_resolve_conflict(State(client), resolve_payload)
+            .await
+            .into_response();
         assert_eq!(resolve_resp.status(), axum::http::StatusCode::OK);
     }
 
@@ -534,7 +549,9 @@ mod tests {
             } else if cmd == "get_log" {
                 Ok("Status: OK\n\nLog line 1\nLog line 2".to_string())
             } else {
-                Err(crate::client::DaemonClientError::CommandFailed("fail".into()))
+                Err(crate::client::DaemonClientError::CommandFailed(
+                    "fail".into(),
+                ))
             }
         }));
 

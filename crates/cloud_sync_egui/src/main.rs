@@ -84,15 +84,17 @@ impl CloudSyncApp {
             }
         });
 
-        let app_icon_texture = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon_64.png"))
-            .ok()
-            .map(|icon| {
-                let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                    [icon.width as usize, icon.height as usize],
-                    &icon.rgba,
-                );
-                cc.egui_ctx.load_texture("app_icon", color_image, Default::default())
-            });
+        let app_icon_texture =
+            eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon_64.png"))
+                .ok()
+                .map(|icon| {
+                    let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                        [icon.width as usize, icon.height as usize],
+                        &icon.rgba,
+                    );
+                    cc.egui_ctx
+                        .load_texture("app_icon", color_image, Default::default())
+                });
 
         Self {
             client,
@@ -110,9 +112,12 @@ impl CloudSyncApp {
     async fn send_daemon_command(cmd: &str) -> Result<String, String> {
         let addr =
             std::env::var("CLOUDSYNC_DAEMON_ADDR").unwrap_or_else(|_| "127.0.0.1:8081".to_string());
-        let mut stream = TcpStream::connect(&addr)
-            .await
-            .map_err(|e| format!("Could not reach daemon at {}. (Is it running?): {}", addr, e))?;
+        let mut stream = TcpStream::connect(&addr).await.map_err(|e| {
+            format!(
+                "Could not reach daemon at {}. (Is it running?): {}",
+                addr, e
+            )
+        })?;
         stream
             .write_all(format!("{}\n", cmd).as_bytes())
             .await
@@ -147,7 +152,10 @@ impl CloudSyncApp {
     }
 
     fn start_daemon_process(&mut self, config_file: &str) {
-        self.action_feedback = Some(("Starting CloudSync background service...".to_string(), Instant::now()));
+        self.action_feedback = Some((
+            "Starting CloudSync background service...".to_string(),
+            Instant::now(),
+        ));
         let config_file = config_file.to_string();
         self.runtime.spawn(async move {
             let daemon_exe_name = if cfg!(target_os = "windows") {
@@ -296,7 +304,12 @@ impl CloudSyncApp {
         });
     }
 
-    fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context, paused: bool, daemon_online: bool) {
+    fn handle_keyboard_shortcuts(
+        &mut self,
+        ctx: &egui::Context,
+        paused: bool,
+        daemon_online: bool,
+    ) {
         // Principle 3: User Control & Freedom - Escape closes any active modal
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.show_log_modal = false;
@@ -307,7 +320,9 @@ impl CloudSyncApp {
         // Principle 7: Flexibility & Accelerators for Power Users
         if daemon_online {
             // F5 or Ctrl+R -> Immediate Sync
-            if ctx.input(|i| i.key_pressed(egui::Key::F5) || (i.modifiers.command && i.key_pressed(egui::Key::R))) {
+            if ctx.input(|i| {
+                i.key_pressed(egui::Key::F5) || (i.modifiers.command && i.key_pressed(egui::Key::R))
+            }) {
                 self.run_command_sync("sync", "Manual sync triggered via shortcut");
             }
 
@@ -330,7 +345,9 @@ impl CloudSyncApp {
         }
 
         // Ctrl+H or F1 -> Toggle Help
-        if ctx.input(|i| (i.modifiers.command && i.key_pressed(egui::Key::H)) || i.key_pressed(egui::Key::F1)) {
+        if ctx.input(|i| {
+            (i.modifiers.command && i.key_pressed(egui::Key::H)) || i.key_pressed(egui::Key::F1)
+        }) {
             self.show_help_modal = !self.show_help_modal;
         }
     }

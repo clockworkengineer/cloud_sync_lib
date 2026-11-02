@@ -155,7 +155,8 @@ mod tests {
         let sim_root = dir.path().join("sim_storage");
         tokio::fs::create_dir_all(&sim_root).await.unwrap();
 
-        let local_sim: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(sim_root, "local_sim".to_string()));
+        let local_sim: Arc<dyn StorageBackend> =
+            Arc::new(LocalSimulation::new(sim_root, "local_sim".to_string()));
         let upload_limiter = TokenBucket::new(100_000);
         let download_limiter = TokenBucket::new(100_000);
 
@@ -165,17 +166,34 @@ mod tests {
         assert_eq!(wrapped.name(), "local_sim");
 
         let file_path = dir.path().join("rate_test.txt");
-        tokio::fs::write(&file_path, b"rate limited data").await.unwrap();
+        tokio::fs::write(&file_path, b"rate limited data")
+            .await
+            .unwrap();
 
-        wrapped.upload(&file_path, "ratelimit/file.txt").await.expect("upload should succeed");
-        let items = wrapped.list("ratelimit").await.expect("list should succeed");
+        wrapped
+            .upload(&file_path, "ratelimit/file.txt")
+            .await
+            .expect("upload should succeed");
+        let items = wrapped
+            .list("ratelimit")
+            .await
+            .expect("list should succeed");
         assert_eq!(items.len(), 1);
 
         let dl_path = dir.path().join("downloaded.txt");
-        wrapped.download("ratelimit/file.txt", &dl_path).await.expect("download should succeed");
-        assert_eq!(tokio::fs::read(&dl_path).await.unwrap(), b"rate limited data");
+        wrapped
+            .download("ratelimit/file.txt", &dl_path)
+            .await
+            .expect("download should succeed");
+        assert_eq!(
+            tokio::fs::read(&dl_path).await.unwrap(),
+            b"rate limited data"
+        );
 
-        wrapped.delete("ratelimit/file.txt").await.expect("delete should succeed");
+        wrapped
+            .delete("ratelimit/file.txt")
+            .await
+            .expect("delete should succeed");
         assert!(wrapped.list("ratelimit").await.unwrap().is_empty());
     }
 }

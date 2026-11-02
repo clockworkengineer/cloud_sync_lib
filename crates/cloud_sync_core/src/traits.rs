@@ -82,7 +82,10 @@ impl StorageError {
     pub fn is_transient(&self) -> bool {
         match self {
             Self::RateLimit { .. } | Self::ConnectionFailed(_) => true,
-            Self::Provider { status: Some(status), .. } => *status == 429 || *status >= 500,
+            Self::Provider {
+                status: Some(status),
+                ..
+            } => *status == 429 || *status >= 500,
             #[cfg(feature = "std")]
             Self::Reqwest(e) => e.is_connect() || e.is_timeout() || e.is_request(),
             _ => false,
@@ -91,7 +94,10 @@ impl StorageError {
 
     /// Returns true if this error represents an authentication failure or expired token.
     pub fn is_auth(&self) -> bool {
-        matches!(self, Self::Authentication(_) | Self::AuthenticationExpired(_))
+        matches!(
+            self,
+            Self::Authentication(_) | Self::AuthenticationExpired(_)
+        )
     }
 
     /// Returns true if this error represents an authentication failure or expired token.

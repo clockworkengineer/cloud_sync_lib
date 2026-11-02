@@ -283,7 +283,10 @@ mod tests {
         // Valid paths with double dots in filename must be allowed
         assert!(NormalizedPath::new("backup..v1.tar").is_ok());
         assert!(NormalizedPath::new("documents/report..final.pdf").is_ok());
-        assert_eq!(NormalizedPath::new("docs/my..file.txt").unwrap().as_str(), "docs/my..file.txt");
+        assert_eq!(
+            NormalizedPath::new("docs/my..file.txt").unwrap().as_str(),
+            "docs/my..file.txt"
+        );
 
         // Traversal sequences must be rejected
         assert!(NormalizedPath::new("../secret.txt").is_err());

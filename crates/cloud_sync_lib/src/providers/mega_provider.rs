@@ -87,10 +87,7 @@ impl MegaProvider {
         destination_folder: Option<&str>,
         create_folders: bool,
     ) -> Result<mega::Node, StorageError> {
-        let nodes = client
-            .fetch_own_nodes()
-            .await
-            .map_err(map_mega_error)?;
+        let nodes = client.fetch_own_nodes().await.map_err(map_mega_error)?;
 
         // Find the root node
         let mut current_node = nodes
@@ -149,10 +146,7 @@ impl MegaProvider {
 
                         // Re-fetch nodes to get the new folder's hash/node
                         let updated_nodes =
-                            client
-                                .fetch_own_nodes()
-                                .await
-                                .map_err(map_mega_error)?;
+                            client.fetch_own_nodes().await.map_err(map_mega_error)?;
 
                         current_node = updated_nodes
                             .iter()
@@ -238,10 +232,7 @@ impl StorageBackend for MegaProvider {
                     Self::resolve_node(&client, parent_path, dest_folder.as_deref(), true).await?;
 
                 // If file already exists, delete it first to prevent duplicates
-                let nodes = client
-                    .fetch_own_nodes()
-                    .await
-                    .map_err(map_mega_error)?;
+                let nodes = client.fetch_own_nodes().await.map_err(map_mega_error)?;
 
                 let existing = parent_node
                     .children()
@@ -250,10 +241,7 @@ impl StorageBackend for MegaProvider {
                     .find(|n| n.name() == file_name);
 
                 if let Some(node) = existing {
-                    client
-                        .delete_node(node)
-                        .await
-                        .map_err(map_mega_error)?;
+                    client.delete_node(node).await.map_err(map_mega_error)?;
                 }
 
                 // Upload file (wrapping tokio::fs::File into compat futures_io::AsyncRead)
@@ -369,10 +357,7 @@ impl StorageBackend for MegaProvider {
 
                 let node = Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false)
                     .await?;
-                client
-                    .delete_node(&node)
-                    .await
-                    .map_err(map_mega_error)?;
+                client.delete_node(&node).await.map_err(map_mega_error)?;
                 Ok(())
             })
         })
@@ -418,10 +403,7 @@ impl StorageBackend for MegaProvider {
                     Self::resolve_node(&client, &remote_path, dest_folder.as_deref(), false)
                         .await?;
 
-                let nodes = client
-                    .fetch_own_nodes()
-                    .await
-                    .map_err(map_mega_error)?;
+                let nodes = client.fetch_own_nodes().await.map_err(map_mega_error)?;
 
                 let items = folder_node
                     .children()

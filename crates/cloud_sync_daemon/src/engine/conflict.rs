@@ -440,7 +440,10 @@ mod tests {
         assert_eq!(resolver.unwrap().name(), "keep-newer");
 
         // Custom extension registration without modifying enum
-        registry.register("custom-always-upload", Box::new(|| Box::new(KeepLocalStrategy)));
+        registry.register(
+            "custom-always-upload",
+            Box::new(|| Box::new(KeepLocalStrategy)),
+        );
         let custom = registry.create_resolver("custom-always-upload");
         assert!(custom.is_some());
         assert_eq!(
