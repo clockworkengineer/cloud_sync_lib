@@ -1,0 +1,52 @@
+[package]
+name = "cloud_sync_photos"
+version.workspace = true
+edition.workspace = true
+description = "Google Photos equivalence engine for Cloud Sync, supporting deduplication, EXIF extraction, chronological organization, and multi-cloud sync"
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cloud_sync_core = { path = "../cloud_sync_core", version = "0.3.0" }
+cloud_sync_std = { path = "../cloud_sync_std", version = "0.3.0" }
+cloud_sync_lib = { path = "../cloud_sync_lib", version = "0.3.0", default-features = false }
+tokio = { workspace = true, features = ["full"] }
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+ring = "0.17"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+toml = { workspace = true }
+clap = { version = "4.4", features = ["derive"] }
+tempfile = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = ["google_drive", "onedrive", "dropbox", "s3", "webdav", "box", "mega"]
+google_drive = ["cloud_sync_lib/google_drive"]
+onedrive = ["cloud_sync_lib/onedrive"]
+dropbox = ["cloud_sync_lib/dropbox"]
+s3 = ["cloud_sync_lib/s3"]
+webdav = ["cloud_sync_lib/webdav"]
+nextcloud = ["cloud_sync_lib/nextcloud"]
+box = ["cloud_sync_lib/box"]
+mega = ["cloud_sync_lib/mega"]
+azure_blob = ["cloud_sync_lib/azure_blob"]
+gcs = ["cloud_sync_lib/gcs"]
+b2 = ["cloud_sync_lib/b2"]
+pcloud = ["cloud_sync_lib/pcloud"]
+ipfs = ["cloud_sync_lib/ipfs"]
+all_providers = [
+    "google_drive", "onedrive", "dropbox", "s3", "webdav",
+    "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"
+]

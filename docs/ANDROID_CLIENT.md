@@ -169,3 +169,32 @@ To filter logs from the Cloud Sync Android client:
 ```bash
 adb logcat -s "CloudSync:*" "RustStdoutStderr:*" "Tauri:*"
 ```
+
+---
+
+## 6. Google Photos Equivalence on Android
+
+Cloud Sync includes an integrated Google Photos equivalence engine (`cloud_sync_photos` & `crates/cloud_sync_tauri/src/photos.rs`) enabling automated, private photo backup and management from Android to any supported cloud storage backend:
+
+### Key Features
+1. **Camera Photos Auto-Discovery**:
+   - Watches `/storage/emulated/0/DCIM/Camera` (or custom folders) for new pictures and videos.
+2. **Any Cloud Destination**:
+   - Back up to Google Drive, Microsoft OneDrive, Dropbox, Amazon S3, MEGA, Box, WebDAV, or Nextcloud without vendor lock-in.
+3. **Pure-Rust Metadata Extraction**:
+   - Parses EXIF camera make/model, lens, ISO, focal length, date taken, and GPS coordinates without C dependencies.
+4. **SHA-256 Content Deduplication**:
+   - Checks file hashes against the catalog before uploading, guaranteeing identical photos are never re-uploaded or duplicated in the cloud.
+5. **Chronological Cloud Organization**:
+   - Automatically sorts photos into cloud folder hierarchies such as `YYYY/MM/filename.ext` or `YYYY/MM/DD/filename.ext`.
+6. **Timeline & Virtual Albums**:
+   - Google Photos-style timeline grouped by month and year.
+   - Virtual albums and favorites (`⭐`) managed through `.photos_catalog.json` without copying or duplicating cloud files.
+7. **Tauri Mobile IPC Commands**:
+   - `photos_get_config`, `photos_save_config`: Configure Android DCIM paths and backend settings.
+   - `photos_sync`: Execute full photo synchronization and cloud upload pass.
+   - `photos_get_timeline`: Retrieve chronological photo groups for UI display.
+   - `photos_get_albums`, `photos_create_album`, `photos_add_to_album`: Virtual album management.
+   - `photos_toggle_favorite`: Mark favorite photos.
+   - `photos_search`: Search by camera model, date range, location, and keywords.
+   - `photos_get_stats`: Library overview (counts, storage usage, date ranges).

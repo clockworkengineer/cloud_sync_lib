@@ -5,6 +5,7 @@
 //! (in-process `cloud_sync_daemon` synchronization engine with direct Tauri IPC).
 
 pub mod commands;
+pub mod photos;
 
 use cloud_sync_daemon::{build_backends, config, engine::conflict::ConflictManager, DaemonState};
 pub use commands::SharedDaemonState;
@@ -155,6 +156,7 @@ pub fn run() {
         });
     }
 
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -237,7 +239,17 @@ pub fn run() {
             commands::save_config,
             commands::list_directory,
             commands::create_directory,
-            commands::logs
+            commands::logs,
+            photos::photos_get_config,
+            photos::photos_save_config,
+            photos::photos_sync,
+            photos::photos_get_timeline,
+            photos::photos_get_albums,
+            photos::photos_create_album,
+            photos::photos_add_to_album,
+            photos::photos_toggle_favorite,
+            photos::photos_search,
+            photos::photos_get_stats
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

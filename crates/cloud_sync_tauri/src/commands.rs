@@ -8,10 +8,11 @@ pub type SharedDaemonState = Arc<Mutex<cloud_sync_daemon::DaemonState>>;
 
 #[tauri::command]
 pub async fn status(
-    _state: tauri::State<'_, SharedDaemonState>,
+    state: tauri::State<'_, SharedDaemonState>,
 ) -> Result<serde_json::Value, String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let _ = &state;
         use cloud_sync_ui::client::DaemonClientPort;
         let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
         if let Ok(raw) = client.send_command("status").await {
@@ -487,9 +488,10 @@ pub async fn create_directory(path: String) -> Result<serde_json::Value, String>
 }
 
 #[tauri::command]
-pub async fn logs(_state: tauri::State<'_, SharedDaemonState>) -> Result<String, String> {
+pub async fn logs(state: tauri::State<'_, SharedDaemonState>) -> Result<String, String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let _ = &state;
         use cloud_sync_ui::client::DaemonClientPort;
         let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
         if let Ok(resp) = client.send_command("get_log").await {

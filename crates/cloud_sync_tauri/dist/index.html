@@ -1080,6 +1080,10 @@
             <div class="logo-text">CloudSync Control Center</div>
         </div>
         <div style="display: flex; align-items: center; gap: 0.85rem;">
+            <button class="header-btn" id="btn-open-photos" onclick="openPhotosModal()" style="background: rgba(20, 184, 166, 0.18); border: 1px solid rgba(20, 184, 166, 0.4); color: #5eead4;" title="Google Photos Cloud Hub">
+                <span style="font-size: 1rem;">📷</span>
+                <span>Photos</span>
+            </button>
             <button class="header-btn" id="btn-open-help" onclick="openHelpModal()" style="background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(99, 102, 241, 0.4); color: #c7d2fe;" title="Help & Shortcuts (F1)">
                 <span>❓</span>
                 <span>Help</span>
@@ -1483,6 +1487,191 @@
             <div class="modal-footer" style="padding: 0.75rem 1.75rem; display: flex; justify-content: space-between; align-items: center;">
                 <span id="log-fetch-status" style="font-size: 0.8rem; color: var(--text-secondary);">Ready</span>
                 <button type="button" class="btn btn-secondary" onclick="closeLogModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Google Photos Equivalence Hub Modal -->
+    <div class="modal-backdrop" id="photos-modal" onclick="handleModalBackdropClick(event, 'photos-modal')">
+        <div class="modal-window" style="max-width: 1050px; height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="border-bottom: 1px solid var(--card-border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span style="font-size: 1.5rem;">📷</span>
+                    <div>
+                        <div style="font-weight: 700; font-size: 1.15rem; color: #fff;">Google Photos Cloud Hub</div>
+                        <div style="font-size: 0.78rem; color: var(--text-secondary);">Chronological Timeline & Multi-Cloud Backup for Android & Desktop</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                    <button type="button" class="btn btn-sync" id="btn-photos-sync-now" onclick="triggerPhotosSync()" style="padding: 0.45rem 1rem; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem;">
+                        <span id="photos-sync-icon">🔄</span>
+                        <span id="photos-sync-label">Backup Camera Photos</span>
+                    </button>
+                    <button type="button" class="modal-close-btn" onclick="closePhotosModal()" title="Close">✕</button>
+                </div>
+            </div>
+
+            <!-- Photos Navigation Bar -->
+            <div style="padding: 0.75rem 1.5rem; background: rgba(0,0,0,0.25); border-bottom: 1px solid var(--card-border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+                <div class="tab-bar" style="margin-bottom: 0;">
+                    <button class="tab-btn active" id="tab-btn-photos-timeline" onclick="switchPhotosTab('timeline')">📅 Timeline</button>
+                    <button class="tab-btn" id="tab-btn-photos-albums" onclick="switchPhotosTab('albums')">📁 Albums (<span id="photos-album-count">0</span>)</button>
+                    <button class="tab-btn" id="tab-btn-photos-search" onclick="switchPhotosTab('search')">🔍 Search & Filter</button>
+                    <button class="tab-btn" id="tab-btn-photos-config" onclick="switchPhotosTab('config')">⚙️ Cloud Backup Settings</button>
+                </div>
+                
+                <!-- Quick Destination Cloud Provider Indicator -->
+                <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.825rem; color: var(--text-secondary); background: rgba(255,255,255,0.04); padding: 0.35rem 0.75rem; border-radius: 20px; border: 1px solid var(--card-border);">
+                    <span>☁ Destination:</span>
+                    <strong id="photos-active-provider" style="color: #67e8f9;">Google Drive</strong>
+                    <span style="color: var(--card-border);">|</span>
+                    <span id="photos-active-folder" style="color: var(--text-primary); font-family: monospace;">GooglePhotos_Backup</span>
+                </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div style="padding: 0.6rem 1.5rem; background: rgba(18, 16, 32, 0.4); border-bottom: 1px solid var(--card-border); display: flex; gap: 1.5rem; align-items: center; font-size: 0.82rem; color: var(--text-secondary); overflow-x: auto;">
+                <div><span style="color: var(--text-primary); font-weight: 600;" id="stat-total-photos">0</span> Photos</div>
+                <div><span style="color: var(--text-primary); font-weight: 600;" id="stat-total-videos">0</span> Videos</div>
+                <div><span style="color: #f43f5e; font-weight: 600;" id="stat-total-favorites">0</span> Favorites ⭐</div>
+                <div><span style="color: var(--accent-teal); font-weight: 600;" id="stat-total-storage">0 MB</span> Cloud Space</div>
+                <div style="margin-left: auto; color: #94a3b8;" id="stat-last-sync">Last Synced: Never</div>
+            </div>
+
+            <!-- Main Scrollable Body -->
+            <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem;">
+                <!-- Tab 1: Timeline View -->
+                <div id="photos-tab-timeline">
+                    <div id="photos-timeline-empty" style="text-align: center; padding: 3rem 1rem; color: var(--text-secondary);">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">📸</div>
+                        <h3 style="color: #fff; margin-bottom: 0.5rem;">No Photos Synced Yet</h3>
+                        <p style="max-width: 480px; margin: 0 auto 1.5rem; font-size: 0.9rem;">
+                            Connect your Android camera photos folder (e.g. <code>/storage/emulated/0/DCIM/Camera</code>) or desktop Pictures folder, and back them up chronologically to any supported cloud backend.
+                        </p>
+                        <button class="btn btn-sync" onclick="triggerPhotosSync()" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.2rem;">
+                            🔄 Start First Photo Backup
+                        </button>
+                    </div>
+                    <div id="photos-timeline-container" style="display: none;">
+                        <!-- Chronological Month/Year Groups rendered dynamically -->
+                    </div>
+                </div>
+
+                <!-- Tab 2: Albums View -->
+                <div id="photos-tab-albums" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="color: #fff; margin: 0; font-size: 1.1rem;">Virtual Photo Albums</h3>
+                        <button class="btn btn-mini" onclick="promptCreateAlbum()" style="background: var(--gradient-primary); padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer;">
+                            ➕ Create Album
+                        </button>
+                    </div>
+                    <div id="photos-albums-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem;">
+                        <!-- Albums populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Tab 3: Search & Filter -->
+                <div id="photos-tab-search" style="display: none;">
+                    <div class="card" style="margin-bottom: 1.25rem; background: rgba(0,0,0,0.2);">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
+                            <div>
+                                <label class="form-label">Search Query (Name, Make, Tag)</label>
+                                <input type="text" id="photos-search-query" class="form-input" placeholder="e.g. Pixel, sunset, IMG_001">
+                            </div>
+                            <div>
+                                <label class="form-label">Camera Model</label>
+                                <input type="text" id="photos-search-camera" class="form-input" placeholder="e.g. Pixel 8, Galaxy S24, iPhone">
+                            </div>
+                            <div>
+                                <label class="form-label">Date Range Start</label>
+                                <input type="date" id="photos-search-start" class="form-input">
+                            </div>
+                            <div>
+                                <label class="form-label">Date Range End</label>
+                                <input type="date" id="photos-search-end" class="form-input">
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem; color: #f43f5e;">
+                                <input type="checkbox" id="photos-search-fav-only"> ⭐ Favorites Only
+                            </label>
+                            <button class="btn btn-mini" onclick="executePhotosSearch()" style="background: var(--gradient-primary); padding: 0.4rem 1rem;">🔍 Search Photos</button>
+                        </div>
+                    </div>
+                    <div id="photos-search-results" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem;">
+                        <!-- Search results -->
+                    </div>
+                </div>
+
+                <!-- Tab 4: Cloud Backup Configuration -->
+                <div id="photos-tab-config" style="display: none;">
+                    <div class="card" style="background: rgba(0,0,0,0.2); max-width: 680px; margin: 0 auto;">
+                        <h3 style="color: #fff; margin-bottom: 1rem; font-size: 1.05rem;">⚙️ Photos Cloud Backup Configuration</h3>
+                        
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label class="form-label">Local Photos Source Folder</label>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <input type="text" id="photos-cfg-source" class="form-input mono" style="flex: 1;" placeholder="/storage/emulated/0/DCIM/Camera">
+                                <button type="button" class="btn-mini" onclick="setAndroidDCIMPreset()" style="cursor: pointer; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #c7d2fe; white-space: nowrap;">📱 Android DCIM</button>
+                            </div>
+                            <div class="form-help">Standard Android camera photos are stored in <code>/storage/emulated/0/DCIM/Camera</code>.</div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label class="form-label">Destination Cloud Provider</label>
+                            <select id="photos-cfg-provider" class="form-select">
+                                <option value="google_drive">Google Drive</option>
+                                <option value="onedrive">Microsoft OneDrive</option>
+                                <option value="dropbox">Dropbox</option>
+                                <option value="s3">Amazon S3 / S3-Compatible</option>
+                                <option value="mega">MEGA Cloud</option>
+                                <option value="box">Box</option>
+                                <option value="webdav">WebDAV / Nextcloud</option>
+                                <option value="azure_blob">Azure Blob Storage</option>
+                                <option value="local">Local Simulation Folder</option>
+                            </select>
+                            <div class="form-help">Any backend configured in CloudSync can be your Google Photos cloud destination.</div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 1rem;">
+                            <label class="form-label">Remote Destination Folder</label>
+                            <input type="text" id="photos-cfg-dest-folder" class="form-input mono" value="GooglePhotos_Backup">
+                            <div class="form-help">Root directory created in your cloud storage for organized photos.</div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 1.5rem;">
+                            <label class="form-label">Chronological Organization Strategy</label>
+                            <select id="photos-cfg-strategy" class="form-select">
+                                <option value="YearMonth">Year/Month (e.g. 2024/11/IMG_001.jpg)</option>
+                                <option value="YearMonthDay">Year/Month/Day (e.g. 2024/11/18/IMG_001.jpg)</option>
+                                <option value="ChronologicalHash">Year/Month with Hash (e.g. 2024/11/abc123_IMG.jpg)</option>
+                                <option value="Flat">Flat Root (filename.jpg)</option>
+                            </select>
+                            <div class="form-help">Automatically sorts uploaded camera media into structured directories based on EXIF date taken.</div>
+                        </div>
+
+                        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                            <button type="button" class="btn btn-secondary" onclick="resetPhotosConfigToDefaults()">Reset Defaults</button>
+                            <button type="button" class="btn btn-sync" onclick="savePhotosConfiguration()">💾 Save Configuration</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Photo Details Inspector Modal -->
+    <div class="modal-backdrop" id="photo-detail-modal" onclick="handleModalBackdropClick(event, 'photo-detail-modal')">
+        <div class="modal-window" style="max-width: 600px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>🖼️</span>
+                    <span id="detail-photo-title">Photo Details</span>
+                </div>
+                <button type="button" class="modal-close-btn" onclick="closePhotoDetailModal()">✕</button>
+            </div>
+            <div class="modal-body" id="detail-photo-body" style="padding: 1.5rem;">
+                <!-- Populated dynamically -->
             </div>
         </div>
     </div>
@@ -2763,6 +2952,382 @@
 
         function escapeHtml(str) {
             return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ---------------------------------------------------------------------------
+        // Google Photos Equivalence Hub (Mobile & Desktop)
+        // ---------------------------------------------------------------------------
+        let currentPhotosConfig = null;
+        let photosTimelineCache = [];
+
+        async function openPhotosModal() {
+            document.getElementById('photos-modal').classList.add('open');
+            await loadPhotosConfig();
+            await loadPhotosStats();
+            await loadPhotosTimeline();
+            await loadPhotosAlbums();
+        }
+
+        function closePhotosModal() {
+            document.getElementById('photos-modal').classList.remove('open');
+        }
+
+        function switchPhotosTab(tabName) {
+            const tabs = ['timeline', 'albums', 'search', 'config'];
+            tabs.forEach(t => {
+                const el = document.getElementById(`photos-tab-${t}`);
+                const btn = document.getElementById(`tab-btn-photos-${t}`);
+                if (el) el.style.display = (t === tabName) ? 'block' : 'none';
+                if (btn) btn.classList.toggle('active', t === tabName);
+            });
+        }
+
+        function setAndroidDCIMPreset() {
+            const input = document.getElementById('photos-cfg-source');
+            if (input) input.value = '/storage/emulated/0/DCIM/Camera';
+            showToast('Set source path to Android DCIM/Camera');
+        }
+
+        async function loadPhotosConfig() {
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    currentPhotosConfig = await window.__TAURI_INTERNALS__.invoke('photos_get_config');
+                    if (currentPhotosConfig) {
+                        document.getElementById('photos-cfg-source').value = currentPhotosConfig.source_folder || '';
+                        document.getElementById('photos-cfg-provider').value = currentPhotosConfig.destination_provider || 'google_drive';
+                        document.getElementById('photos-cfg-dest-folder').value = currentPhotosConfig.destination_folder || 'GooglePhotos_Backup';
+                        document.getElementById('photos-cfg-strategy').value = currentPhotosConfig.strategy || 'YearMonth';
+
+                        document.getElementById('photos-active-provider').textContent = formatProviderName(currentPhotosConfig.destination_provider);
+                        document.getElementById('photos-active-folder').textContent = currentPhotosConfig.destination_folder || 'GooglePhotos_Backup';
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load photos config via Tauri:', e);
+            }
+        }
+
+        function formatProviderName(key) {
+            const map = {
+                'google_drive': 'Google Drive',
+                'onedrive': 'OneDrive',
+                'dropbox': 'Dropbox',
+                's3': 'Amazon S3',
+                'mega': 'MEGA Cloud',
+                'box': 'Box',
+                'webdav': 'WebDAV / Nextcloud',
+                'azure_blob': 'Azure Blob',
+                'local': 'Local Simulation'
+            };
+            return map[key] || key;
+        }
+
+        async function savePhotosConfiguration() {
+            const config = {
+                source_folder: document.getElementById('photos-cfg-source').value.trim(),
+                destination_provider: document.getElementById('photos-cfg-provider').value,
+                destination_folder: document.getElementById('photos-cfg-dest-folder').value.trim() || 'GooglePhotos_Backup',
+                strategy: document.getElementById('photos-cfg-strategy').value,
+                auto_sync: true,
+                sync_interval_mins: 60,
+                provider_settings: currentPhotosConfig ? currentPhotosConfig.provider_settings || {} : {}
+            };
+
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    await window.__TAURI_INTERNALS__.invoke('photos_save_config', { config });
+                    showToast('Photos backup configuration saved');
+                    await loadPhotosConfig();
+                }
+            } catch (e) {
+                alert('Failed to save photos config: ' + e);
+            }
+        }
+
+        async function resetPhotosConfigToDefaults() {
+            document.getElementById('photos-cfg-source').value = '/storage/emulated/0/DCIM/Camera';
+            document.getElementById('photos-cfg-provider').value = 'google_drive';
+            document.getElementById('photos-cfg-dest-folder').value = 'GooglePhotos_Backup';
+            document.getElementById('photos-cfg-strategy').value = 'YearMonth';
+        }
+
+        async function triggerPhotosSync() {
+            const btn = document.getElementById('btn-photos-sync-now');
+            const icon = document.getElementById('photos-sync-icon');
+            const label = document.getElementById('photos-sync-label');
+
+            if (btn) btn.disabled = true;
+            if (icon) icon.textContent = '⏳';
+            if (label) label.textContent = 'Syncing Photos...';
+
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    const res = await window.__TAURI_INTERNALS__.invoke('photos_sync');
+                    showToast(`✅ Synced ${res.files_imported} new photos (${res.files_skipped_duplicates} duplicates skipped)`);
+                    await loadPhotosStats();
+                    await loadPhotosTimeline();
+                } else {
+                    showToast('Photos sync is available in Tauri native client');
+                }
+            } catch (e) {
+                alert('Photos Sync Error: ' + e);
+            } finally {
+                if (btn) btn.disabled = false;
+                if (icon) icon.textContent = '🔄';
+                if (label) label.textContent = 'Backup Camera Photos';
+            }
+        }
+
+        async function loadPhotosStats() {
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    const stats = await window.__TAURI_INTERNALS__.invoke('photos_get_stats');
+                    if (stats) {
+                        document.getElementById('stat-total-photos').textContent = stats.photo_count || 0;
+                        document.getElementById('stat-total-videos').textContent = stats.video_count || 0;
+                        document.getElementById('stat-total-favorites').textContent = stats.favorites_count || 0;
+                        const mb = ((stats.total_bytes || 0) / (1024 * 1024)).toFixed(1);
+                        document.getElementById('stat-total-storage').textContent = `${mb} MB`;
+                        document.getElementById('stat-last-sync').textContent = `Last Synced: Just now`;
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load photos stats:', e);
+            }
+        }
+
+        async function loadPhotosTimeline() {
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    const groups = await window.__TAURI_INTERNALS__.invoke('photos_get_timeline');
+                    photosTimelineCache = groups || [];
+                    renderTimeline(photosTimelineCache);
+                }
+            } catch (e) {
+                console.warn('Failed to load photos timeline:', e);
+            }
+        }
+
+        function renderTimeline(groups) {
+            const emptyEl = document.getElementById('photos-timeline-empty');
+            const contEl = document.getElementById('photos-timeline-container');
+
+            if (!groups || groups.length === 0) {
+                if (emptyEl) emptyEl.style.display = 'block';
+                if (contEl) contEl.style.display = 'none';
+                return;
+            }
+
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (contEl) {
+                contEl.style.display = 'block';
+                contEl.innerHTML = '';
+
+                groups.forEach(group => {
+                    const section = document.createElement('div');
+                    section.style.marginBottom = '2rem';
+
+                    const heading = document.createElement('div');
+                    heading.style.cssText = 'font-weight: 700; font-size: 1.1rem; color: #fff; margin-bottom: 0.85rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--card-border); padding-bottom: 0.4rem;';
+                    heading.innerHTML = `<span>📅 ${escapeHtml(group.display_title)}</span><span style="font-size: 0.8rem; color: var(--text-secondary); font-weight: normal;">${group.items.length} items</span>`;
+                    section.appendChild(heading);
+
+                    const grid = document.createElement('div');
+                    grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.85rem;';
+
+                    group.items.forEach(item => {
+                        const card = renderPhotoCard(item);
+                        grid.appendChild(card);
+                    });
+
+                    section.appendChild(grid);
+                    contEl.appendChild(section);
+                });
+            }
+        }
+
+        function renderPhotoCard(item) {
+            const card = document.createElement('div');
+            card.style.cssText = 'background: rgba(18, 16, 32, 0.6); border: 1px solid var(--card-border); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.2s, border-color 0.2s; position: relative; cursor: pointer;';
+            card.onmouseenter = () => { card.style.borderColor = 'rgba(139, 92, 246, 0.5)'; card.style.transform = 'translateY(-2px)'; };
+            card.onmouseleave = () => { card.style.borderColor = 'var(--card-border)'; card.style.transform = 'none'; };
+
+            // Thumbnail placeholder / icon
+            const thumb = document.createElement('div');
+            thumb.style.cssText = 'height: 120px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.25)); display: flex; align-items: center; justify-content: center; font-size: 2.5rem; position: relative;';
+            thumb.textContent = (item.media_type === 'Video') ? '🎥' : '🖼️';
+
+            // Favorite button top right
+            const favBtn = document.createElement('button');
+            favBtn.style.cssText = 'position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.5); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.85rem; border: none;';
+            favBtn.textContent = item.is_favorite ? '⭐' : '☆';
+            favBtn.title = item.is_favorite ? 'Unmark Favorite' : 'Mark Favorite';
+            favBtn.onclick = async (e) => {
+                e.stopPropagation();
+                await togglePhotoFavorite(item.id);
+            };
+            thumb.appendChild(favBtn);
+
+            // Details section
+            const info = document.createElement('div');
+            info.style.cssText = 'padding: 0.65rem 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.78rem;';
+            
+            const nameEl = document.createElement('div');
+            nameEl.style.cssText = 'font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+            nameEl.textContent = item.file_name;
+            info.appendChild(nameEl);
+
+            const metaEl = document.createElement('div');
+            metaEl.style.cssText = 'color: var(--text-secondary); display: flex; justify-content: space-between;';
+            const kb = Math.round(item.size_bytes / 1024);
+            const dateStr = item.date_taken ? item.date_taken.split('T')[0] : '';
+            metaEl.innerHTML = `<span>${dateStr}</span><span>${kb} KB</span>`;
+            info.appendChild(metaEl);
+
+            if (item.exif && item.exif.model) {
+                const camEl = document.createElement('div');
+                camEl.style.cssText = 'font-size: 0.72rem; color: #a78bfa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+                camEl.textContent = `📷 ${item.exif.model}`;
+                info.appendChild(camEl);
+            }
+
+            card.appendChild(thumb);
+            card.appendChild(info);
+            card.onclick = () => openPhotoDetails(item);
+            return card;
+        }
+
+        async function togglePhotoFavorite(itemId) {
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    const status = await window.__TAURI_INTERNALS__.invoke('photos_toggle_favorite', { itemId });
+                    showToast(status ? '⭐ Marked as Favorite' : 'Removed from Favorites');
+                    await loadPhotosStats();
+                    await loadPhotosTimeline();
+                }
+            } catch (e) {
+                console.warn('Failed to toggle favorite:', e);
+            }
+        }
+
+        async function loadPhotosAlbums() {
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    const albums = await window.__TAURI_INTERNALS__.invoke('photos_get_albums');
+                    const badge = document.getElementById('photos-album-count');
+                    if (badge) badge.textContent = albums ? albums.length : 0;
+
+                    const grid = document.getElementById('photos-albums-grid');
+                    if (grid) {
+                        grid.innerHTML = '';
+                        if (!albums || albums.length === 0) {
+                            grid.innerHTML = '<div style="color: var(--text-secondary); grid-column: 1 / -1; padding: 2rem 0; text-align: center;">No virtual albums created yet. Click "+ Create Album" to organize photos.</div>';
+                            return;
+                        }
+
+                        albums.forEach(album => {
+                            const albCard = document.createElement('div');
+                            albCard.style.cssText = 'background: rgba(18, 16, 32, 0.6); border: 1px solid var(--card-border); border-radius: 10px; padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem;';
+                            albCard.innerHTML = `
+                                <div style="font-size: 2rem; margin-bottom: 0.25rem;">📁</div>
+                                <div style="font-weight: 700; color: #fff;">${escapeHtml(album.name)}</div>
+                                <div style="font-size: 0.8rem; color: var(--text-secondary);">${escapeHtml(album.description || 'No description')}</div>
+                                <div style="font-size: 0.75rem; color: var(--accent-teal); margin-top: auto;">${album.item_ids ? album.item_ids.length : 0} photos</div>
+                            `;
+                            grid.appendChild(albCard);
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load photos albums:', e);
+            }
+        }
+
+        async function promptCreateAlbum() {
+            const name = prompt("Enter album name (e.g. 'Vacation 2024'):");
+            if (!name || !name.trim()) return;
+            const description = prompt("Optional album description:") || null;
+
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    await window.__TAURI_INTERNALS__.invoke('photos_create_album', { name: name.trim(), description });
+                    showToast(`Album '${name}' created!`);
+                    await loadPhotosAlbums();
+                }
+            } catch (e) {
+                alert('Failed to create album: ' + e);
+            }
+        }
+
+        async function executePhotosSearch() {
+            const query = document.getElementById('photos-search-query').value.trim() || null;
+            const camera = document.getElementById('photos-search-camera').value.trim() || null;
+            const favoriteOnly = document.getElementById('photos-search-fav-only').checked;
+            const startDate = document.getElementById('photos-search-start').value || null;
+            const endDate = document.getElementById('photos-search-end').value || null;
+
+            const resContainer = document.getElementById('photos-search-results');
+            resContainer.innerHTML = '<div style="color: var(--text-secondary); grid-column: 1 / -1;">Searching...</div>';
+
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    const results = await window.__TAURI_INTERNALS__.invoke('photos_search', {
+                        query,
+                        camera,
+                        favoriteOnly,
+                        startDate,
+                        endDate
+                    });
+
+                    resContainer.innerHTML = '';
+                    if (!results || results.length === 0) {
+                        resContainer.innerHTML = '<div style="color: var(--text-secondary); grid-column: 1 / -1; padding: 1.5rem 0; text-align: center;">No photos matching your criteria.</div>';
+                        return;
+                    }
+
+                    results.forEach(item => {
+                        resContainer.appendChild(renderPhotoCard(item));
+                    });
+                }
+            } catch (e) {
+                resContainer.innerHTML = `<div style="color: var(--accent-rose); grid-column: 1 / -1;">Search error: ${escapeHtml(e)}</div>`;
+            }
+        }
+
+        function openPhotoDetails(item) {
+            document.getElementById('detail-photo-title').textContent = item.file_name;
+            const body = document.getElementById('detail-photo-body');
+            
+            const exif = item.exif || {};
+            const loc = exif.location ? `${exif.location.latitude.toFixed(4)}, ${exif.location.longitude.toFixed(4)}` : 'None';
+            const mapsLink = exif.location ? `<a href="https://maps.google.com/?q=${exif.location.latitude},${exif.location.longitude}" target="_blank" style="color: #38bdf8; text-decoration: underline; margin-left: 0.5rem;">View on Map ↗</a>` : '';
+
+            body.innerHTML = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; font-size: 0.85rem; margin-bottom: 1rem;">
+                    <div><span style="color: var(--text-secondary);">Type:</span> <strong>${escapeHtml(item.media_type)} (${escapeHtml(item.mime_type)})</strong></div>
+                    <div><span style="color: var(--text-secondary);">Size:</span> <strong>${(item.size_bytes / 1024).toFixed(1)} KB</strong></div>
+                    <div><span style="color: var(--text-secondary);">Date Taken:</span> <strong>${escapeHtml(item.date_taken)}</strong></div>
+                    <div><span style="color: var(--text-secondary);">Camera:</span> <strong>${escapeHtml(exif.model || 'Unknown')}</strong></div>
+                    <div><span style="color: var(--text-secondary);">Make:</span> <strong>${escapeHtml(exif.make || 'Unknown')}</strong></div>
+                    <div><span style="color: var(--text-secondary);">Lens:</span> <strong>${escapeHtml(exif.lens_model || 'Unknown')}</strong></div>
+                    <div><span style="color: var(--text-secondary);">ISO:</span> <strong>${exif.iso || '-'}</strong></div>
+                    <div><span style="color: var(--text-secondary);">GPS:</span> <strong>${loc}</strong>${mapsLink}</div>
+                </div>
+                <div style="font-size: 0.8rem; border-top: 1px solid var(--card-border); padding-top: 0.75rem;">
+                    <div style="color: var(--text-secondary); margin-bottom: 0.25rem;">Cloud Destination Path:</div>
+                    <code style="word-break: break-all; color: var(--accent-teal);">${escapeHtml(item.remote_path || 'Pending initial sync')}</code>
+                </div>
+                <div style="font-size: 0.8rem; margin-top: 0.5rem;">
+                    <div style="color: var(--text-secondary); margin-bottom: 0.25rem;">SHA-256 Deduplication Hash:</div>
+                    <code style="word-break: break-all; color: #a78bfa;">${escapeHtml(item.sha256_hash)}</code>
+                </div>
+            `;
+
+            document.getElementById('photo-detail-modal').classList.add('open');
+        }
+
+        function closePhotoDetailModal() {
+            document.getElementById('photo-detail-modal').classList.remove('open');
         }
 
         // ---------------------------------------------------------------------------
