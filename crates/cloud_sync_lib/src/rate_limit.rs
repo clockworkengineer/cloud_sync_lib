@@ -316,6 +316,107 @@ pub async fn copy_rate_limited(
     Ok(total_bytes)
 }
 
+/// Time-of-day bandwidth rate limit entry (Rclone `--bwlimit` schedule equivalent).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct BandwidthScheduleEntry {
+    /// Format "HH:MM", 24-hour clock (e.g. "08:00").
+    pub start_time: String,
+    /// Format "HH:MM", 24-hour clock (e.g. "18:00").
+    pub end_time: String,
+    /// Upload rate limit in KB/s (None for unlimited).
+    pub max_upload_rate: Option<u64>,
+    /// Download rate limit in KB/s (None for unlimited).
+    pub max_download_rate: Option<u64>,
+}
+
+fn parse_hhmm(s: &str) -> Option<(u32, u32)> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() == 2 {
+        let h = parts[0].trim().parse::<u32>().ok()?;
+        let m = parts[1].trim().parse::<u32>().ok()?;
+        if h < 24 && m < 60 {
+            return Some((h, m));
+        }
+    }
+    None
+}
+
+impl BandwidthScheduleEntry {
+    /// Checks if this schedule entry is active for a given hour and minute.
+    pub fn is_active_at(&self, hour: u32, minute: u32) -> bool {
+        let (s_h, s_m) = match parse_hhmm(&self.start_time) {
+            Some(v) => v,
+            None => return false,
+        };
+        let (e_h, e_m) = match parse_hhmm(&self.end_time) {
+            Some(v) => v,
+            None => return false,
+        };
+        let cur = hour * 60 + minute;
+        let start = s_h * 60 + s_m;
+        let end = e_h * 60 + e_m;
+
+        if start <= end {
+            cur >= start && cur < end
+        } else {
+            // Wraps midnight (e.g., 22:00 to 06:00)
+            cur >= start || cur < end
+        }
+    }
+}
+
+/// A token bucket that dynamically updates its rate according to a schedule.
+#[derive(Clone, Debug)]
+pub struct ScheduledTokenBucket {
+    bucket: TokenBucket,
+    schedule: Vec<BandwidthScheduleEntry>,
+    default_rate: u64,
+    is_upload: bool,
+}
+
+impl ScheduledTokenBucket {
+    pub fn new(default_rate: u64, schedule: Vec<BandwidthScheduleEntry>, is_upload: bool) -> Self {
+        Self {
+            bucket: TokenBucket::new(default_rate),
+            schedule,
+            default_rate,
+            is_upload,
+        }
+    }
+
+    pub fn inner_bucket(&self) -> TokenBucket {
+        self.bucket.clone()
+    }
+
+    /// Evaluates current active schedule and updates the token bucket's rate.
+    pub fn refresh_rate(&self) {
+        let now = time::OffsetDateTime::now_utc().time();
+        self.refresh_rate_for_time(now.hour() as u32, now.minute() as u32);
+    }
+
+    pub fn refresh_rate_for_time(&self, hour: u32, minute: u32) {
+        for entry in &self.schedule {
+            if entry.is_active_at(hour, minute) {
+                let scheduled_kb = if self.is_upload {
+                    entry.max_upload_rate
+                } else {
+                    entry.max_download_rate
+                };
+
+                let target_bytes = scheduled_kb.map(|k| k * 1024).unwrap_or(0);
+                self.bucket.set_rate(target_bytes);
+                return;
+            }
+        }
+        self.bucket.set_rate(self.default_rate);
+    }
+
+    pub fn consume(&self, amount: u64) -> Option<Duration> {
+        self.refresh_rate();
+        self.bucket.consume(amount)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,5 +567,49 @@ mod tests {
         assert!(checksum.is_some());
 
         backend.delete("moved.txt").await.unwrap();
+    }
+
+    #[test]
+    fn test_bandwidth_schedule_active_range() {
+        let entry = BandwidthScheduleEntry {
+            start_time: "08:00".to_string(),
+            end_time: "18:00".to_string(),
+            max_upload_rate: Some(500),
+            max_download_rate: Some(1000),
+        };
+
+        assert!(!entry.is_active_at(7, 59));
+        assert!(entry.is_active_at(8, 0));
+        assert!(entry.is_active_at(12, 30));
+        assert!(entry.is_active_at(17, 59));
+        assert!(!entry.is_active_at(18, 0));
+
+        // Test midnight wrapping (e.g. 22:00 to 06:00)
+        let night_entry = BandwidthScheduleEntry {
+            start_time: "22:00".to_string(),
+            end_time: "06:00".to_string(),
+            max_upload_rate: Some(100),
+            max_download_rate: Some(200),
+        };
+        assert!(night_entry.is_active_at(23, 0));
+        assert!(night_entry.is_active_at(3, 0));
+        assert!(!night_entry.is_active_at(10, 0));
+    }
+
+    #[test]
+    fn test_scheduled_token_bucket() {
+        let schedule = vec![BandwidthScheduleEntry {
+            start_time: "09:00".to_string(),
+            end_time: "17:00".to_string(),
+            max_upload_rate: Some(250), // 250 KB/s
+            max_download_rate: None,
+        }];
+
+        let scheduled = ScheduledTokenBucket::new(1024 * 1024, schedule, true);
+        scheduled.refresh_rate_for_time(10, 0);
+        assert_eq!(scheduled.inner_bucket().rate(), 250 * 1024);
+
+        scheduled.refresh_rate_for_time(20, 0);
+        assert_eq!(scheduled.inner_bucket().rate(), 1024 * 1024);
     }
 }

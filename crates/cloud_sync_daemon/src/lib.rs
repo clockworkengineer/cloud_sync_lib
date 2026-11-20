@@ -309,6 +309,20 @@ pub fn build_backends(
         );
     }
 
+    #[cfg(feature = "ftp")]
+    if is_provider_enabled(&config.ftp_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.ftp_credentials.clone().map(BackendCredentials::FTP),
+            config
+                .ftp_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_FTP_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+
     backends
 }
 

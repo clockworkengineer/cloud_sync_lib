@@ -21,6 +21,7 @@ pub const DEFAULT_GCS_ROOT: &str = "./cloud_simulation/gcs";
 pub const DEFAULT_B2_ROOT: &str = "./cloud_simulation/b2";
 pub const DEFAULT_PCLOUD_ROOT: &str = "./cloud_simulation/pcloud";
 pub const DEFAULT_IPFS_ROOT: &str = "./cloud_simulation/ipfs";
+pub const DEFAULT_FTP_ROOT: &str = "./cloud_simulation/ftp";
 
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -40,6 +41,7 @@ pub struct AppConfig {
     pub b2_root: Option<PathBuf>,
     pub pcloud_root: Option<PathBuf>,
     pub ipfs_root: Option<PathBuf>,
+    pub ftp_root: Option<PathBuf>,
     #[serde(flatten)]
     pub credentials: cloud_sync_lib::ProviderCredentialsConfig,
     pub exclude: Option<Vec<String>>,
@@ -110,6 +112,7 @@ impl Default for AppConfig {
             b2_root: Some(sim_dir.join("b2")),
             pcloud_root: Some(sim_dir.join("pcloud")),
             ipfs_root: Some(sim_dir.join("ipfs")),
+            ftp_root: Some(sim_dir.join("ftp")),
             credentials: Default::default(),
             exclude: None,
             max_upload_rate: None,
@@ -201,6 +204,7 @@ pub async fn load_or_create_config(path: &str) -> Result<AppConfig, Box<dyn std:
     config.b2_root = config.b2_root.map(expand_path);
     config.pcloud_root = config.pcloud_root.map(expand_path);
     config.ipfs_root = config.ipfs_root.map(expand_path);
+    config.ftp_root = config.ftp_root.map(expand_path);
 
     Ok(config)
 }

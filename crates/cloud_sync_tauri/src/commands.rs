@@ -531,6 +531,255 @@ pub async fn logs(state: tauri::State<'_, SharedDaemonState>) -> Result<String, 
     }
 }
 
+#[tauri::command]
+pub async fn verify_sync(
+    state: tauri::State<'_, SharedDaemonState>,
+    remote_path: Option<String>,
+    compare_checksums: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let subpath = remote_path.unwrap_or_default();
+    let checksum = compare_checksums.unwrap_or(false);
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        let flag = if checksum { " --checksum" } else { "" };
+        let cmd = format!("verify {}{}", subpath, flag);
+        if let Ok(raw) = client.send_command(&cmd).await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let watch_dir = s.watch_dir.clone();
+    let backends = s.backends.clone();
+    drop(s);
+
+    let mut results = Vec::new();
+    for active in &backends {
+        match cloud_sync_lib::verifier::verify_integrity(
+            active.backend.as_ref(),
+            &watch_dir,
+            &subpath,
+            checksum,
+        )
+        .await
+        {
+            Ok(report) => {
+                results.push(serde_json::json!({
+                    "backend": active.backend.name(),
+                    "report": report
+                }));
+            }
+            Err(e) => {
+                results.push(serde_json::json!({
+                    "backend": active.backend.name(),
+                    "error": e.to_string()
+                }));
+            }
+        }
+    }
+    Ok(serde_json::json!(results))
+}
+
+#[tauri::command]
+pub async fn scan_duplicates(
+    state: tauri::State<'_, SharedDaemonState>,
+    remote_path: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let subpath = remote_path.unwrap_or_default();
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        let cmd = format!("dedupe {}", subpath);
+        if let Ok(raw) = client.send_command(&cmd).await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let backends = s.backends.clone();
+    drop(s);
+
+    let mut results = Vec::new();
+    for active in &backends {
+        match cloud_sync_lib::dedupe::scan_duplicates(active.backend.as_ref(), &subpath).await {
+            Ok(groups) => {
+                results.push(serde_json::json!({
+                    "backend": active.backend.name(),
+                    "duplicate_groups": groups
+                }));
+            }
+            Err(e) => {
+                results.push(serde_json::json!({
+                    "backend": active.backend.name(),
+                    "error": e.to_string()
+                }));
+            }
+        }
+    }
+    Ok(serde_json::json!(results))
+}
+
+#[tauri::command]
+pub async fn get_storage_analytics(
+    state: tauri::State<'_, SharedDaemonState>,
+    remote_path: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let subpath = remote_path.unwrap_or_default();
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        let cmd = format!("stats {}", subpath);
+        if let Ok(raw) = client.send_command(&cmd).await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let backends = s.backends.clone();
+    drop(s);
+
+    let mut results = Vec::new();
+    for active in &backends {
+        match cloud_sync_lib::analytics::compute_storage_analytics(
+            active.backend.as_ref(),
+            &subpath,
+        )
+        .await
+        {
+            Ok(analytics) => {
+                results.push(serde_json::json!({
+                    "backend": active.backend.name(),
+                    "analytics": analytics
+                }));
+            }
+            Err(e) => {
+                results.push(serde_json::json!({
+                    "backend": active.backend.name(),
+                    "error": e.to_string()
+                }));
+            }
+        }
+    }
+    Ok(serde_json::json!(results))
+}
+
+#[tauri::command]
+pub async fn get_remote_tree(
+    state: tauri::State<'_, SharedDaemonState>,
+    remote_path: Option<String>,
+    max_depth: Option<usize>,
+) -> Result<serde_json::Value, String> {
+    let subpath = remote_path.unwrap_or_default();
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        let depth_str = max_depth.map(|d| format!(" {}", d)).unwrap_or_default();
+        let cmd = format!("tree {}{}", subpath, depth_str);
+        if let Ok(raw) = client.send_command(&cmd).await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let backends = s.backends.clone();
+    drop(s);
+
+    let mut results = Vec::new();
+    for active in &backends {
+        match cloud_sync_lib::analytics::build_remote_tree(
+            active.backend.as_ref(),
+            &subpath,
+            max_depth,
+        )
+        .await
+        {
+            Ok(tree) => {
+                let ascii = cloud_sync_lib::analytics::format_ascii_tree(&tree);
+                results.push(serde_json::json!({
+                    "backend": active.backend.name(),
+                    "ascii": ascii,
+                    "tree": tree
+                }));
+            }
+            Err(e) => {
+                results.push(serde_json::json!({
+                    "backend": active.backend.name(),
+                    "error": e.to_string()
+                }));
+            }
+        }
+    }
+    Ok(serde_json::json!(results))
+}
+
+#[tauri::command]
+pub async fn preview_sync(
+    state: tauri::State<'_, SharedDaemonState>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        if let Ok(raw) = client.send_command("plan").await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let mut plans = Vec::new();
+    for active_backend in &s.backends {
+        let safe_name = active_backend
+            .backend
+            .name()
+            .to_lowercase()
+            .replace(' ', "_");
+        let state_file_path = cloud_sync_daemon::engine::resolve_state_file_path(
+            &s.state_dir,
+            &s.watch_dir,
+            &safe_name,
+        )
+        .await;
+        let filter = cloud_sync_daemon::engine::FileFilter::new(
+            &s.gitignore,
+            active_backend.selective_sync.as_deref(),
+        );
+        let orchestrator = cloud_sync_daemon::engine::SyncOrchestrator::default_real();
+        if let Ok(plan) = orchestrator
+            .plan_sync(
+                active_backend.backend.as_ref(),
+                &s.watch_dir,
+                &state_file_path,
+                &filter,
+                active_backend.policy,
+                s.conflict_policy,
+            )
+            .await
+        {
+            plans.push(plan);
+        }
+    }
+    Ok(serde_json::json!(plans))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

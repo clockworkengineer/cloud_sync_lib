@@ -1,9 +1,9 @@
 //! Shared provider configuration structs and models.
 
 use crate::{
-    AzureBlobCredentials, B2Credentials, GCSCredentials, IPFSCredentials, MegaCredentials,
-    NextcloudCredentials, OAuthCredentials, PCloudCredentials, S3Credentials, SFTPCredentials,
-    WebDAVCredentials,
+    AzureBlobCredentials, B2Credentials, FtpCredentials, GCSCredentials, IPFSCredentials,
+    MegaCredentials, NextcloudCredentials, OAuthCredentials, PCloudCredentials, S3Credentials,
+    SFTPCredentials, WebDAVCredentials,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -26,6 +26,7 @@ pub struct ProviderRootsConfig {
     pub b2_root: Option<PathBuf>,
     pub pcloud_root: Option<PathBuf>,
     pub ipfs_root: Option<PathBuf>,
+    pub ftp_root: Option<PathBuf>,
 }
 
 /// Shared configuration holding credentials for all supported storage backends.
@@ -45,4 +46,5 @@ pub struct ProviderCredentialsConfig {
     pub b2_credentials: Option<B2Credentials>,
     pub pcloud_credentials: Option<PCloudCredentials>,
     pub ipfs_credentials: Option<IPFSCredentials>,
+    pub ftp_credentials: Option<FtpCredentials>,
 }

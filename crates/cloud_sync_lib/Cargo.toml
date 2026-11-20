@@ -65,6 +65,7 @@ gcs = ["dep:yup-oauth2"]
 b2 = []
 pcloud = []
 ipfs = []
+ftp = []
 
 [dev-dependencies]
 tempfile = { workspace = true }

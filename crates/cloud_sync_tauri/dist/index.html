@@ -1084,6 +1084,10 @@
                 <span style="font-size: 1rem;">📷</span>
                 <span>Photos</span>
             </button>
+            <button class="header-btn" id="btn-open-tools" onclick="openToolsModal()" style="background: rgba(245, 158, 11, 0.18); border: 1px solid rgba(245, 158, 11, 0.4); color: #fde68a;" title="Diagnostics & Storage Tools (Verify, Dedupe, Analytics, Tree)">
+                <span style="font-size: 1rem;">🛠️</span>
+                <span>Tools</span>
+            </button>
             <button class="header-btn" id="btn-open-help" onclick="openHelpModal()" style="background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(99, 102, 241, 0.4); color: #c7d2fe;" title="Help & Shortcuts (F1)">
                 <span>❓</span>
                 <span>Help</span>
@@ -1672,6 +1676,91 @@
             </div>
             <div class="modal-body" id="detail-photo-body" style="padding: 1.5rem;">
                 <!-- Populated dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Diagnostics, Integrity & Deduplication Tools Modal (Rclone Equivalence) -->
+    <div class="modal-backdrop" id="tools-modal" onclick="handleModalBackdropClick(event, 'tools-modal')">
+        <div class="modal-window" style="max-width: 950px; height: 85vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="border-bottom: 1px solid var(--card-border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+                <div class="modal-title" style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span style="font-size: 1.5rem;">🛠️</span>
+                    <div>
+                        <div style="font-weight: 700; font-size: 1.15rem; color: #fff;">Diagnostics & Storage Tools</div>
+                        <div style="font-size: 0.78rem; color: var(--text-secondary);">Rclone-grade Integrity Verification, Deduplication, Hierarchy Tree & Sync Preview</div>
+                    </div>
+                </div>
+                <button type="button" class="modal-close-btn" onclick="closeToolsModal()" title="Close">✕</button>
+            </div>
+
+            <!-- Tools Tab Bar -->
+            <div style="padding: 0.75rem 1.5rem; background: rgba(0,0,0,0.25); border-bottom: 1px solid var(--card-border);">
+                <div class="tab-bar" style="margin-bottom: 0;">
+                    <button class="tab-btn active" id="tab-btn-tools-verify" onclick="switchToolsTab('verify')">🔍 Verify Integrity (check)</button>
+                    <button class="tab-btn" id="tab-btn-tools-dedupe" onclick="switchToolsTab('dedupe')">♻️ Dedupe Scanner</button>
+                    <button class="tab-btn" id="tab-btn-tools-analytics" onclick="switchToolsTab('analytics')">📊 Storage Size & Tree</button>
+                    <button class="tab-btn" id="tab-btn-tools-preview" onclick="switchToolsTab('preview')">👁️ Sync Preview (plan)</button>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem;">
+                <!-- Tab 1: Verify Integrity -->
+                <div id="tools-tab-verify">
+                    <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
+                        <input type="text" class="form-input" id="tools-verify-subpath" placeholder="Remote subpath (e.g. photos or blank for root)" style="max-width: 350px;">
+                        <label style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-secondary); cursor: pointer;">
+                            <input type="checkbox" id="tools-verify-checksum">
+                            <span>Compare Cryptographic Checksums</span>
+                        </label>
+                        <button type="button" class="btn btn-sync" id="btn-run-verify" onclick="runIntegrityVerification()" style="margin-left: auto;">
+                            🔍 Run Verification
+                        </button>
+                    </div>
+                    <div id="tools-verify-results" style="font-size: 0.88rem; color: var(--text-secondary);">
+                        <p>Verify compares your local watched directory against the remote cloud storage, detecting size differences, checksum mismatches, and missing files.</p>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Dedupe Scanner -->
+                <div id="tools-tab-dedupe" style="display: none;">
+                    <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
+                        <input type="text" class="form-input" id="tools-dedupe-subpath" placeholder="Remote subpath (or blank for root)" style="max-width: 350px;">
+                        <button type="button" class="btn btn-sync" id="btn-run-dedupe" onclick="runDedupeScan()" style="margin-left: auto;">
+                            ♻️ Scan for Duplicates
+                        </button>
+                    </div>
+                    <div id="tools-dedupe-results" style="font-size: 0.88rem; color: var(--text-secondary);">
+                        <p>Scans the remote storage for duplicate files by matching content checksums and file sizes to identify opportunities to reclaim cloud storage space.</p>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Storage Size & Tree -->
+                <div id="tools-tab-analytics" style="display: none;">
+                    <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
+                        <input type="text" class="form-input" id="tools-analytics-subpath" placeholder="Remote subpath (or blank for root)" style="max-width: 350px;">
+                        <button type="button" class="btn btn-sync" id="btn-run-analytics" onclick="runStorageAnalytics()" style="margin-left: auto;">
+                            📊 Compute Size & Tree
+                        </button>
+                    </div>
+                    <div id="tools-analytics-results" style="font-size: 0.88rem; color: var(--text-secondary);">
+                        <p>Calculates total file count, total bytes, file extension breakdown, top 10 largest files, and generates a visual hierarchical directory tree.</p>
+                    </div>
+                </div>
+
+                <!-- Tab 4: Sync Preview -->
+                <div id="tools-tab-preview" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div style="font-size: 0.88rem; color: var(--text-secondary);">Preview scheduled transfer operations across all active backends without making any modifications.</div>
+                        <button type="button" class="btn btn-sync" id="btn-run-preview" onclick="runSyncPreview()">
+                            👁️ Refresh Preview
+                        </button>
+                    </div>
+                    <div id="tools-preview-results" style="font-size: 0.88rem; color: var(--text-secondary);">
+                        <p>Click "Refresh Preview" to generate a dry-run execution plan showing what will be uploaded, downloaded, and deleted.</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -2358,6 +2447,19 @@
                     { key: "endpoint", label: "API Endpoint (e.g. api.pcloud.com)", type: "text", mono: true },
                     { key: "destination_folder", label: "Remote Root Folder", type: "text", common: true }
                 ]
+            },
+            {
+                id: "ftp_credentials",
+                name: "FTP / FTPS (RFC 959 / 4217)",
+                icon: "🌐",
+                color: "#10B981",
+                fields: [
+                    { key: "host", label: "FTP Host Address", type: "text", mono: true },
+                    { key: "port", label: "Port (default 21)", type: "number", placeholder: "21" },
+                    { key: "username", label: "FTP Username", type: "text" },
+                    { key: "password", label: "FTP Password", type: "password", mono: true },
+                    { key: "destination_folder", label: "Remote Root Folder", type: "text", common: true }
+                ]
             }
         ];
 
@@ -2782,6 +2884,254 @@
                 showToast(`Save error: ${err}`, "✕");
             } finally {
                 btn.innerHTML = `<span>💾</span> <span>Save & Apply Settings</span>`;
+                btn.removeAttribute('disabled');
+            }
+        }
+
+        // ---------------------------------------------------------------------------
+        // Diagnostics, Integrity & Deduplication Tools
+        // ---------------------------------------------------------------------------
+
+        function openToolsModal() {
+            document.getElementById('tools-modal').classList.add('open');
+        }
+
+        function closeToolsModal() {
+            document.getElementById('tools-modal').classList.remove('open');
+        }
+
+        function switchToolsTab(tab) {
+            const tabs = ['verify', 'dedupe', 'analytics', 'preview'];
+            tabs.forEach(t => {
+                const btn = document.getElementById(`tab-btn-tools-${t}`);
+                const pane = document.getElementById(`tools-tab-${t}`);
+                if (btn) btn.classList.toggle('active', t === tab);
+                if (pane) pane.style.display = (t === tab) ? 'block' : 'none';
+            });
+        }
+
+        async function runIntegrityVerification() {
+            const btn = document.getElementById('btn-run-verify');
+            const resEl = document.getElementById('tools-verify-results');
+            const subpath = document.getElementById('tools-verify-subpath').value.trim();
+            const checksum = document.getElementById('tools-verify-checksum').checked;
+
+            btn.innerHTML = `<span class="spinner"></span> <span>Verifying...</span>`;
+            btn.setAttribute('disabled', 'true');
+            resEl.innerHTML = `<p style="color: var(--text-secondary);">Scanning local directory and comparing with remote backend...</p>`;
+
+            try {
+                let data;
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    data = await window.__TAURI_INTERNALS__.invoke('verify_sync', {
+                        remotePath: subpath || null,
+                        compareChecksums: checksum
+                    });
+                } else {
+                    resEl.innerHTML = `<p style="color: var(--accent-amber);">Integrity verification is available when connected to the local daemon or running inside the desktop app.</p>`;
+                    return;
+                }
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    resEl.innerHTML = `<p style="color: var(--accent-amber);">No active backends available to verify against.</p>`;
+                    return;
+                }
+
+                let html = "";
+                data.forEach(item => {
+                    html += `<div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; margin-bottom: 0.75rem; border: 1px solid var(--card-border);">`;
+                    html += `<h4 style="color: #67e8f9; margin-bottom: 0.5rem;">Provider: ${item.backend}</h4>`;
+                    if (item.error) {
+                        html += `<div style="color: #f43f5e;">Error: ${item.error}</div>`;
+                    } else if (item.report) {
+                        const rep = item.report;
+                        const ok = rep.mismatched.length === 0 && rep.missing_on_remote.length === 0 && rep.missing_on_local.length === 0;
+                        html += `<div style="display: flex; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap;">`;
+                        html += `<div><strong>Total Checked:</strong> ${rep.total_files_checked}</div>`;
+                        html += `<div><strong>Matched:</strong> <span style="color: #10b981;">${rep.matched.length}</span></div>`;
+                        html += `<div><strong>Mismatched:</strong> <span style="color: ${rep.mismatched.length ? '#f43f5e' : '#10b981'};">${rep.mismatched.length}</span></div>`;
+                        html += `<div><strong>Missing on Cloud:</strong> <span style="color: ${rep.missing_on_remote.length ? '#f59e0b' : '#10b981'};">${rep.missing_on_remote.length}</span></div>`;
+                        html += `<div><strong>Missing Locally:</strong> <span style="color: ${rep.missing_on_local.length ? '#f59e0b' : '#10b981'};">${rep.missing_on_local.length}</span></div>`;
+                        html += `<div><strong>Duration:</strong> ${rep.duration_ms}ms</div>`;
+                        html += `</div>`;
+                        if (ok) {
+                            html += `<div style="color: #10b981; font-weight: 600;">✓ 100% In Sync! All files and sizes match perfectly.</div>`;
+                        } else {
+                            if (rep.mismatched.length > 0) {
+                                html += `<div style="color: #f43f5e; font-weight: 600; margin-top: 0.4rem;">Discrepancies:</div>`;
+                                rep.mismatched.forEach(m => {
+                                    html += `<div style="font-size: 0.82rem; margin-left: 0.5rem;">• <code>${m.relative_path}</code>: ${m.reason}</div>`;
+                                });
+                            }
+                        }
+                    }
+                    html += `</div>`;
+                });
+                resEl.innerHTML = html;
+            } catch (err) {
+                resEl.innerHTML = `<div style="color: #f43f5e;">Failed to run verification: ${err}</div>`;
+            } finally {
+                btn.innerHTML = `🔍 Run Verification`;
+                btn.removeAttribute('disabled');
+            }
+        }
+
+        async function runDedupeScan() {
+            const btn = document.getElementById('btn-run-dedupe');
+            const resEl = document.getElementById('tools-dedupe-results');
+            const subpath = document.getElementById('tools-dedupe-subpath').value.trim();
+
+            btn.innerHTML = `<span class="spinner"></span> <span>Scanning...</span>`;
+            btn.setAttribute('disabled', 'true');
+            resEl.innerHTML = `<p style="color: var(--text-secondary);">Scanning remote cloud hierarchy for duplicate content...</p>`;
+
+            try {
+                let data;
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    data = await window.__TAURI_INTERNALS__.invoke('scan_duplicates', {
+                        remotePath: subpath || null
+                    });
+                } else {
+                    resEl.innerHTML = `<p style="color: var(--accent-amber);">Dedupe scanner is available in desktop and mobile app modes.</p>`;
+                    return;
+                }
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    resEl.innerHTML = `<p style="color: var(--accent-amber);">No active backends available to scan.</p>`;
+                    return;
+                }
+
+                let html = "";
+                data.forEach(item => {
+                    html += `<div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; margin-bottom: 0.75rem; border: 1px solid var(--card-border);">`;
+                    html += `<h4 style="color: #67e8f9; margin-bottom: 0.5rem;">Provider: ${item.backend}</h4>`;
+                    if (item.error) {
+                        html += `<div style="color: #f43f5e;">Error: ${item.error}</div>`;
+                    } else if (item.duplicate_groups) {
+                        const groups = item.duplicate_groups;
+                        if (groups.length === 0) {
+                            html += `<div style="color: #10b981; font-weight: 600;">✓ No duplicate files detected on this backend.</div>`;
+                        } else {
+                            html += `<div style="color: #f59e0b; margin-bottom: 0.5rem; font-weight: 600;">Found ${groups.length} duplicate group(s):</div>`;
+                            groups.forEach((g, idx) => {
+                                html += `<div style="background: rgba(255,255,255,0.03); padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 0.4rem; font-size: 0.82rem;">`;
+                                html += `<strong>Group #${idx+1} (${(g.size / 1024).toFixed(1)} KB each):</strong>`;
+                                g.files.forEach(f => {
+                                    html += `<div style="margin-left: 0.75rem; color: var(--text-secondary);">• <code>${f.path}</code></div>`;
+                                });
+                                html += `</div>`;
+                            });
+                        }
+                    }
+                    html += `</div>`;
+                });
+                resEl.innerHTML = html;
+            } catch (err) {
+                resEl.innerHTML = `<div style="color: #f43f5e;">Failed to scan duplicates: ${err}</div>`;
+            } finally {
+                btn.innerHTML = `♻️ Scan for Duplicates`;
+                btn.removeAttribute('disabled');
+            }
+        }
+
+        async function runStorageAnalytics() {
+            const btn = document.getElementById('btn-run-analytics');
+            const resEl = document.getElementById('tools-analytics-results');
+            const subpath = document.getElementById('tools-analytics-subpath').value.trim();
+
+            btn.innerHTML = `<span class="spinner"></span> <span>Analyzing...</span>`;
+            btn.setAttribute('disabled', 'true');
+            resEl.innerHTML = `<p style="color: var(--text-secondary);">Computing remote storage hierarchy statistics and tree...</p>`;
+
+            try {
+                let statsData, treeData;
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    [statsData, treeData] = await Promise.all([
+                        window.__TAURI_INTERNALS__.invoke('get_storage_analytics', { remotePath: subpath || null }),
+                        window.__TAURI_INTERNALS__.invoke('get_remote_tree', { remotePath: subpath || null, maxDepth: 5 })
+                    ]);
+                } else {
+                    resEl.innerHTML = `<p style="color: var(--accent-amber);">Analytics is available in desktop and mobile app modes.</p>`;
+                    return;
+                }
+
+                let html = "";
+                if (Array.isArray(statsData)) {
+                    statsData.forEach((item, idx) => {
+                        const treeItem = Array.isArray(treeData) ? treeData[idx] : null;
+                        html += `<div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; margin-bottom: 0.75rem; border: 1px solid var(--card-border);">`;
+                        html += `<h4 style="color: #67e8f9; margin-bottom: 0.5rem;">Provider: ${item.backend}</h4>`;
+                        if (item.error) {
+                            html += `<div style="color: #f43f5e;">Error: ${item.error}</div>`;
+                        } else if (item.analytics) {
+                            const an = item.analytics;
+                            const totalMB = (an.total_bytes / (1024 * 1024)).toFixed(2);
+                            html += `<div style="display: flex; gap: 1.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">`;
+                            html += `<div><strong>Total Files:</strong> ${an.total_files}</div>`;
+                            html += `<div><strong>Total Folders:</strong> ${an.total_folders}</div>`;
+                            html += `<div><strong>Total Size:</strong> ${totalMB} MB (${an.total_bytes} bytes)</div>`;
+                            html += `<div><strong>Max Depth:</strong> ${an.max_directory_depth}</div>`;
+                            html += `</div>`;
+
+                            if (treeItem && treeItem.ascii) {
+                                html += `<div style="margin-top: 0.5rem;"><strong style="font-size: 0.85rem;">Directory Tree:</strong></div>`;
+                                html += `<pre style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; background: rgba(0,0,0,0.5); padding: 0.75rem; border-radius: 6px; overflow-x: auto; max-height: 250px; color: #a5f3fc; border: 1px solid rgba(255,255,255,0.06);">${treeItem.ascii}</pre>`;
+                            }
+                        }
+                        html += `</div>`;
+                    });
+                }
+                resEl.innerHTML = html || "<p>No data returned.</p>";
+            } catch (err) {
+                resEl.innerHTML = `<div style="color: #f43f5e;">Failed to compute analytics: ${err}</div>`;
+            } finally {
+                btn.innerHTML = `📊 Compute Size & Tree`;
+                btn.removeAttribute('disabled');
+            }
+        }
+
+        async function runSyncPreview() {
+            const btn = document.getElementById('btn-run-preview');
+            const resEl = document.getElementById('tools-preview-results');
+
+            btn.innerHTML = `<span class="spinner"></span> <span>Planning...</span>`;
+            btn.setAttribute('disabled', 'true');
+            resEl.innerHTML = `<p style="color: var(--text-secondary);">Calculating planned synchronization actions...</p>`;
+
+            try {
+                let data;
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    data = await window.__TAURI_INTERNALS__.invoke('preview_sync');
+                } else {
+                    resEl.innerHTML = `<p style="color: var(--accent-amber);">Sync preview is available in desktop and mobile app modes.</p>`;
+                    return;
+                }
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    resEl.innerHTML = `<div style="color: #10b981; font-weight: 600;">✓ In Sync: No file operations planned. Everything is up to date!</div>`;
+                    return;
+                }
+
+                let html = "";
+                data.forEach(plan => {
+                    const uploads = plan.uploads || [];
+                    const downloads = plan.downloads || [];
+                    const deletes = plan.deletions || [];
+
+                    html += `<div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; margin-bottom: 0.75rem; border: 1px solid var(--card-border);">`;
+                    html += `<h4 style="color: #67e8f9; margin-bottom: 0.5rem;">Target: ${plan.backend_name || 'Cloud Backend'}</h4>`;
+                    html += `<div style="display: flex; gap: 1rem; margin-bottom: 0.5rem; font-size: 0.85rem;">`;
+                    html += `<div><strong>Uploads:</strong> <span style="color: #10b981;">${uploads.length}</span></div>`;
+                    html += `<div><strong>Downloads:</strong> <span style="color: #0ea5e9;">${downloads.length}</span></div>`;
+                    html += `<div><strong>Deletions:</strong> <span style="color: #f43f5e;">${deletes.length}</span></div>`;
+                    html += `</div>`;
+                    html += `</div>`;
+                });
+                resEl.innerHTML = html;
+            } catch (err) {
+                resEl.innerHTML = `<div style="color: #f43f5e;">Failed to preview sync: ${err}</div>`;
+            } finally {
+                btn.innerHTML = `👁️ Refresh Preview`;
                 btn.removeAttribute('disabled');
             }
         }

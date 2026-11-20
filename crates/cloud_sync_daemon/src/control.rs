@@ -166,6 +166,9 @@ pub async fn handle_control_command(
                 if let Some(ref creds) = config.ipfs_credentials {
                     add_if_placeholder_enabled!("IPFS", &config.ipfs_credentials, &creds.jwt_token);
                 }
+                if let Some(ref creds) = config.ftp_credentials {
+                    add_if_placeholder_enabled!("FTP", &config.ftp_credentials, &creds.username);
+                }
             }
 
             let watch_dir_str = s.watch_dir.to_string_lossy().to_string();
@@ -492,7 +495,7 @@ pub async fn handle_control_command(
                 }
             }
         }
-        "get_plan" | "plan" => {
+        "get_plan" | "plan" | "preview" => {
             let s = state.lock().await;
             let mut plans = Vec::new();
             for active_backend in &s.backends {
@@ -528,12 +531,144 @@ pub async fn handle_control_command(
             }
             serde_json::to_string(&plans).unwrap_or_else(|_| "[]".to_string()) + "\n"
         }
+        "verify" | "check" => {
+            let s = state.lock().await;
+            let watch_dir = s.watch_dir.clone();
+            let backends = s.backends.clone();
+            drop(s);
+
+            let remote_subpath = parts.get(1).copied().unwrap_or("");
+            let compare_checksums = parts.iter().any(|&p| p == "--checksum" || p == "-c");
+
+            let mut results = Vec::new();
+            for active in &backends {
+                match cloud_sync_lib::verifier::verify_integrity(
+                    active.backend.as_ref(),
+                    &watch_dir,
+                    remote_subpath,
+                    compare_checksums,
+                )
+                .await
+                {
+                    Ok(report) => {
+                        results.push(serde_json::json!({
+                            "backend": active.backend.name(),
+                            "report": report
+                        }));
+                    }
+                    Err(e) => {
+                        results.push(serde_json::json!({
+                            "backend": active.backend.name(),
+                            "error": e.to_string()
+                        }));
+                    }
+                }
+            }
+            serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()) + "\n"
+        }
+        "dedupe" => {
+            let s = state.lock().await;
+            let backends = s.backends.clone();
+            drop(s);
+
+            let remote_subpath = parts.get(1).copied().unwrap_or("");
+            let mut results = Vec::new();
+
+            for active in &backends {
+                match cloud_sync_lib::dedupe::scan_duplicates(
+                    active.backend.as_ref(),
+                    remote_subpath,
+                )
+                .await
+                {
+                    Ok(groups) => {
+                        results.push(serde_json::json!({
+                            "backend": active.backend.name(),
+                            "duplicate_groups": groups
+                        }));
+                    }
+                    Err(e) => {
+                        results.push(serde_json::json!({
+                            "backend": active.backend.name(),
+                            "error": e.to_string()
+                        }));
+                    }
+                }
+            }
+            serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()) + "\n"
+        }
+        "stats" | "size" => {
+            let s = state.lock().await;
+            let backends = s.backends.clone();
+            drop(s);
+
+            let remote_subpath = parts.get(1).copied().unwrap_or("");
+            let mut results = Vec::new();
+
+            for active in &backends {
+                match cloud_sync_lib::analytics::compute_storage_analytics(
+                    active.backend.as_ref(),
+                    remote_subpath,
+                )
+                .await
+                {
+                    Ok(analytics) => {
+                        results.push(serde_json::json!({
+                            "backend": active.backend.name(),
+                            "analytics": analytics
+                        }));
+                    }
+                    Err(e) => {
+                        results.push(serde_json::json!({
+                            "backend": active.backend.name(),
+                            "error": e.to_string()
+                        }));
+                    }
+                }
+            }
+            serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()) + "\n"
+        }
+        "tree" => {
+            let s = state.lock().await;
+            let backends = s.backends.clone();
+            drop(s);
+
+            let remote_subpath = parts.get(1).copied().unwrap_or("");
+            let max_depth: Option<usize> = parts.get(2).and_then(|d| d.parse().ok());
+            let mut results = Vec::new();
+
+            for active in &backends {
+                match cloud_sync_lib::analytics::build_remote_tree(
+                    active.backend.as_ref(),
+                    remote_subpath,
+                    max_depth,
+                )
+                .await
+                {
+                    Ok(tree) => {
+                        let ascii = cloud_sync_lib::analytics::format_ascii_tree(&tree);
+                        results.push(serde_json::json!({
+                            "backend": active.backend.name(),
+                            "ascii": ascii,
+                            "tree": tree
+                        }));
+                    }
+                    Err(e) => {
+                        results.push(serde_json::json!({
+                            "backend": active.backend.name(),
+                            "error": e.to_string()
+                        }));
+                    }
+                }
+            }
+            serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()) + "\n"
+        }
         "stop" => {
             let _ = shutdown_tx.send(()).await;
             "Status: Stopping daemon...\n".to_string()
         }
         _ => {
-            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, conflicts, resolve_conflict, stop\n"
+            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, conflicts, resolve_conflict, verify, dedupe, size, tree, preview, stop\n"
                 .to_string()
         }
     }

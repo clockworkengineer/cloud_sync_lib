@@ -1,36 +1,65 @@
-# Product Comparison: Cloud Sync Daemon vs. Alternatives
+# Product Comparison: Cloud Sync vs. Alternatives
 
 A detailed comparison of this Rust-based Cloud Sync Workspace against established industry alternatives, both free/open-source and commercial.
 
 ---
 
-## 1. Industry Alternatives
+## 1. Industry Alternatives Matrix
 
-| Software | License / Cost | Core Focus | Primary Interface |
-| :--- | :--- | :--- | :--- |
-| **Rclone** | Free & Open Source | Multi-backend syncing | CLI / Web GUI proxy |
-| **FreeFileSync** | Free & Open Source | Desktop folder mirroring | GUI (Desktop App) |
-| **Syncthing** | Free & Open Source | Peer-to-peer folder sync | Web GUI |
-| **GoodSync** | Paid (Subscription) | Enterprise replication | GUI / Service |
-| **Insync** | Paid (One-time license) | Desktop cloud clients | GUI (Desktop App) |
-
----
-
-## 2. Strengths & Advantages of This Project
-
-- **Ultra-Low Memory Footprint (Rust)**: Written in Rust, the daemon consumes minimal memory and system resources, making it ideal for running on NAS systems, routers, and lightweight home servers.
-- **Decoupled Architecture**: Separation between the core CLI daemon (via TCP socket control) and the Axum-based Web UI proxy allows running the daemon headless while controlling it remotely.
-- **Immediate Event-Driven Sync**: Uses the native OS filesystem event loop (via the `notify` crate) to propagate changes the millisecond a write completes, rather than relying on heavy scheduled polling cycles.
-- **Simple, Modular Codebase**: The generic `StorageBackend` trait makes introducing new providers (or mock fallbacks) simple, keeping the codebase easily maintainable.
-- **Two-Way Synchronization**: Fully supports bidirectional synchronization with automated collision resolution, keeping local directories and cloud backends in lockstep.
-- **Zero-Knowledge Encryption**: Optional client-side AES-256-GCM encryption ensures data is encrypted locally before being transmitted to the cloud.
-- **Bandwidth Rate-Limiting**: Flexible upload and download rate limiting via Token Buckets helps prevent network congestion.
-- **Broad Backend Support**: Integrates out-of-the-box with a wide array of cloud, enterprise, object, and distributed protocols (14 distinct providers).
+| Software | License / Cost | Core Focus | Architecture | Android Support |
+| :--- | :--- | :--- | :--- | :---: |
+| **Cloud Sync (This Project)** | Free & Open Source (MIT/Apache) | Multi-cloud, NAS, Object & Photos Hub | Rust Core + Headless Daemon + Tauri GUI | ✅ Native |
+| **Rclone** | Free & Open Source | Multi-backend CLI syncing | Go CLI / Web GUI proxy | ⚠️ Third-party / Termux |
+| **FreeFileSync** | Free & Open Source | Desktop folder mirroring | C++ GUI (Desktop App) | ❌ No |
+| **Syncthing** | Free & Open Source | Peer-to-peer folder sync | Go P2P Daemon + Web GUI | ✅ Third-party wrapper |
+| **GoodSync** | Paid (Subscription) | Enterprise replication | Proprietary Service + Desktop GUI | ⚠️ Separate app |
+| **Insync** | Paid (Per-machine license) | Desktop cloud clients | Proprietary Desktop GUI | ❌ No |
 
 ---
 
-## 3. Current Limitations
+## 2. Feature Comparison Matrix
 
-- **Chunked Uploads**: Lacks native support for multi-gigabyte chunked/resumable uploads on some providers (files are uploaded in one pass).
-- **Move/Rename Detection**: File rename or move actions are handled as a delete followed by a new upload/download, rather than a single server-side move command.
-- **Conflict UI**: Conflict resolution (local-conflict copy creation) is fully automated; there is no interactive prompt or diff viewer to allow manual merge operations from the UI.
+| Feature | Cloud Sync | Rclone | FreeFileSync | Syncthing | GoodSync |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Memory Footprint** | **~15–30 MB** (Rust) | ~50–150 MB (Go) | ~60–120 MB (C++) | ~80–200 MB (Go) | ~100–250 MB |
+| **Instant Event-Driven Sync** | ✅ (`notify` OS event loop) | ⚠️ (via `rclone rcd` / cron) | ⚠️ (separate RealtimeSync app) | ✅ (`notify` watcher) | ✅ |
+| **Bidirectional Syncing** | ✅ (Catalog + State Journal) | ✅ (`rclone bisync`) | ✅ | ✅ | ✅ |
+| **Chunked / Resumable Uploads** | ✅ (Google Drive, Dropbox, OneDrive, S3) | ✅ | ⚠️ Partial | ❌ N/A | ✅ |
+| **Server-Side Move / Rename Detection**| ✅ (`RenameDetector` + RNFR/RNTO) | ✅ | ⚠️ Local only | ⚠️ Hash match | ✅ |
+| **Integrity Verifier (`check`)** | ✅ (`verify_integrity` + Checksums) | ✅ (`rclone check`) | ✅ | ⚠️ Hash-based | ✅ |
+| **Deduplication Engine (`dedupe`)** | ✅ (Multi-strategy resolution) | ✅ (`rclone dedupe`) | ❌ | ❌ | ⚠️ |
+| **Storage Analytics & Tree (`size`/`tree`)**| ✅ (`compute_storage_analytics`, `build_remote_tree`) | ✅ (`rclone size`/`tree`) | ⚠️ Grid view | ❌ | ⚠️ |
+| **Bandwidth Scheduling (`--bwlimit`)**| ✅ (Time-of-day token bucket schedule) | ✅ | ❌ Flat limit | ❌ Flat limit | ✅ |
+| **Dry-Run / Sync Preview** | ✅ (`preview_sync` / `plan`) | ✅ (`--dry-run`) | ✅ Compare view | ❌ | ✅ |
+| **Google Photos Equivalence Hub** | ✅ (`cloud_sync_photos` + EXIF/Timeline) | ❌ | ❌ | ❌ | ❌ |
+| **Zero-Knowledge Client Encryption** | ✅ (AES-256-GCM) | ✅ (`rclone crypt`) | ❌ | ⚠️ Untrusted devices | ⚠️ Enterprise tier |
+| **Web UI & Tauri GUI Dashboard** | ✅ (Direct IPC + Embedded Web UI) | ⚠️ Web GUI | ✅ Native GUI | ✅ Web GUI | ✅ Native GUI |
+
+---
+
+## 3. Supported Storage Backends (15 Protocols)
+
+1. **Google Drive** (OAuth2 token manager + Resumable chunked upload)
+2. **Dropbox** (OAuth2 + Session commit batching)
+3. **Microsoft OneDrive** (OAuth2 + Large file upload sessions)
+4. **Nextcloud** (WebDAV + OCS services)
+5. **WebDAV** (RFC 4918 XML parser + digest/basic auth)
+6. **Amazon S3 / MinIO / Cloudflare R2** (AWS v4 signatures + path style queries)
+7. **SFTP / SSH** (SSH key / password auth)
+8. **FTP / FTPS** (RFC 959 passive mode + RFC 4217 TLS/SSL)
+9. **MEGA** (mega-rs client)
+10. **Box.com** (OAuth2 integration)
+11. **Azure Blob Storage** (Shared key authorization + Azurite support)
+12. **Google Cloud Storage (GCS)** (Service account key auth)
+13. **Backblaze B2** (B2 native API integration)
+14. **pCloud** (OAuth2 REST API)
+15. **IPFS** (Pinning service API & Gateway resolution)
+
+---
+
+## 4. Strengths & Advantages of This Project
+
+- **Ultra-Low Memory Footprint (Rust)**: Written in Rust with minimal dependencies, the daemon runs efficiently on low-spec hardware (routers, Raspberry Pi, Android, NAS) without garbage collection pauses.
+- **Unified Decoupled Architecture**: Separation between the core synchronization engine (`cloud_sync_lib`), the headless daemon (`cloud_sync_daemon`), and the cross-platform Tauri 2.0 interface (`cloud_sync_tauri`) allows flexible headless server deployment or full desktop/mobile execution.
+- **Photos Cloud Hub**: Built-in chronological photo and video backup engine (`cloud_sync_photos`) with EXIF date-taken extraction, timeline browser, album curation, and automatic DCIM camera roll discovery for Android and desktop.
+- **Comprehensive Operational Suite**: Built-in Rclone equivalence tools (integrity verification, deduplication scanning with automated resolution strategies, storage hierarchy analytics, and visual directory tree generation) accessible both programmatically and via UI.

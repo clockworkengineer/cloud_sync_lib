@@ -298,6 +298,29 @@ impl ProviderConfig for IPFSCredentials {
     }
 }
 
+/// Credentials configuration for FTP / FTPS backends.
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+pub struct FtpCredentials {
+    /// FTP Host address.
+    pub host: String,
+    /// FTP Port (defaults to 21 if None).
+    pub port: Option<u16>,
+    /// FTP Username.
+    pub username: String,
+    /// FTP Password.
+    pub password: Option<String>,
+    /// TLS / FTPS flag.
+    pub secure: Option<bool>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for FtpCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
+}
+
 #[cfg(feature = "azure_blob")]
 pub mod azure_blob;
 #[cfg(feature = "b2")]
@@ -308,6 +331,8 @@ pub mod box_provider;
 pub mod dropbox;
 pub mod encryption;
 pub mod fallback;
+#[cfg(feature = "ftp")]
+pub mod ftp;
 #[cfg(feature = "gcs")]
 pub mod gcs;
 #[cfg(feature = "google_drive")]
@@ -341,6 +366,8 @@ pub use box_provider::{BoxProvider, BoxProviderBuilder};
 pub use dropbox::{DropboxProvider, DropboxProviderBuilder};
 pub use encryption::EncryptedBackend;
 pub use fallback::SimulatedFallback;
+#[cfg(feature = "ftp")]
+pub use ftp::{FtpProvider, FtpProviderBuilder};
 #[cfg(feature = "gcs")]
 pub use gcs::{GCSProvider, GCSProviderBuilder};
 #[cfg(feature = "google_drive")]
@@ -398,6 +425,8 @@ pub enum BackendCredentials {
     PCloud(PCloudCredentials),
     #[cfg(feature = "ipfs")]
     IPFS(IPFSCredentials),
+    #[cfg(feature = "ftp")]
+    FTP(FtpCredentials),
 }
 
 #[allow(unreachable_patterns)]
@@ -432,6 +461,8 @@ impl ProviderConfig for BackendCredentials {
             BackendCredentials::PCloud(c) => c.common_settings(),
             #[cfg(feature = "ipfs")]
             BackendCredentials::IPFS(c) => c.common_settings(),
+            #[cfg(feature = "ftp")]
+            BackendCredentials::FTP(c) => c.common_settings(),
             _ => unreachable!(),
         }
     }
@@ -526,6 +557,12 @@ impl BackendRegistry {
             BackendCredentials::IPFS(ref mut c) => {
                 c.jwt_token = utils::get_secure_credential("ipfs", "jwt_token", &c.jwt_token);
             }
+            #[cfg(feature = "ftp")]
+            BackendCredentials::FTP(ref mut c) => {
+                if let Some(ref mut pwd) = c.password {
+                    *pwd = utils::get_secure_credential("ftp", "password", pwd);
+                }
+            }
             _ => {}
         }
 
@@ -558,6 +595,8 @@ impl BackendRegistry {
             BackendCredentials::PCloud(c) => Arc::new(PCloudProvider::new(c)),
             #[cfg(feature = "ipfs")]
             BackendCredentials::IPFS(c) => Arc::new(IPFSProvider::new(c)),
+            #[cfg(feature = "ftp")]
+            BackendCredentials::FTP(c) => Arc::new(FtpProvider::new(c)),
         }
     }
 
@@ -598,6 +637,8 @@ impl BackendRegistry {
             BackendCredentials::PCloud(_) => "pCloud",
             #[cfg(feature = "ipfs")]
             BackendCredentials::IPFS(_) => "IPFS",
+            #[cfg(feature = "ftp")]
+            BackendCredentials::FTP(_) => "FTP",
             _ => unreachable!(),
         };
 

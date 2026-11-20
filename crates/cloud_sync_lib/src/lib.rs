@@ -6,24 +6,36 @@
 //! It supports both actual API clients (using OAuth2 refresh tokens) and a local
 //! folder fallback simulation for offline development and testing.
 
+pub mod analytics;
 pub mod auth;
 pub mod buffer_pool;
 pub mod client;
 pub mod config;
+pub mod dedupe;
 pub mod layers;
 pub mod providers;
 pub mod rate_limit;
 pub mod transport;
+pub mod verifier;
 
+pub use analytics::{
+    build_remote_tree, compute_storage_analytics, format_ascii_tree, AnalyzedFile, ExtensionStats,
+    StorageAnalytics, TreeNode,
+};
 pub use auth::{StaticTokenProvider, TokenProvider};
 pub use buffer_pool::{BufferPool, PooledBuffer};
 pub use client::{CloudSyncBuilder, CloudSyncClient, SyncSummary};
 pub use config::{ProviderCredentialsConfig, ProviderRootsConfig};
+pub use dedupe::{
+    resolve_duplicates, scan_duplicates, DedupeFile, DedupeStrategy, DedupeSummary, DuplicateGroup,
+};
 pub use layers::{
     CircuitBreakerConfig, CircuitBreakerLayer, LayeredBackendExt, LoggingLayer, MetricsCollector,
     MetricsLayer, RateLimitLayer, RetryLayer, StorageLayer, StorageMetrics,
 };
+pub use rate_limit::{BandwidthScheduleEntry, ScheduledTokenBucket};
 pub use transport::{HttpTransport, MockHttpTransport, ReqwestHttpTransport};
+pub use verifier::{verify_integrity, VerificationMismatch, VerificationReport};
 
 pub use cloud_sync_core::traits;
 pub mod sys {
@@ -43,9 +55,9 @@ pub use cloud_sync_core::{
 pub use providers::{
     local_sim::LocalSimulation, AzureBlobCredentials, B2Credentials, BackendCredentials,
     BackendFactory, BackendRegistry, CommonProviderSettings, DynamicBackendRegistry,
-    EncryptedBackend, GCSCredentials, IPFSCredentials, MegaCredentials, NextcloudCredentials,
-    OAuthCredentials, OAuthTokenManager, PCloudCredentials, ProviderConfig, S3Credentials,
-    SFTPCredentials, SimulatedFallback, WebDAVCredentials,
+    EncryptedBackend, FtpCredentials, GCSCredentials, IPFSCredentials, MegaCredentials,
+    NextcloudCredentials, OAuthCredentials, OAuthTokenManager, PCloudCredentials, ProviderConfig,
+    S3Credentials, SFTPCredentials, SimulatedFallback, WebDAVCredentials,
 };
 
 pub use cloud_sync_std::SyncIgnore;
@@ -68,6 +80,8 @@ pub use providers::{B2Provider, B2ProviderBuilder};
 pub use providers::{BoxProvider, BoxProviderBuilder};
 #[cfg(feature = "dropbox")]
 pub use providers::{DropboxProvider, DropboxProviderBuilder};
+#[cfg(feature = "ftp")]
+pub use providers::{FtpProvider, FtpProviderBuilder};
 #[cfg(feature = "gcs")]
 pub use providers::{GCSProvider, GCSProviderBuilder};
 #[cfg(feature = "google_drive")]

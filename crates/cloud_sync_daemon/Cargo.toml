@@ -28,7 +28,7 @@ serde_json = { workspace = true }
 tracing-appender = { workspace = true }
 
 [features]
-default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"]
+default = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs", "ftp"]
 google_drive = ["cloud_sync_lib/google_drive"]
 dropbox = ["cloud_sync_lib/dropbox"]
 onedrive = ["cloud_sync_lib/onedrive"]
@@ -43,6 +43,7 @@ gcs = ["cloud_sync_lib/gcs"]
 b2 = ["cloud_sync_lib/b2"]
 pcloud = ["cloud_sync_lib/pcloud"]
 ipfs = ["cloud_sync_lib/ipfs"]
+ftp = ["cloud_sync_lib/ftp"]
 
 [dev-dependencies]
 tempfile = { workspace = true }

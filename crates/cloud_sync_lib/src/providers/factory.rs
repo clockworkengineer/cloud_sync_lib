@@ -95,6 +95,8 @@ impl DynamicBackendRegistry {
         registry.register(Box::new(GCSFactory));
         #[cfg(feature = "ipfs")]
         registry.register(Box::new(IPFSFactory));
+        #[cfg(feature = "ftp")]
+        registry.register(Box::new(FtpFactory));
 
         registry
     }
@@ -450,6 +452,29 @@ impl BackendFactory for IPFSFactory {
             serde_json::from_value(config.clone()).map_err(config_err)?;
         Ok(super::BackendRegistry::create_backend(
             super::BackendCredentials::IPFS(creds),
+            sim_root,
+        ))
+    }
+}
+
+#[cfg(feature = "ftp")]
+pub struct FtpFactory;
+
+#[cfg(feature = "ftp")]
+impl BackendFactory for FtpFactory {
+    fn provider_name(&self) -> &'static str {
+        "ftp"
+    }
+
+    fn create(
+        &self,
+        config: &JsonValue,
+        sim_root: PathBuf,
+    ) -> Result<Arc<dyn StorageBackend>, StorageError> {
+        let creds: super::FtpCredentials =
+            serde_json::from_value(config.clone()).map_err(config_err)?;
+        Ok(super::BackendRegistry::create_backend(
+            super::BackendCredentials::FTP(creds),
             sim_root,
         ))
     }
