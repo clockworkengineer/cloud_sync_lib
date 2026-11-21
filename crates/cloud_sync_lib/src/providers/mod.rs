@@ -30,6 +30,8 @@ pub struct CommonProviderSettings {
     /// Optional selective synchronization folder paths.
     #[zeroize(skip)]
     pub selective_sync: Option<Vec<String>>,
+    /// Optional toggle for transparent lossless payload compression (CLZ1) before upload.
+    pub compress: Option<bool>,
 }
 
 pub trait ProviderConfig {
@@ -75,6 +77,10 @@ pub trait ProviderConfig {
 
     fn selective_sync(&self) -> Option<Vec<String>> {
         self.common_settings().selective_sync.clone()
+    }
+
+    fn compress(&self) -> bool {
+        self.common_settings().compress.unwrap_or(false)
     }
 }
 
@@ -321,6 +327,52 @@ impl ProviderConfig for FtpCredentials {
     }
 }
 
+/// Credentials configuration for HTTP / HTTPS remote directory & file servers.
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+pub struct HttpCredentials {
+    /// Base HTTP/HTTPS server URL (e.g. https://files.example.com/pub).
+    pub url: String,
+    /// Optional Basic Auth username.
+    pub username: Option<String>,
+    /// Optional Basic Auth password.
+    pub password: Option<String>,
+    /// Optional Bearer authorization token.
+    pub bearer_token: Option<String>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for HttpCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
+}
+
+/// Credentials configuration for SMB / CIFS network shares.
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+pub struct SmbCredentials {
+    /// SMB Server hostname or IP (e.g. 192.168.1.50 or nas.local).
+    pub server: String,
+    /// SMB Share name (e.g. Public or backups).
+    pub share: String,
+    /// Optional SMB Username.
+    pub username: Option<String>,
+    /// Optional SMB Password.
+    pub password: Option<String>,
+    /// Optional SMB Workgroup / Domain.
+    pub workgroup: Option<String>,
+    /// Optional explicit mount or UNC path override.
+    pub mount_path: Option<String>,
+    #[serde(flatten)]
+    pub common: CommonProviderSettings,
+}
+
+impl ProviderConfig for SmbCredentials {
+    fn common_settings(&self) -> &CommonProviderSettings {
+        &self.common
+    }
+}
+
 #[cfg(feature = "azure_blob")]
 pub mod azure_blob;
 #[cfg(feature = "b2")]
@@ -337,6 +389,8 @@ pub mod ftp;
 pub mod gcs;
 #[cfg(feature = "google_drive")]
 pub mod google_drive;
+#[cfg(feature = "http")]
+pub mod http;
 #[cfg(feature = "ipfs")]
 pub mod ipfs;
 pub mod local_sim;
@@ -352,6 +406,9 @@ pub mod pcloud;
 pub mod s3;
 #[cfg(feature = "sftp")]
 pub mod sftp;
+#[cfg(feature = "smb")]
+pub mod smb;
+pub mod union;
 pub mod utils;
 #[cfg(feature = "webdav")]
 pub mod webdav;
@@ -372,6 +429,8 @@ pub use ftp::{FtpProvider, FtpProviderBuilder};
 pub use gcs::{GCSProvider, GCSProviderBuilder};
 #[cfg(feature = "google_drive")]
 pub use google_drive::{GoogleDriveProvider, GoogleDriveProviderBuilder};
+#[cfg(feature = "http")]
+pub use http::{HttpProvider, HttpProviderBuilder};
 #[cfg(feature = "ipfs")]
 pub use ipfs::{IPFSProvider, IPFSProviderBuilder};
 #[cfg(feature = "mega")]
@@ -386,6 +445,9 @@ pub use pcloud::{PCloudProvider, PCloudProviderBuilder};
 pub use s3::{S3Provider, S3ProviderBuilder};
 #[cfg(feature = "sftp")]
 pub use sftp::{SFTPProvider, SFTPProviderBuilder};
+#[cfg(feature = "smb")]
+pub use smb::{SmbProvider, SmbProviderBuilder};
+pub use union::{UnionBackend, UnionPolicy};
 pub use utils::OAuthTokenManager;
 #[cfg(feature = "webdav")]
 pub use webdav::{WebDAVProvider, WebDAVProviderBuilder};
@@ -427,6 +489,10 @@ pub enum BackendCredentials {
     IPFS(IPFSCredentials),
     #[cfg(feature = "ftp")]
     FTP(FtpCredentials),
+    #[cfg(feature = "http")]
+    HTTP(HttpCredentials),
+    #[cfg(feature = "smb")]
+    SMB(SmbCredentials),
 }
 
 #[allow(unreachable_patterns)]
@@ -463,6 +529,10 @@ impl ProviderConfig for BackendCredentials {
             BackendCredentials::IPFS(c) => c.common_settings(),
             #[cfg(feature = "ftp")]
             BackendCredentials::FTP(c) => c.common_settings(),
+            #[cfg(feature = "http")]
+            BackendCredentials::HTTP(c) => c.common_settings(),
+            #[cfg(feature = "smb")]
+            BackendCredentials::SMB(c) => c.common_settings(),
             _ => unreachable!(),
         }
     }
@@ -563,6 +633,21 @@ impl BackendRegistry {
                     *pwd = utils::get_secure_credential("ftp", "password", pwd);
                 }
             }
+            #[cfg(feature = "http")]
+            BackendCredentials::HTTP(ref mut c) => {
+                if let Some(ref mut pwd) = c.password {
+                    *pwd = utils::get_secure_credential("http", "password", pwd);
+                }
+                if let Some(ref mut tok) = c.bearer_token {
+                    *tok = utils::get_secure_credential("http", "bearer_token", tok);
+                }
+            }
+            #[cfg(feature = "smb")]
+            BackendCredentials::SMB(ref mut c) => {
+                if let Some(ref mut pwd) = c.password {
+                    *pwd = utils::get_secure_credential("smb", "password", pwd);
+                }
+            }
             _ => {}
         }
 
@@ -597,6 +682,10 @@ impl BackendRegistry {
             BackendCredentials::IPFS(c) => Arc::new(IPFSProvider::new(c)),
             #[cfg(feature = "ftp")]
             BackendCredentials::FTP(c) => Arc::new(FtpProvider::new(c)),
+            #[cfg(feature = "http")]
+            BackendCredentials::HTTP(c) => Arc::new(HttpProvider::new(c)),
+            #[cfg(feature = "smb")]
+            BackendCredentials::SMB(c) => Arc::new(SmbProvider::new(c)),
         }
     }
 
@@ -639,6 +728,10 @@ impl BackendRegistry {
             BackendCredentials::IPFS(_) => "IPFS",
             #[cfg(feature = "ftp")]
             BackendCredentials::FTP(_) => "FTP",
+            #[cfg(feature = "http")]
+            BackendCredentials::HTTP(_) => "HTTP",
+            #[cfg(feature = "smb")]
+            BackendCredentials::SMB(_) => "SMB",
             _ => unreachable!(),
         };
 
@@ -646,6 +739,7 @@ impl BackendRegistry {
         let max_upload_rate = creds.max_upload_rate();
         let max_download_rate = creds.max_download_rate();
         let encryption_password = creds.encryption_password();
+        let compress_enabled = creds.compress();
 
         let upload_limiter = max_upload_rate
             .map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024))
@@ -664,10 +758,16 @@ impl BackendRegistry {
         let rate_limited =
             crate::rate_limit::RateLimitingBackend::new(fallback, upload_limiter, download_limiter);
 
-        if let Some(password) = encryption_password {
+        let base_backend: Arc<dyn StorageBackend> = if let Some(password) = encryption_password {
             Arc::new(encryption::EncryptedBackend::new(rate_limited, password))
         } else {
             Arc::new(rate_limited)
+        };
+
+        if compress_enabled {
+            Arc::new(crate::layers::CompressedBackend::new(base_backend, 64))
+        } else {
+            base_backend
         }
     }
 

@@ -780,6 +780,137 @@ pub async fn preview_sync(
     Ok(serde_json::json!(plans))
 }
 
+#[tauri::command]
+pub async fn list_trash_versions(
+    state: tauri::State<'_, SharedDaemonState>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        if let Ok(raw) = client.send_command("trash_list").await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let trash_dir = s.state_dir.join("trash");
+    drop(s);
+
+    let mgr =
+        cloud_sync_daemon::engine::TrashManager::new(cloud_sync_daemon::engine::VersioningConfig {
+            enabled: true,
+            trash_dir,
+            retention_days: 30,
+            max_versions_per_file: 5,
+        });
+    let versions = mgr.list_versions().await.map_err(|e| e.to_string())?;
+    Ok(serde_json::json!(versions))
+}
+
+#[tauri::command]
+pub async fn restore_trash_version(
+    state: tauri::State<'_, SharedDaemonState>,
+    archive_id: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        let cmd = format!("trash_restore {}", archive_id);
+        if let Ok(raw) = client.send_command(&cmd).await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let trash_dir = s.state_dir.join("trash");
+    let watch_dir = s.watch_dir.clone();
+    drop(s);
+
+    let mgr =
+        cloud_sync_daemon::engine::TrashManager::new(cloud_sync_daemon::engine::VersioningConfig {
+            enabled: true,
+            trash_dir,
+            retention_days: 30,
+            max_versions_per_file: 5,
+        });
+    let restored = mgr
+        .restore_version(&archive_id, &watch_dir, None)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "status": "restored",
+        "archive_id": archive_id,
+        "restored_path": restored.to_string_lossy()
+    }))
+}
+
+#[tauri::command]
+pub async fn transfer_cloud_to_cloud(
+    state: tauri::State<'_, SharedDaemonState>,
+    source_backend: String,
+    dest_backend: String,
+    delete_extraneous: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let del_extra = delete_extraneous.unwrap_or(false);
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        let flag = if del_extra { " --sync" } else { "" };
+        let cmd = format!(
+            "transfer {} {}{}",
+            source_backend.replace(' ', "_"),
+            dest_backend.replace(' ', "_"),
+            flag
+        );
+        if let Ok(raw) = client.send_command(&cmd).await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let backends = s.backends.clone();
+    drop(s);
+
+    let src_norm = source_backend.to_lowercase().replace(' ', "_");
+    let dst_norm = dest_backend.to_lowercase().replace(' ', "_");
+
+    let src = backends
+        .iter()
+        .find(|b| b.backend.name().to_lowercase().replace(' ', "_") == src_norm)
+        .ok_or_else(|| format!("Source backend '{}' not found", source_backend))?;
+    let dst = backends
+        .iter()
+        .find(|b| b.backend.name().to_lowercase().replace(' ', "_") == dst_norm)
+        .ok_or_else(|| format!("Destination backend '{}' not found", dest_backend))?;
+
+    let report = cloud_sync_lib::transfer_between_backends(
+        src.backend.as_ref(),
+        dst.backend.as_ref(),
+        "",
+        "",
+        cloud_sync_lib::CloudTransferOptions {
+            delete_extraneous: del_extra,
+            skip_matching: true,
+            dry_run: false,
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!(report))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

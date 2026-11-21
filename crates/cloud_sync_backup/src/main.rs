@@ -125,6 +125,123 @@ fn build_backend(
                         .unwrap_or_else(|| PathBuf::from("mega_backup"));
                     (BackendCredentials::Mega(creds), root)
                 }
+                #[cfg(feature = "box")]
+                "box" => {
+                    let creds = config
+                        .box_credentials
+                        .clone()
+                        .ok_or("Box credentials not configured")?;
+                    let root = config
+                        .roots
+                        .box_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/box"));
+                    (BackendCredentials::Box(creds), root)
+                }
+                #[cfg(feature = "azure_blob")]
+                "azure_blob" | "azure" => {
+                    let creds = config
+                        .azure_blob_credentials
+                        .clone()
+                        .ok_or("Azure Blob credentials not configured")?;
+                    let root = config
+                        .roots
+                        .azure_blob_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/azure_blob"));
+                    (BackendCredentials::AzureBlob(creds), root)
+                }
+                #[cfg(feature = "gcs")]
+                "gcs" => {
+                    let creds = config
+                        .gcs_credentials
+                        .clone()
+                        .ok_or("GCS credentials not configured")?;
+                    let root = config
+                        .roots
+                        .gcs_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/gcs"));
+                    (BackendCredentials::GCS(creds), root)
+                }
+                #[cfg(feature = "b2")]
+                "b2" | "backblaze" => {
+                    let creds = config
+                        .b2_credentials
+                        .clone()
+                        .ok_or("Backblaze B2 credentials not configured")?;
+                    let root = config
+                        .roots
+                        .b2_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/b2"));
+                    (BackendCredentials::B2(creds), root)
+                }
+                #[cfg(feature = "pcloud")]
+                "pcloud" => {
+                    let creds = config
+                        .pcloud_credentials
+                        .clone()
+                        .ok_or("pCloud credentials not configured")?;
+                    let root = config
+                        .roots
+                        .pcloud_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/pcloud"));
+                    (BackendCredentials::PCloud(creds), root)
+                }
+                #[cfg(feature = "ipfs")]
+                "ipfs" => {
+                    let creds = config
+                        .ipfs_credentials
+                        .clone()
+                        .ok_or("IPFS credentials not configured")?;
+                    let root = config
+                        .roots
+                        .ipfs_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/ipfs"));
+                    (BackendCredentials::IPFS(creds), root)
+                }
+                #[cfg(feature = "ftp")]
+                "ftp" | "ftps" => {
+                    let creds = config
+                        .ftp_credentials
+                        .clone()
+                        .ok_or("FTP credentials not configured")?;
+                    let root = config
+                        .roots
+                        .ftp_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/ftp"));
+                    (BackendCredentials::FTP(creds), root)
+                }
+                #[cfg(feature = "http")]
+                "http" | "https" => {
+                    let creds = config
+                        .http_credentials
+                        .clone()
+                        .ok_or("HTTP credentials not configured")?;
+                    let root = config
+                        .roots
+                        .http_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/http"));
+                    (BackendCredentials::HTTP(creds), root)
+                }
+                #[cfg(feature = "smb")]
+                "smb" | "cifs" => {
+                    let creds = config
+                        .smb_credentials
+                        .clone()
+                        .ok_or("SMB credentials not configured")?;
+                    let root = config
+                        .roots
+                        .smb_root
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("./cloud_simulation/smb"));
+                    (BackendCredentials::SMB(creds), root)
+                }
                 _ => {
                     return Err(format!(
                         "Unsupported backup provider or disabled feature: {}",

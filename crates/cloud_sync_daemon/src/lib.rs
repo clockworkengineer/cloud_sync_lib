@@ -323,6 +323,37 @@ pub fn build_backends(
         );
     }
 
+    #[cfg(feature = "http")]
+    if is_provider_enabled(&config.http_credentials) {
+        try_add_backend(
+            &mut backends,
+            config
+                .http_credentials
+                .clone()
+                .map(BackendCredentials::HTTP),
+            config
+                .http_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_HTTP_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+
+    #[cfg(feature = "smb")]
+    if is_provider_enabled(&config.smb_credentials) {
+        try_add_backend(
+            &mut backends,
+            config.smb_credentials.clone().map(BackendCredentials::SMB),
+            config
+                .smb_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(config::DEFAULT_SMB_ROOT)),
+            upload_limiter.clone(),
+            download_limiter.clone(),
+        );
+    }
+
     backends
 }
 

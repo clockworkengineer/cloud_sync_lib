@@ -416,6 +416,94 @@ pub async fn api_sync_plan(State(client): State<Arc<dyn DaemonClientPort>>) -> i
     }
 }
 
+/// HTTP Endpoint: Runs integrity verification across active backends.
+pub async fn api_verify(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("verify").await {
+        Ok(raw) => {
+            let json_val: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|_| json!([]));
+            Json(json_val).into_response()
+        }
+        Err(_) => Json(json!([])).into_response(),
+    }
+}
+
+/// HTTP Endpoint: Scans active backends for duplicate files.
+pub async fn api_dedupe(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("dedupe").await {
+        Ok(raw) => {
+            let json_val: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|_| json!([]));
+            Json(json_val).into_response()
+        }
+        Err(_) => Json(json!([])).into_response(),
+    }
+}
+
+/// HTTP Endpoint: Computes storage analytics across active backends.
+pub async fn api_analytics(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("stats").await {
+        Ok(raw) => {
+            let json_val: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|_| json!([]));
+            Json(json_val).into_response()
+        }
+        Err(_) => Json(json!([])).into_response(),
+    }
+}
+
+/// HTTP Endpoint: Builds remote directory trees across active backends.
+pub async fn api_tree(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("tree").await {
+        Ok(raw) => {
+            let json_val: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|_| json!([]));
+            Json(json_val).into_response()
+        }
+        Err(_) => Json(json!([])).into_response(),
+    }
+}
+
+/// HTTP Endpoint: Lists archived file versions in the versioning trash directory.
+pub async fn api_trash_list(State(client): State<Arc<dyn DaemonClientPort>>) -> impl IntoResponse {
+    match client.send_command("trash_list").await {
+        Ok(raw) => {
+            let json_val: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|_| json!([]));
+            Json(json_val).into_response()
+        }
+        Err(_) => Json(json!([])).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct RestoreTrashRequest {
+    pub archive_id: String,
+}
+
+/// HTTP Endpoint: Restores an archived file version from the trash directory.
+pub async fn api_trash_restore(
+    State(client): State<Arc<dyn DaemonClientPort>>,
+    Json(payload): axum::Json<RestoreTrashRequest>,
+) -> impl IntoResponse {
+    let cmd = format!("trash_restore {}", payload.archive_id);
+    match client.send_command(&cmd).await {
+        Ok(raw) => {
+            let trimmed = raw.trim();
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                Json(val).into_response()
+            } else {
+                Json(json!({ "error": trimmed })).into_response()
+            }
+        }
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("Could not connect to daemon socket: {}", e) })),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

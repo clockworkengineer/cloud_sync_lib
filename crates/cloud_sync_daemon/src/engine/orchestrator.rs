@@ -202,9 +202,21 @@ impl SyncOrchestrator {
             Some(40.0),
             None,
         );
-        let _result = self
-            .execute_sync(backend.clone(), &plan, None, dry_run)
-            .await?;
+        let trash_dir = state_file_path.parent().unwrap_or(watch_dir).join("trash");
+        let trash_mgr = TrashManager::new(crate::engine::versioning::VersioningConfig {
+            enabled: true,
+            trash_dir,
+            retention_days: 30,
+            max_versions_per_file: 5,
+        });
+        let _result = PlanExecutor::execute_with_watch_dir(
+            backend.clone(),
+            &plan,
+            Some(watch_dir),
+            Some(&trash_mgr),
+            dry_run,
+        )
+        .await?;
 
         if !dry_run {
             let mut state = self.state_repo.load(state_file_path).await;

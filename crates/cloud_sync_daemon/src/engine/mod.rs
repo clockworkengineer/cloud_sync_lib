@@ -24,4 +24,4 @@ pub use scanner::{DirectoryScanner, ScannedItem};
 pub use state_repository::{
     migrate_legacy_state_files, resolve_state_file_path, SyncStateRepository,
 };
-pub use versioning::{TrashManager, VersioningConfig};
+pub use versioning::{ArchivedVersion, TrashManager, VersioningConfig};

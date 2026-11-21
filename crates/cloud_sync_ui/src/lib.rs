@@ -17,8 +17,9 @@ use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
 use handlers::{
-    api_clear, api_conflicts, api_events, api_logs, api_pause, api_reload, api_resolve_conflict,
-    api_resume, api_start, api_status, api_stop, api_sync, api_sync_plan, serve_index,
+    api_analytics, api_clear, api_conflicts, api_dedupe, api_events, api_logs, api_pause,
+    api_reload, api_resolve_conflict, api_resume, api_start, api_status, api_stop, api_sync,
+    api_sync_plan, api_trash_list, api_trash_restore, api_tree, api_verify, serve_index,
 };
 
 pub const UI_BIND_ADDR: &str = "127.0.0.1:8082";
@@ -55,6 +56,12 @@ pub fn build_router(client: Arc<dyn DaemonClientPort>) -> Router {
         .route("/api/conflicts", get(api_conflicts))
         .route("/api/conflicts/resolve", post(api_resolve_conflict))
         .route("/api/sync/plan", get(api_sync_plan))
+        .route("/api/verify", get(api_verify))
+        .route("/api/dedupe", get(api_dedupe))
+        .route("/api/analytics", get(api_analytics))
+        .route("/api/tree", get(api_tree))
+        .route("/api/trash", get(api_trash_list))
+        .route("/api/trash/restore", post(api_trash_restore))
         .layer(CorsLayer::permissive())
         .with_state(client)
 }

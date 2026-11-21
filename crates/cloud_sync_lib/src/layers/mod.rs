@@ -4,12 +4,14 @@
 //! logging, and client-side encryption.
 
 pub mod circuit_breaker;
+pub mod compression;
 pub mod logging;
 pub mod metrics;
 pub mod rate_limit;
 pub mod retry;
 
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerLayer};
+pub use compression::{CompressedBackend, CompressionLayer};
 pub use logging::LoggingLayer;
 pub use metrics::{MetricsCollector, MetricsLayer, StorageMetrics};
 pub use rate_limit::RateLimitLayer;

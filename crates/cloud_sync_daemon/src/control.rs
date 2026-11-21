@@ -169,6 +169,12 @@ pub async fn handle_control_command(
                 if let Some(ref creds) = config.ftp_credentials {
                     add_if_placeholder_enabled!("FTP", &config.ftp_credentials, &creds.username);
                 }
+                if let Some(ref creds) = config.http_credentials {
+                    add_if_placeholder_enabled!("HTTP", &config.http_credentials, &creds.url);
+                }
+                if let Some(ref creds) = config.smb_credentials {
+                    add_if_placeholder_enabled!("SMB", &config.smb_credentials, &creds.server);
+                }
             }
 
             let watch_dir_str = s.watch_dir.to_string_lossy().to_string();
@@ -663,12 +669,104 @@ pub async fn handle_control_command(
             }
             serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()) + "\n"
         }
+        "trash" | "trash_list" => {
+            let s = state.lock().await;
+            let trash_dir = s.state_dir.join("trash");
+            drop(s);
+
+            let mgr = crate::engine::TrashManager::new(crate::engine::VersioningConfig {
+                enabled: true,
+                trash_dir,
+                retention_days: 30,
+                max_versions_per_file: 5,
+            });
+            match mgr.list_versions().await {
+                Ok(list) => serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string()) + "\n",
+                Err(e) => format!("Error: Failed to list trash versions: {}\n", e),
+            }
+        }
+        "trash_restore" => {
+            if parts.len() < 2 {
+                return "Error: trash_restore requires <archive_id>\n".to_string();
+            }
+            let archive_id = parts[1];
+            let custom_rel = parts.get(2).copied();
+
+            let s = state.lock().await;
+            let trash_dir = s.state_dir.join("trash");
+            let watch_dir = s.watch_dir.clone();
+            drop(s);
+
+            let mgr = crate::engine::TrashManager::new(crate::engine::VersioningConfig {
+                enabled: true,
+                trash_dir,
+                retention_days: 30,
+                max_versions_per_file: 5,
+            });
+            match mgr.restore_version(archive_id, &watch_dir, custom_rel).await {
+                Ok(restored) => serde_json::json!({
+                    "status": "restored",
+                    "archive_id": archive_id,
+                    "restored_path": restored.to_string_lossy()
+                })
+                .to_string()
+                    + "\n",
+                Err(e) => format!("Error: Failed to restore version '{}': {}\n", archive_id, e),
+            }
+        }
+        "transfer" => {
+            if parts.len() < 3 {
+                return "Error: transfer requires <source_backend> <dest_backend> [--sync]\n"
+                    .to_string();
+            }
+            let src_name = parts[1].to_lowercase();
+            let dst_name = parts[2].to_lowercase();
+            let delete_extra = parts.iter().any(|&p| p == "--sync");
+
+            let s = state.lock().await;
+            let backends = s.backends.clone();
+            drop(s);
+
+            let src_opt = backends
+                .iter()
+                .find(|b| b.backend.name().to_lowercase().replace(' ', "_") == src_name || b.backend.name().to_lowercase() == src_name);
+            let dst_opt = backends
+                .iter()
+                .find(|b| b.backend.name().to_lowercase().replace(' ', "_") == dst_name || b.backend.name().to_lowercase() == dst_name);
+
+            match (src_opt, dst_opt) {
+                (Some(src), Some(dst)) => {
+                    match cloud_sync_lib::transfer_between_backends(
+                        src.backend.as_ref(),
+                        dst.backend.as_ref(),
+                        "",
+                        "",
+                        cloud_sync_lib::CloudTransferOptions {
+                            delete_extraneous: delete_extra,
+                            skip_matching: true,
+                            dry_run: false,
+                        },
+                    )
+                    .await
+                    {
+                        Ok(report) => {
+                            serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string()) + "\n"
+                        }
+                        Err(e) => format!("Error: Cloud transfer failed: {}\n", e),
+                    }
+                }
+                _ => format!(
+                    "Error: Could not find active source '{}' and/or destination '{}' backend\n",
+                    src_name, dst_name
+                ),
+            }
+        }
         "stop" => {
             let _ = shutdown_tx.send(()).await;
             "Status: Stopping daemon...\n".to_string()
         }
         _ => {
-            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, conflicts, resolve_conflict, verify, dedupe, size, tree, preview, stop\n"
+            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, conflicts, resolve_conflict, verify, dedupe, size, tree, preview, trash, trash_restore, transfer, stop\n"
                 .to_string()
         }
     }

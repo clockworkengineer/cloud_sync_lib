@@ -28,6 +28,17 @@ impl PlanExecutor {
         trash_mgr: Option<&TrashManager>,
         dry_run: bool,
     ) -> Result<ExecutionResult, StorageError> {
+        Self::execute_with_watch_dir(backend, plan, None, trash_mgr, dry_run).await
+    }
+
+    /// Executes a `SyncPlan` with an optional local `watch_dir` for complete automated conflict resolution.
+    pub async fn execute_with_watch_dir(
+        backend: Arc<dyn StorageBackend>,
+        plan: &SyncPlan,
+        watch_dir: Option<&std::path::Path>,
+        trash_mgr: Option<&TrashManager>,
+        dry_run: bool,
+    ) -> Result<ExecutionResult, StorageError> {
         let mut executed_actions = 0;
         let mut failed_actions = 0;
         let mut bytes_uploaded = 0;
@@ -242,16 +253,81 @@ impl PlanExecutor {
                     );
                     match action {
                         ConflictResolutionAction::UploadLocal => {
+                            if let Some(wdir) = watch_dir {
+                                let local_path = wdir.join(rel_path);
+                                if let Err(e) = backend.upload(&local_path, rel_path).await {
+                                    error!(
+                                        "[{}] Conflict UploadLocal failed for '{}': {}",
+                                        backend.name(),
+                                        rel_path,
+                                        e
+                                    );
+                                    failed_actions += 1;
+                                    continue;
+                                }
+                            }
                             executed_actions += 1;
                         }
                         ConflictResolutionAction::DownloadRemote => {
+                            if let Some(wdir) = watch_dir {
+                                let local_path = wdir.join(rel_path);
+                                if let Some(tm) = trash_mgr {
+                                    let _ = tm.archive_file(&local_path).await;
+                                }
+                                if let Err(e) = backend.download(rel_path, &local_path).await {
+                                    error!(
+                                        "[{}] Conflict DownloadRemote failed for '{}': {}",
+                                        backend.name(),
+                                        rel_path,
+                                        e
+                                    );
+                                    failed_actions += 1;
+                                    continue;
+                                }
+                            }
                             executed_actions += 1;
                         }
                         ConflictResolutionAction::RenameLocalAndDownloadRemote(new_local) => {
+                            if let Some(wdir) = watch_dir {
+                                let orig_local = wdir.join(rel_path);
+                                let renamed_local = wdir.join(new_local);
+                                if orig_local.exists() {
+                                    let _ = tokio::fs::rename(&orig_local, &renamed_local).await;
+                                    let _ = backend.upload(&renamed_local, new_local).await;
+                                }
+                                if let Err(e) = backend.download(rel_path, &orig_local).await {
+                                    error!(
+                                        "[{}] Conflict download after local rename failed for '{}': {}",
+                                        backend.name(),
+                                        rel_path,
+                                        e
+                                    );
+                                    failed_actions += 1;
+                                    continue;
+                                }
+                            }
                             info!("Renamed local conflict to '{}'", new_local);
                             executed_actions += 1;
                         }
                         ConflictResolutionAction::RenameRemoteAndUploadLocal(new_remote) => {
+                            let _ = backend.rename(rel_path, new_remote).await;
+                            if let Some(wdir) = watch_dir {
+                                let orig_local = wdir.join(rel_path);
+                                let renamed_local = wdir.join(new_remote);
+                                let _ = backend.download(new_remote, &renamed_local).await;
+                                if orig_local.exists() {
+                                    if let Err(e) = backend.upload(&orig_local, rel_path).await {
+                                        error!(
+                                            "[{}] Conflict upload after remote rename failed for '{}': {}",
+                                            backend.name(),
+                                            rel_path,
+                                            e
+                                        );
+                                        failed_actions += 1;
+                                        continue;
+                                    }
+                                }
+                            }
                             info!("Renamed remote conflict to '{}'", new_remote);
                             executed_actions += 1;
                         }

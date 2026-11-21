@@ -21,8 +21,8 @@ tauri = { version = "2.0", features = [] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
-cloud_sync_daemon = { path = "../cloud_sync_daemon", version = "0.3.0", default-features = false, features = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs", "ftp"] }
-cloud_sync_lib = { path = "../cloud_sync_lib", version = "0.3.0", default-features = false, features = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs", "ftp"] }
+cloud_sync_daemon = { path = "../cloud_sync_daemon", version = "0.3.0", default-features = false, features = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs", "ftp", "http", "smb"] }
+cloud_sync_lib = { path = "../cloud_sync_lib", version = "0.3.0", default-features = false, features = ["google_drive", "dropbox", "onedrive", "webdav", "s3", "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs", "ftp", "http", "smb"] }
 cloud_sync_core = { path = "../cloud_sync_core", version = "0.3.0" }
 cloud_sync_photos = { path = "../cloud_sync_photos", version = "0.3.0" }
 chrono = { workspace = true, features = ["serde"] }

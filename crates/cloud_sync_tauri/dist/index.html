@@ -1701,6 +1701,8 @@
                     <button class="tab-btn" id="tab-btn-tools-dedupe" onclick="switchToolsTab('dedupe')">♻️ Dedupe Scanner</button>
                     <button class="tab-btn" id="tab-btn-tools-analytics" onclick="switchToolsTab('analytics')">📊 Storage Size & Tree</button>
                     <button class="tab-btn" id="tab-btn-tools-preview" onclick="switchToolsTab('preview')">👁️ Sync Preview (plan)</button>
+                    <button class="tab-btn" id="tab-btn-tools-trash" onclick="switchToolsTab('trash'); loadTrashVersions();">🗑️ File Versioning</button>
+                    <button class="tab-btn" id="tab-btn-tools-transfer" onclick="switchToolsTab('transfer')">☁️⇄☁️ Cloud Transfer</button>
                 </div>
             </div>
 
@@ -1759,6 +1761,38 @@
                     </div>
                     <div id="tools-preview-results" style="font-size: 0.88rem; color: var(--text-secondary);">
                         <p>Click "Refresh Preview" to generate a dry-run execution plan showing what will be uploaded, downloaded, and deleted.</p>
+                    </div>
+                </div>
+
+                <!-- Tab 5: File Versioning & Trash Rollback -->
+                <div id="tools-tab-trash" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div style="font-size: 0.88rem; color: var(--text-secondary);">Syncthing-style file versioning archive. Overwritten or deleted files are automatically snapshotted here for rollback.</div>
+                        <button type="button" class="btn btn-sync" id="btn-run-trash" onclick="loadTrashVersions()">
+                            🔄 Refresh Versions
+                        </button>
+                    </div>
+                    <div id="tools-trash-results" style="font-size: 0.88rem; color: var(--text-secondary);">
+                        <p>Click "Refresh Versions" to list archived file snapshots available for point-in-time restoration.</p>
+                    </div>
+                </div>
+
+                <!-- Tab 6: Direct Cloud-to-Cloud Transfer -->
+                <div id="tools-tab-transfer" style="display: none;">
+                    <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
+                        <input type="text" class="form-input" id="tools-transfer-src" placeholder="Source Backend (e.g. Google Drive)" style="max-width: 240px;">
+                        <span style="font-size: 1.1rem; color: var(--accent-teal);">➔</span>
+                        <input type="text" class="form-input" id="tools-transfer-dst" placeholder="Destination Backend (e.g. S3)" style="max-width: 240px;">
+                        <label style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text-secondary); cursor: pointer;">
+                            <input type="checkbox" id="tools-transfer-sync">
+                            <span>Delete Extraneous (Mirror Sync)</span>
+                        </label>
+                        <button type="button" class="btn btn-sync" id="btn-run-transfer" onclick="runCloudTransfer()" style="margin-left: auto;">
+                            ☁️⇄☁️ Start Transfer
+                        </button>
+                    </div>
+                    <div id="tools-transfer-results" style="font-size: 0.88rem; color: var(--text-secondary);">
+                        <p>Migrate or replicate files directly between any two active cloud backends (Rclone <code>copy</code> / <code>sync</code> equivalent).</p>
                     </div>
                 </div>
             </div>
@@ -2460,6 +2494,33 @@
                     { key: "password", label: "FTP Password", type: "password", mono: true },
                     { key: "destination_folder", label: "Remote Root Folder", type: "text", common: true }
                 ]
+            },
+            {
+                id: "http_credentials",
+                name: "HTTP / HTTPS Directory Server",
+                icon: "🔗",
+                color: "#38BDF8",
+                fields: [
+                    { key: "url", label: "Base HTTP/HTTPS URL", type: "text", placeholder: "https://files.example.com/pub", mono: true },
+                    { key: "username", label: "Basic Auth Username (optional)", type: "text" },
+                    { key: "password", label: "Basic Auth Password (optional)", type: "password", mono: true },
+                    { key: "bearer_token", label: "Bearer Token (optional)", type: "password", mono: true },
+                    { key: "destination_folder", label: "Remote Subpath", type: "text", common: true }
+                ]
+            },
+            {
+                id: "smb_credentials",
+                name: "SMB / CIFS Network Share",
+                icon: "🖥️",
+                color: "#A855F7",
+                fields: [
+                    { key: "server", label: "SMB Server / NAS Hostname", type: "text", placeholder: "192.168.1.50 or nas.local", mono: true },
+                    { key: "share", label: "Share Name", type: "text", placeholder: "backups", mono: true },
+                    { key: "username", label: "SMB Username (optional)", type: "text" },
+                    { key: "password", label: "SMB Password (optional)", type: "password", mono: true },
+                    { key: "workgroup", label: "Workgroup / Domain (optional)", type: "text", placeholder: "WORKGROUP" },
+                    { key: "destination_folder", label: "Remote Root Folder", type: "text", common: true }
+                ]
             }
         ];
 
@@ -2901,7 +2962,7 @@
         }
 
         function switchToolsTab(tab) {
-            const tabs = ['verify', 'dedupe', 'analytics', 'preview'];
+            const tabs = ['verify', 'dedupe', 'analytics', 'preview', 'trash', 'transfer'];
             tabs.forEach(t => {
                 const btn = document.getElementById(`tab-btn-tools-${t}`);
                 const pane = document.getElementById(`tools-tab-${t}`);
@@ -3132,6 +3193,116 @@
                 resEl.innerHTML = `<div style="color: #f43f5e;">Failed to preview sync: ${err}</div>`;
             } finally {
                 btn.innerHTML = `👁️ Refresh Preview`;
+                btn.removeAttribute('disabled');
+            }
+        }
+
+        async function loadTrashVersions() {
+            const btn = document.getElementById('btn-run-trash');
+            const resEl = document.getElementById('tools-trash-results');
+            if (btn) {
+                btn.innerHTML = `<span class="spinner"></span> <span>Loading...</span>`;
+                btn.setAttribute('disabled', 'true');
+            }
+
+            try {
+                let data;
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    data = await window.__TAURI_INTERNALS__.invoke('list_trash_versions');
+                } else {
+                    const resp = await fetch('/api/trash');
+                    data = await resp.json();
+                }
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    resEl.innerHTML = `<div style="color: var(--text-secondary);">No archived file versions in trash yet. Versions are automatically stored whenever files are overwritten or deleted.</div>`;
+                    return;
+                }
+
+                let html = `<div style="display: flex; flex-direction: column; gap: 0.5rem;">`;
+                data.forEach(v => {
+                    const kb = (v.size / 1024).toFixed(1);
+                    html += `<div style="background: rgba(0,0,0,0.35); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--card-border); display: flex; justify-content: space-between; align-items: center; gap: 1rem;">`;
+                    html += `<div>`;
+                    html += `<div style="color: #fff; font-weight: 600;">${v.original_filename}</div>`;
+                    html += `<div style="font-size: 0.78rem; color: var(--text-secondary);">Snapshot: <code>${v.archived_at}</code> • Size: ${kb} KB</div>`;
+                    html += `</div>`;
+                    html += `<button type="button" class="btn-mini" onclick="restoreTrashVersion('${v.id}')">⏪ Restore</button>`;
+                    html += `</div>`;
+                });
+                html += `</div>`;
+                resEl.innerHTML = html;
+            } catch (err) {
+                resEl.innerHTML = `<div style="color: #f43f5e;">Failed to load archived versions: ${err}</div>`;
+            } finally {
+                if (btn) {
+                    btn.innerHTML = `🔄 Refresh Versions`;
+                    btn.removeAttribute('disabled');
+                }
+            }
+        }
+
+        async function restoreTrashVersion(archiveId) {
+            try {
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    await window.__TAURI_INTERNALS__.invoke('restore_trash_version', { archiveId });
+                } else {
+                    await fetch('/api/trash/restore', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ archive_id: archiveId })
+                    });
+                }
+                showToast(`Restored snapshot ${archiveId} to watched folder!`, "⏪");
+                addLogEntry('info', `Restored file version snapshot: ${archiveId}`);
+            } catch (err) {
+                showToast(`Failed to restore version: ${err}`, "✕");
+            }
+        }
+
+        async function runCloudTransfer() {
+            const btn = document.getElementById('btn-run-transfer');
+            const resEl = document.getElementById('tools-transfer-results');
+            const src = document.getElementById('tools-transfer-src').value.trim();
+            const dst = document.getElementById('tools-transfer-dst').value.trim();
+            const delExtra = document.getElementById('tools-transfer-sync').checked;
+
+            if (!src || !dst) {
+                resEl.innerHTML = `<div style="color: var(--accent-amber);">Please enter both a source backend name and a destination backend name.</div>`;
+                return;
+            }
+
+            btn.innerHTML = `<span class="spinner"></span> <span>Transferring...</span>`;
+            btn.setAttribute('disabled', 'true');
+            resEl.innerHTML = `<p style="color: var(--text-secondary);">Transferring files directly from ${src} to ${dst}...</p>`;
+
+            try {
+                let rep;
+                if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    rep = await window.__TAURI_INTERNALS__.invoke('transfer_cloud_to_cloud', {
+                        sourceBackend: src,
+                        destBackend: dst,
+                        deleteExtraneous: delExtra
+                    });
+                } else {
+                    resEl.innerHTML = `<div style="color: var(--accent-amber);">Direct Cloud-to-Cloud transfer requires Tauri IPC or daemon control connection.</div>`;
+                    return;
+                }
+
+                let html = `<div style="background: rgba(0,0,0,0.3); padding: 1rem; border-radius: 8px; border: 1px solid var(--card-border);">`;
+                html += `<h4 style="color: #10b981; margin-bottom: 0.5rem;">✓ Cloud-to-Cloud Transfer Complete (${rep.source_backend} ➔ ${rep.destination_backend})</h4>`;
+                html += `<div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">`;
+                html += `<div><strong>Transferred:</strong> ${rep.files_transferred} file(s)</div>`;
+                html += `<div><strong>Skipped (Identical):</strong> ${rep.files_skipped} file(s)</div>`;
+                html += `<div><strong>Deleted Extraneous:</strong> ${rep.files_deleted_on_dest} file(s)</div>`;
+                html += `<div><strong>Bytes Moved:</strong> ${(rep.bytes_transferred / 1024).toFixed(1)} KB</div>`;
+                html += `<div><strong>Duration:</strong> ${rep.duration_ms}ms</div>`;
+                html += `</div></div>`;
+                resEl.innerHTML = html;
+            } catch (err) {
+                resEl.innerHTML = `<div style="color: #f43f5e;">Cloud-to-Cloud transfer failed: ${err}</div>`;
+            } finally {
+                btn.innerHTML = `☁️⇄☁️ Start Transfer`;
                 btn.removeAttribute('disabled');
             }
         }

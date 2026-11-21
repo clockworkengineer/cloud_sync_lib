@@ -22,6 +22,8 @@ pub const DEFAULT_B2_ROOT: &str = "./cloud_simulation/b2";
 pub const DEFAULT_PCLOUD_ROOT: &str = "./cloud_simulation/pcloud";
 pub const DEFAULT_IPFS_ROOT: &str = "./cloud_simulation/ipfs";
 pub const DEFAULT_FTP_ROOT: &str = "./cloud_simulation/ftp";
+pub const DEFAULT_HTTP_ROOT: &str = "./cloud_simulation/http";
+pub const DEFAULT_SMB_ROOT: &str = "./cloud_simulation/smb";
 
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -42,6 +44,8 @@ pub struct AppConfig {
     pub pcloud_root: Option<PathBuf>,
     pub ipfs_root: Option<PathBuf>,
     pub ftp_root: Option<PathBuf>,
+    pub http_root: Option<PathBuf>,
+    pub smb_root: Option<PathBuf>,
     #[serde(flatten)]
     pub credentials: cloud_sync_lib::ProviderCredentialsConfig,
     pub exclude: Option<Vec<String>>,
@@ -113,6 +117,8 @@ impl Default for AppConfig {
             pcloud_root: Some(sim_dir.join("pcloud")),
             ipfs_root: Some(sim_dir.join("ipfs")),
             ftp_root: Some(sim_dir.join("ftp")),
+            http_root: Some(sim_dir.join("http")),
+            smb_root: Some(sim_dir.join("smb")),
             credentials: Default::default(),
             exclude: None,
             max_upload_rate: None,
@@ -205,6 +211,8 @@ pub async fn load_or_create_config(path: &str) -> Result<AppConfig, Box<dyn std:
     config.pcloud_root = config.pcloud_root.map(expand_path);
     config.ipfs_root = config.ipfs_root.map(expand_path);
     config.ftp_root = config.ftp_root.map(expand_path);
+    config.http_root = config.http_root.map(expand_path);
+    config.smb_root = config.smb_root.map(expand_path);
 
     Ok(config)
 }
@@ -237,6 +245,7 @@ mod tests {
                 max_upload_rate: None,
                 max_download_rate: None,
                 selective_sync: None,
+                compress: None,
             },
         });
         assert!(!is_provider_enabled(&creds_disabled));
@@ -253,6 +262,7 @@ mod tests {
                 max_upload_rate: None,
                 max_download_rate: None,
                 selective_sync: None,
+                compress: None,
             },
         });
         assert!(is_provider_enabled(&creds_enabled));

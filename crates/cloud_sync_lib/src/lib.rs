@@ -10,6 +10,7 @@ pub mod analytics;
 pub mod auth;
 pub mod buffer_pool;
 pub mod client;
+pub mod cloud_transfer;
 pub mod config;
 pub mod dedupe;
 pub mod layers;
@@ -25,13 +26,15 @@ pub use analytics::{
 pub use auth::{StaticTokenProvider, TokenProvider};
 pub use buffer_pool::{BufferPool, PooledBuffer};
 pub use client::{CloudSyncBuilder, CloudSyncClient, SyncSummary};
+pub use cloud_transfer::{transfer_between_backends, CloudTransferOptions, CloudTransferReport};
 pub use config::{ProviderCredentialsConfig, ProviderRootsConfig};
 pub use dedupe::{
     resolve_duplicates, scan_duplicates, DedupeFile, DedupeStrategy, DedupeSummary, DuplicateGroup,
 };
 pub use layers::{
-    CircuitBreakerConfig, CircuitBreakerLayer, LayeredBackendExt, LoggingLayer, MetricsCollector,
-    MetricsLayer, RateLimitLayer, RetryLayer, StorageLayer, StorageMetrics,
+    CircuitBreakerConfig, CircuitBreakerLayer, CompressedBackend, CompressionLayer,
+    LayeredBackendExt, LoggingLayer, MetricsCollector, MetricsLayer, RateLimitLayer, RetryLayer,
+    StorageLayer, StorageMetrics,
 };
 pub use rate_limit::{BandwidthScheduleEntry, ScheduledTokenBucket};
 pub use transport::{HttpTransport, MockHttpTransport, ReqwestHttpTransport};
@@ -55,9 +58,10 @@ pub use cloud_sync_core::{
 pub use providers::{
     local_sim::LocalSimulation, AzureBlobCredentials, B2Credentials, BackendCredentials,
     BackendFactory, BackendRegistry, CommonProviderSettings, DynamicBackendRegistry,
-    EncryptedBackend, FtpCredentials, GCSCredentials, IPFSCredentials, MegaCredentials,
-    NextcloudCredentials, OAuthCredentials, OAuthTokenManager, PCloudCredentials, ProviderConfig,
-    S3Credentials, SFTPCredentials, SimulatedFallback, WebDAVCredentials,
+    EncryptedBackend, FtpCredentials, GCSCredentials, HttpCredentials, IPFSCredentials,
+    MegaCredentials, NextcloudCredentials, OAuthCredentials, OAuthTokenManager, PCloudCredentials,
+    ProviderConfig, S3Credentials, SFTPCredentials, SimulatedFallback, SmbCredentials,
+    UnionBackend, UnionPolicy, WebDAVCredentials,
 };
 
 pub use cloud_sync_std::SyncIgnore;
@@ -86,6 +90,8 @@ pub use providers::{FtpProvider, FtpProviderBuilder};
 pub use providers::{GCSProvider, GCSProviderBuilder};
 #[cfg(feature = "google_drive")]
 pub use providers::{GoogleDriveProvider, GoogleDriveProviderBuilder};
+#[cfg(feature = "http")]
+pub use providers::{HttpProvider, HttpProviderBuilder};
 #[cfg(feature = "ipfs")]
 pub use providers::{IPFSProvider, IPFSProviderBuilder};
 #[cfg(feature = "mega")]
@@ -100,6 +106,8 @@ pub use providers::{PCloudProvider, PCloudProviderBuilder};
 pub use providers::{S3Provider, S3ProviderBuilder};
 #[cfg(feature = "sftp")]
 pub use providers::{SFTPProvider, SFTPProviderBuilder};
+#[cfg(feature = "smb")]
+pub use providers::{SmbProvider, SmbProviderBuilder};
 #[cfg(feature = "webdav")]
 pub use providers::{WebDAVProvider, WebDAVProviderBuilder};
 
@@ -1168,6 +1176,7 @@ mod tests {
                 max_upload_rate: None,
                 max_download_rate: None,
                 selective_sync: None,
+                compress: None,
             },
         };
 
@@ -1394,6 +1403,7 @@ mod tests {
                 max_upload_rate: None,
                 max_download_rate: None,
                 selective_sync: None,
+                compress: None,
             },
         };
 

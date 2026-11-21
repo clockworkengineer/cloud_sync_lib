@@ -66,6 +66,8 @@ b2 = []
 pcloud = []
 ipfs = []
 ftp = []
+http = []
+smb = []
 
 [dev-dependencies]
 tempfile = { workspace = true }

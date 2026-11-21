@@ -97,6 +97,10 @@ impl DynamicBackendRegistry {
         registry.register(Box::new(IPFSFactory));
         #[cfg(feature = "ftp")]
         registry.register(Box::new(FtpFactory));
+        #[cfg(feature = "http")]
+        registry.register(Box::new(HttpFactory));
+        #[cfg(feature = "smb")]
+        registry.register(Box::new(SmbFactory));
 
         registry
     }
@@ -475,6 +479,52 @@ impl BackendFactory for FtpFactory {
             serde_json::from_value(config.clone()).map_err(config_err)?;
         Ok(super::BackendRegistry::create_backend(
             super::BackendCredentials::FTP(creds),
+            sim_root,
+        ))
+    }
+}
+
+#[cfg(feature = "http")]
+pub struct HttpFactory;
+
+#[cfg(feature = "http")]
+impl BackendFactory for HttpFactory {
+    fn provider_name(&self) -> &'static str {
+        "http"
+    }
+
+    fn create(
+        &self,
+        config: &JsonValue,
+        sim_root: PathBuf,
+    ) -> Result<Arc<dyn StorageBackend>, StorageError> {
+        let creds: super::HttpCredentials =
+            serde_json::from_value(config.clone()).map_err(config_err)?;
+        Ok(super::BackendRegistry::create_backend(
+            super::BackendCredentials::HTTP(creds),
+            sim_root,
+        ))
+    }
+}
+
+#[cfg(feature = "smb")]
+pub struct SmbFactory;
+
+#[cfg(feature = "smb")]
+impl BackendFactory for SmbFactory {
+    fn provider_name(&self) -> &'static str {
+        "smb"
+    }
+
+    fn create(
+        &self,
+        config: &JsonValue,
+        sim_root: PathBuf,
+    ) -> Result<Arc<dyn StorageBackend>, StorageError> {
+        let creds: super::SmbCredentials =
+            serde_json::from_value(config.clone()).map_err(config_err)?;
+        Ok(super::BackendRegistry::create_backend(
+            super::BackendCredentials::SMB(creds),
             sim_root,
         ))
     }
