@@ -397,6 +397,9 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let raw_args: Vec<String> = std::env::args().collect();
     let mut log_file_path = None;
+    let mut run_once = false;
+    let mut snapshot_label: Option<String> = None;
+    let mut list_snaps = false;
     let mut args = Vec::new();
     if !raw_args.is_empty() {
         args.push(raw_args[0].clone());
@@ -406,6 +409,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if (raw_args[i] == "--log-file" || raw_args[i] == "--log") && i + 1 < raw_args.len() {
             log_file_path = Some(raw_args[i + 1].clone());
             i += 2;
+        } else if raw_args[i] == "--once" {
+            run_once = true;
+            i += 1;
+        } else if raw_args[i] == "--list-snapshots" {
+            list_snaps = true;
+            i += 1;
+        } else if raw_args[i] == "--snapshot" {
+            if i + 1 < raw_args.len() && !raw_args[i + 1].starts_with("--") {
+                snapshot_label = Some(raw_args[i + 1].clone());
+                i += 2;
+            } else {
+                snapshot_label = Some("cli".to_string());
+                i += 1;
+            }
         } else if raw_args[i].ends_with(".log") {
             log_file_path = Some(raw_args[i].clone());
             i += 1;
@@ -461,6 +478,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config,
     )?;
 
+    if list_snaps {
+        let snaps = cloud_sync_lib::list_snapshots(&*destination).await?;
+        println!(
+            "[Backup] Found {} snapshot(s) on {}:",
+            snaps.len(),
+            destination.name()
+        );
+        for s in snaps {
+            println!(
+                "  - {} (label: '{}', files: {}, total: {} B, saved by dedup: {} B)",
+                s.id, s.label, s.total_files, s.total_bytes, s.bytes_saved_by_dedup
+            );
+        }
+        return Ok(());
+    }
+
+    if let Some(label) = snapshot_label {
+        let local_src = config
+            .backup
+            .source_path
+            .as_deref()
+            .ok_or("--snapshot requires backup.source_path pointing to a local directory")?;
+        let mf =
+            cloud_sync_lib::create_snapshot(&*destination, std::path::Path::new(local_src), &label)
+                .await?;
+        println!(
+            "[Backup] Created deduplicated snapshot '{}' on {} ({} files, {} new blobs, {} reused blobs)",
+            mf.id,
+            destination.name(),
+            mf.total_files,
+            mf.new_blobs_uploaded,
+            mf.deduped_blobs_reused
+        );
+        return Ok(());
+    }
+
     let interval = config.backup.backup_interval_secs.unwrap_or(60);
     println!(
         "[Backup] Initializing backup loop (Source: {} -> Destination: {}) every {} seconds",
@@ -479,6 +532,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(e) => eprintln!("[Backup] Backup scan failed: {}", e),
         }
+        if run_once {
+            break;
+        }
         tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
     }
+    Ok(())
 }

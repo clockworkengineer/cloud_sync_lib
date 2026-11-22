@@ -3,6 +3,7 @@
 //! Provides intercepting layers for retries, rate limiting, metrics telemetry,
 //! logging, and client-side encryption.
 
+pub mod cache;
 pub mod circuit_breaker;
 pub mod compression;
 pub mod logging;
@@ -10,6 +11,7 @@ pub mod metrics;
 pub mod rate_limit;
 pub mod retry;
 
+pub use cache::{CacheLayer, CachedBackend};
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerLayer};
 pub use compression::{CompressedBackend, CompressionLayer};
 pub use logging::LoggingLayer;

@@ -379,6 +379,7 @@ pub mod azure_blob;
 pub mod b2;
 #[cfg(feature = "box")]
 pub mod box_provider;
+pub mod chunker;
 #[cfg(feature = "dropbox")]
 pub mod dropbox;
 pub mod encryption;
@@ -419,6 +420,7 @@ pub use azure_blob::{AzureBlobProvider, AzureBlobProviderBuilder};
 pub use b2::{B2Provider, B2ProviderBuilder};
 #[cfg(feature = "box")]
 pub use box_provider::{BoxProvider, BoxProviderBuilder};
+pub use chunker::{ChunkManifest, ChunkPartInfo, ChunkerBackend};
 #[cfg(feature = "dropbox")]
 pub use dropbox::{DropboxProvider, DropboxProviderBuilder};
 pub use encryption::EncryptedBackend;

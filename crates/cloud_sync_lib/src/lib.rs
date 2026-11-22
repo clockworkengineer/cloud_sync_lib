@@ -16,6 +16,7 @@ pub mod dedupe;
 pub mod layers;
 pub mod providers;
 pub mod rate_limit;
+pub mod snapshot;
 pub mod transport;
 pub mod verifier;
 
@@ -32,11 +33,15 @@ pub use dedupe::{
     resolve_duplicates, scan_duplicates, DedupeFile, DedupeStrategy, DedupeSummary, DuplicateGroup,
 };
 pub use layers::{
-    CircuitBreakerConfig, CircuitBreakerLayer, CompressedBackend, CompressionLayer,
-    LayeredBackendExt, LoggingLayer, MetricsCollector, MetricsLayer, RateLimitLayer, RetryLayer,
-    StorageLayer, StorageMetrics,
+    CacheLayer, CachedBackend, CircuitBreakerConfig, CircuitBreakerLayer, CompressedBackend,
+    CompressionLayer, LayeredBackendExt, LoggingLayer, MetricsCollector, MetricsLayer,
+    RateLimitLayer, RetryLayer, StorageLayer, StorageMetrics,
 };
 pub use rate_limit::{BandwidthScheduleEntry, ScheduledTokenBucket};
+pub use snapshot::{
+    create_snapshot, list_snapshots, prune_snapshots, restore_snapshot, SnapshotFileEntry,
+    SnapshotManifest, SnapshotPruneReport, SnapshotRestoreReport,
+};
 pub use transport::{HttpTransport, MockHttpTransport, ReqwestHttpTransport};
 pub use verifier::{verify_integrity, VerificationMismatch, VerificationReport};
 
@@ -57,11 +62,12 @@ pub use cloud_sync_core::{
 };
 pub use providers::{
     local_sim::LocalSimulation, AzureBlobCredentials, B2Credentials, BackendCredentials,
-    BackendFactory, BackendRegistry, CommonProviderSettings, DynamicBackendRegistry,
-    EncryptedBackend, FtpCredentials, GCSCredentials, HttpCredentials, IPFSCredentials,
-    MegaCredentials, NextcloudCredentials, OAuthCredentials, OAuthTokenManager, PCloudCredentials,
-    ProviderConfig, S3Credentials, SFTPCredentials, SimulatedFallback, SmbCredentials,
-    UnionBackend, UnionPolicy, WebDAVCredentials,
+    BackendFactory, BackendRegistry, ChunkManifest, ChunkPartInfo, ChunkerBackend,
+    CommonProviderSettings, DynamicBackendRegistry, EncryptedBackend, FtpCredentials,
+    GCSCredentials, HttpCredentials, IPFSCredentials, MegaCredentials, NextcloudCredentials,
+    OAuthCredentials, OAuthTokenManager, PCloudCredentials, ProviderConfig, S3Credentials,
+    SFTPCredentials, SimulatedFallback, SmbCredentials, UnionBackend, UnionPolicy,
+    WebDAVCredentials,
 };
 
 pub use cloud_sync_std::SyncIgnore;

@@ -911,6 +911,119 @@ pub async fn transfer_cloud_to_cloud(
     Ok(serde_json::json!(report))
 }
 
+#[tauri::command]
+pub async fn create_cloud_snapshot(
+    state: tauri::State<'_, SharedDaemonState>,
+    label: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let snap_label = label.unwrap_or_else(|| "manual".to_string());
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        let cmd = format!("snapshot_create {}", snap_label);
+        if let Ok(raw) = client.send_command(&cmd).await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let watch_dir = s.watch_dir.clone();
+    let backends = s.backends.clone();
+    drop(s);
+
+    let mut results = Vec::new();
+    for active in &backends {
+        match cloud_sync_lib::create_snapshot(active.backend.as_ref(), &watch_dir, &snap_label)
+            .await
+        {
+            Ok(mf) => results.push(serde_json::json!({
+                "backend": active.backend.name(),
+                "snapshot": mf
+            })),
+            Err(e) => results.push(serde_json::json!({
+                "backend": active.backend.name(),
+                "error": e.to_string()
+            })),
+        }
+    }
+    Ok(serde_json::json!(results))
+}
+
+#[tauri::command]
+pub async fn list_cloud_snapshots(
+    state: tauri::State<'_, SharedDaemonState>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        if let Ok(raw) = client.send_command("snapshot_list").await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let backends = s.backends.clone();
+    drop(s);
+
+    let mut results = Vec::new();
+    for active in &backends {
+        match cloud_sync_lib::list_snapshots(active.backend.as_ref()).await {
+            Ok(list) => results.push(serde_json::json!({
+                "backend": active.backend.name(),
+                "snapshots": list
+            })),
+            Err(e) => results.push(serde_json::json!({
+                "backend": active.backend.name(),
+                "error": e.to_string()
+            })),
+        }
+    }
+    Ok(serde_json::json!(results))
+}
+
+#[tauri::command]
+pub async fn restore_cloud_snapshot(
+    state: tauri::State<'_, SharedDaemonState>,
+    snapshot_id: String,
+) -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        let cmd = format!("snapshot_restore {}", snapshot_id);
+        if let Ok(raw) = client.send_command(&cmd).await {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(val);
+            }
+        }
+    }
+
+    let s = state.lock().await;
+    let watch_dir = s.watch_dir.clone();
+    let backends = s.backends.clone();
+    drop(s);
+
+    for active in &backends {
+        if let Ok(rep) =
+            cloud_sync_lib::restore_snapshot(active.backend.as_ref(), &snapshot_id, &watch_dir)
+                .await
+        {
+            return Ok(serde_json::json!(rep));
+        }
+    }
+    Err(format!(
+        "Snapshot '{}' not found on any active backend",
+        snapshot_id
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -11,16 +11,17 @@ A high-performance, modular Rust workspace designed to watch local folders and s
 
 ## Workspace Structure
 
-The repository is organized as an 8-crate workspace strictly adhering to SOLID principles and clean separation of concerns:
+The repository is organized as a 9-crate workspace strictly adhering to SOLID principles and clean separation of concerns:
 
-1. **[`cloud_sync_lib`](crates/cloud_sync_lib/README.md)**: High-level consumer client facade (`CloudSyncClient`, `CloudSyncBuilder`), layered middleware pipeline, `DynamicBackendRegistry`, and zero-copy `BufferPool`.
+1. **[`cloud_sync_lib`](crates/cloud_sync_lib/README.md)**: High-level consumer client facade (`CloudSyncClient`, `CloudSyncBuilder`), layered middleware pipeline (`CompressionLayer`, `CacheLayer`, `RetryLayer`, `CircuitBreakerLayer`, `RateLimitLayer`, `MetricsLayer`, `LoggingLayer`), `DynamicBackendRegistry`, `UnionBackend`, `ChunkerBackend`, `SnapshotEngine`, and zero-copy `BufferPool`.
 2. **[`cloud_sync_core`](crates/cloud_sync_core/README.md)**: Zero-dependency, `no_std`-compatible domain types, granular storage role traits (`StorageReader`, `StorageWriter`, `DirectoryLister`, `ServerSideOperations`), error taxonomy, `NormalizedPath` security newtype, and `StateStore` trait (`PostcardStateStore` CSTX v1).
-3. **[`cloud_sync_daemon`](crates/cloud_sync_daemon/README.md)**: Background synchronization engine and OS daemon service watching local directories via `notify`, listening on TCP port 8081, managing state catalogs, and providing diagnostic verification binaries.
+3. **[`cloud_sync_daemon`](crates/cloud_sync_daemon/README.md)**: Background synchronization engine and OS daemon service watching local directories via `notify`, listening on TCP port 8081, managing state catalogs, staggered file versioning (`TrashManager`), and diagnostic verification binaries.
 4. **[`cloud_sync_ui`](crates/cloud_sync_ui/README.md)**: Decoupled Axum-based HTTP web server and REST/SSE API gateway (:8082) serving an embedded management dashboard.
 5. **[`cloud_sync_egui`](crates/cloud_sync_egui/README.md)**: Native GPU-accelerated immediate-mode desktop GUI built on `egui` and `eframe`.
-6. **[`cloud_sync_tauri`](crates/cloud_sync_tauri/README.md)**: Tauri 2.0 cross-platform desktop and mobile shell with in-process synchronization engine and direct IPC commands.
-7. **[`cloud_sync_backup`](crates/cloud_sync_backup/README.md)**: Unidirectional periodic backup client for one-off CLI or cron-based jobs.
-8. **[`cloud_sync_std`](crates/cloud_sync_std/README.md)**: Standard library helpers, asynchronous checksum hashers (`compute_sha256`, `compute_md5`), and Ripgrep-based `SyncIgnore` engine.
+6. **[`cloud_sync_tauri`](crates/cloud_sync_tauri/README.md)**: Tauri 2.0 cross-platform desktop and mobile (Android/iOS) shell with in-process synchronization engine, Photos Hub, Diagnostics Suite, and direct IPC commands.
+7. **[`cloud_sync_backup`](crates/cloud_sync_backup/README.md)**: Unidirectional periodic & one-shot backup client across all 17 supported storage protocols.
+8. **[`cloud_sync_photos`](crates/cloud_sync_photos)**: Google Photos equivalence engine for desktop and Android with EXIF metadata parsing, chronological timeline organization, album curation, and multi-cloud backup.
+9. **[`cloud_sync_std`](crates/cloud_sync_std/README.md)**: Standard library helpers, asynchronous checksum hashers (`compute_sha256`, `compute_md5`), and Ripgrep-based `SyncIgnore` engine.
 
 ---
 
@@ -64,6 +65,10 @@ For Android mobile architecture, permissions, and deployment workflows, see the 
 * **Backblaze B2**: Backblaze B2 Cloud Storage sync.
 * **pCloud**: pCloud storage synchronization via OAuth2 access tokens.
 * **IPFS**: InterPlanetary File System sync utilizing pinning services (e.g., Pinata).
+* **FTP / FTPS**: RFC 959 passive mode & RFC 4217 TLS/SSL file transfer protocol sync.
+* **HTTP / HTTPS Directory Server**: Apache, Nginx, Caddy, and REST file server sync with HTML & JSON autoindex parsing.
+* **SMB / CIFS Network Share**: Windows UNC (`\\server\share`) and Samba/NAS network share sync with atomic file staging.
+* **Multi-Cloud Union (`UnionBackend`) & Large-File Chunker (`ChunkerBackend`)**: Virtual RAID-1 mirroring, failover, round-robin quota pooling, and transparent content-verified file splitting.
 
 ---
 

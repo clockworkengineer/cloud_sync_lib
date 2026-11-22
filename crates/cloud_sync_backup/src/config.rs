@@ -69,7 +69,7 @@ pub async fn load_config(path: &str) -> Result<BackupConfig, Box<dyn std::error:
     let content = tokio::fs::read_to_string(config_path).await?;
     let mut config: BackupConfig = toml::from_str(&content)?;
 
-    // Expand tildes in roots
+    // Expand tildes in all configured roots
     config.roots.google_drive_root = config.roots.google_drive_root.map(expand_path);
     config.roots.dropbox_root = config.roots.dropbox_root.map(expand_path);
     config.roots.onedrive_root = config.roots.onedrive_root.map(expand_path);
@@ -77,6 +77,16 @@ pub async fn load_config(path: &str) -> Result<BackupConfig, Box<dyn std::error:
     config.roots.s3_root = config.roots.s3_root.map(expand_path);
     config.roots.sftp_root = config.roots.sftp_root.map(expand_path);
     config.roots.nextcloud_root = config.roots.nextcloud_root.map(expand_path);
+    config.roots.box_root = config.roots.box_root.map(expand_path);
+    config.roots.mega_root = config.roots.mega_root.map(expand_path);
+    config.roots.azure_blob_root = config.roots.azure_blob_root.map(expand_path);
+    config.roots.gcs_root = config.roots.gcs_root.map(expand_path);
+    config.roots.b2_root = config.roots.b2_root.map(expand_path);
+    config.roots.pcloud_root = config.roots.pcloud_root.map(expand_path);
+    config.roots.ipfs_root = config.roots.ipfs_root.map(expand_path);
+    config.roots.ftp_root = config.roots.ftp_root.map(expand_path);
+    config.roots.http_root = config.roots.http_root.map(expand_path);
+    config.roots.smb_root = config.roots.smb_root.map(expand_path);
 
     Ok(config)
 }

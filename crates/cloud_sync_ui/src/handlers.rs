@@ -504,6 +504,46 @@ pub async fn api_trash_restore(
     }
 }
 
+/// HTTP Endpoint: Lists all content-addressable cloud snapshots across active backends.
+pub async fn api_snapshots_list(
+    State(client): State<Arc<dyn DaemonClientPort>>,
+) -> impl IntoResponse {
+    match client.send_command("snapshot_list").await {
+        Ok(raw) => {
+            let json_val: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|_| json!([]));
+            Json(json_val).into_response()
+        }
+        Err(_) => Json(json!([])).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct CreateSnapshotRequest {
+    pub label: Option<String>,
+}
+
+/// HTTP Endpoint: Creates a content-addressable deduplicated snapshot across active backends.
+pub async fn api_snapshots_create(
+    State(client): State<Arc<dyn DaemonClientPort>>,
+    Json(payload): axum::Json<CreateSnapshotRequest>,
+) -> impl IntoResponse {
+    let label = payload.label.unwrap_or_else(|| "manual".to_string());
+    let cmd = format!("snapshot_create {}", label);
+    match client.send_command(&cmd).await {
+        Ok(raw) => {
+            let json_val: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|_| json!([]));
+            Json(json_val).into_response()
+        }
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("Could not connect to daemon socket: {}", e) })),
+        )
+            .into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

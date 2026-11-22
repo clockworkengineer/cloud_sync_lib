@@ -27,6 +27,9 @@ A detailed comparison of this Rust-based Cloud Sync Workspace against establishe
 | **Chunked / Resumable Uploads** | ✅ (Google Drive, Dropbox, OneDrive, S3) | ✅ | ⚠️ Partial | ❌ N/A | ✅ |
 | **Server-Side Move / Rename Detection**| ✅ (`RenameDetector` + RNFR/RNTO) | ✅ | ⚠️ Local only | ⚠️ Hash match | ✅ |
 | **Multi-Cloud Union / Virtual RAID** | ✅ (`UnionBackend`: MirrorAll, Failover, RoundRobin) | ✅ (`rclone union`) | ❌ | ❌ | ❌ |
+| **Transparent Large-File Chunker** | ✅ (`ChunkerBackend` + SHA-256 manifest) | ✅ (`rclone chunker`) | ❌ | ❌ | ❌ |
+| **Content-Addressable Cloud Snapshots**| ✅ (`SnapshotEngine` SHA-256 dedup + GC prune) | ❌ (Needs Restic/Kopia)| ❌ | ❌ | ⚠️ Block-level |
+| **Metadata & VFS Directory Cache** | ✅ (`CacheLayer` TTL + write invalidation) | ✅ (`--vfs-cache-mode`) | ❌ | ✅ | ✅ |
 | **Transparent Payload Compression** | ✅ (`CompressionLayer` pure-Rust `CLZ1`) | ✅ (`rclone compress`) | ❌ | ⚠️ Transport only | ✅ |
 | **Cloud-to-Cloud Direct Transfer** | ✅ (`transfer_between_backends` copy/sync) | ✅ (`rclone copy`/`sync`) | ❌ | ❌ | ✅ |
 | **File Versioning & Point-in-Time Restore**| ✅ (`TrashManager` list, retention & restore) | ⚠️ (`--backup-dir`) | ✅ (Versioning folder) | ✅ (Staggered/Trashcan)| ✅ |

@@ -761,12 +761,76 @@ pub async fn handle_control_command(
                 ),
             }
         }
+        "snapshot_create" | "snapshot" => {
+            let label = parts.get(1).copied().unwrap_or("manual");
+            let s = state.lock().await;
+            let watch_dir = s.watch_dir.clone();
+            let backends = s.backends.clone();
+            drop(s);
+
+            let mut results = Vec::new();
+            for active in &backends {
+                match cloud_sync_lib::create_snapshot(active.backend.as_ref(), &watch_dir, label)
+                    .await
+                {
+                    Ok(manifest) => results.push(serde_json::json!({
+                        "backend": active.backend.name(),
+                        "snapshot": manifest
+                    })),
+                    Err(e) => results.push(serde_json::json!({
+                        "backend": active.backend.name(),
+                        "error": e.to_string()
+                    })),
+                }
+            }
+            serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()) + "\n"
+        }
+        "snapshot_list" | "snapshots" => {
+            let s = state.lock().await;
+            let backends = s.backends.clone();
+            drop(s);
+
+            let mut results = Vec::new();
+            for active in &backends {
+                match cloud_sync_lib::list_snapshots(active.backend.as_ref()).await {
+                    Ok(list) => results.push(serde_json::json!({
+                        "backend": active.backend.name(),
+                        "snapshots": list
+                    })),
+                    Err(e) => results.push(serde_json::json!({
+                        "backend": active.backend.name(),
+                        "error": e.to_string()
+                    })),
+                }
+            }
+            serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()) + "\n"
+        }
+        "snapshot_restore" => {
+            if parts.len() < 2 {
+                return "Error: snapshot_restore requires <snapshot_id>\n".to_string();
+            }
+            let snap_id = parts[1];
+            let s = state.lock().await;
+            let watch_dir = s.watch_dir.clone();
+            let backends = s.backends.clone();
+            drop(s);
+
+            for active in &backends {
+                if let Ok(rep) =
+                    cloud_sync_lib::restore_snapshot(active.backend.as_ref(), snap_id, &watch_dir)
+                        .await
+                {
+                    return serde_json::to_string(&rep).unwrap_or_else(|_| "{}".to_string()) + "\n";
+                }
+            }
+            format!("Error: Snapshot '{}' not found on any active backend\n", snap_id)
+        }
         "stop" => {
             let _ = shutdown_tx.send(()).await;
             "Status: Stopping daemon...\n".to_string()
         }
         _ => {
-            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, conflicts, resolve_conflict, verify, dedupe, size, tree, preview, trash, trash_restore, transfer, stop\n"
+            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, conflicts, resolve_conflict, verify, dedupe, size, tree, preview, trash, trash_restore, transfer, snapshot_create, snapshot_list, snapshot_restore, stop\n"
                 .to_string()
         }
     }

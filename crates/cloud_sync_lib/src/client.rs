@@ -4,10 +4,10 @@
 //! cloud storage providers, performing file operations, and executing synchronization tasks.
 
 use crate::layers::{
-    CircuitBreakerConfig, CircuitBreakerLayer, LayeredBackendExt, LoggingLayer, MetricsLayer,
-    RateLimitLayer, RetryConfig, RetryLayer,
+    CacheLayer, CircuitBreakerConfig, CircuitBreakerLayer, CompressionLayer, LayeredBackendExt,
+    LoggingLayer, MetricsLayer, RateLimitLayer, RetryConfig, RetryLayer,
 };
-use crate::providers::DynamicBackendRegistry;
+use crate::providers::{ChunkerBackend, DynamicBackendRegistry};
 use crate::rate_limit::TokenBucket;
 use crate::transport::HttpTransport;
 use cloud_sync_core::{StorageBackend, StorageError, StorageItem};
@@ -119,6 +119,107 @@ impl CloudSyncClient {
             self.backend.copy(from, to).await
         }
     }
+
+    /// Verifies bidirectional integrity between `local_root` and `remote_path` (`rclone check` equivalent).
+    pub async fn verify_integrity(
+        &self,
+        local_root: &Path,
+        remote_path: &str,
+        compare_checksums: bool,
+    ) -> Result<crate::verifier::VerificationReport, StorageError> {
+        crate::verifier::verify_integrity(
+            self.backend.as_ref(),
+            local_root,
+            remote_path,
+            compare_checksums,
+        )
+        .await
+    }
+
+    /// Scans `remote_path` for duplicate files (`rclone dedupe` equivalent).
+    pub async fn scan_duplicates(
+        &self,
+        remote_path: &str,
+    ) -> Result<Vec<crate::dedupe::DuplicateGroup>, StorageError> {
+        crate::dedupe::scan_duplicates(self.backend.as_ref(), remote_path).await
+    }
+
+    /// Resolves identified duplicate file groups using `strategy`.
+    pub async fn resolve_duplicates(
+        &self,
+        groups: &[crate::dedupe::DuplicateGroup],
+        strategy: crate::dedupe::DedupeStrategy,
+    ) -> Result<crate::dedupe::DedupeSummary, StorageError> {
+        crate::dedupe::resolve_duplicates(self.backend.as_ref(), groups, strategy).await
+    }
+
+    /// Computes storage statistics and extension breakdown (`rclone size` equivalent).
+    pub async fn compute_analytics(
+        &self,
+        remote_path: &str,
+    ) -> Result<crate::analytics::StorageAnalytics, StorageError> {
+        crate::analytics::compute_storage_analytics(self.backend.as_ref(), remote_path).await
+    }
+
+    /// Builds a hierarchical directory tree up to `max_depth` (`rclone tree` equivalent).
+    pub async fn build_tree(
+        &self,
+        remote_path: &str,
+        max_depth: Option<usize>,
+    ) -> Result<crate::analytics::TreeNode, StorageError> {
+        crate::analytics::build_remote_tree(self.backend.as_ref(), remote_path, max_depth).await
+    }
+
+    /// Transfers or synchronizes files directly from this client to `dest` (`rclone copy`/`sync` equivalent).
+    pub async fn transfer_to(
+        &self,
+        dest: &CloudSyncClient,
+        source_prefix: &str,
+        dest_prefix: &str,
+        options: crate::cloud_transfer::CloudTransferOptions,
+    ) -> Result<crate::cloud_transfer::CloudTransferReport, StorageError> {
+        crate::cloud_transfer::transfer_between_backends(
+            self.backend.as_ref(),
+            dest.backend.as_ref(),
+            source_prefix,
+            dest_prefix,
+            options,
+        )
+        .await
+    }
+
+    /// Creates a content-addressable deduplicated point-in-time snapshot of `local_root` (Kopia/Restic equivalent).
+    pub async fn create_snapshot(
+        &self,
+        local_root: &Path,
+        label: &str,
+    ) -> Result<crate::snapshot::SnapshotManifest, StorageError> {
+        crate::snapshot::create_snapshot(self.backend.as_ref(), local_root, label).await
+    }
+
+    /// Lists all point-in-time snapshots stored on this backend.
+    pub async fn list_snapshots(
+        &self,
+    ) -> Result<Vec<crate::snapshot::SnapshotManifest>, StorageError> {
+        crate::snapshot::list_snapshots(self.backend.as_ref()).await
+    }
+
+    /// Restores a point-in-time snapshot into `target_dir` with SHA-256 verification.
+    pub async fn restore_snapshot(
+        &self,
+        snapshot_id: &str,
+        target_dir: &Path,
+    ) -> Result<crate::snapshot::SnapshotRestoreReport, StorageError> {
+        crate::snapshot::restore_snapshot(self.backend.as_ref(), snapshot_id, target_dir).await
+    }
+
+    /// Prunes old snapshots keeping the newest `keep_last_n` and garbage-collects unreferenced content blobs.
+    pub async fn prune_snapshots(
+        &self,
+        keep_last_n: usize,
+    ) -> Result<crate::snapshot::SnapshotPruneReport, StorageError> {
+        crate::snapshot::prune_snapshots(self.backend.as_ref(), keep_last_n).await
+    }
 }
 
 /// Fluent builder for constructing a configured `CloudSyncClient`.
@@ -134,6 +235,9 @@ pub struct CloudSyncBuilder {
     rate_limits: Option<(u64, u64)>,
     enable_logging: bool,
     enable_metrics: bool,
+    enable_compression: bool,
+    cache_ttl: Option<Duration>,
+    chunk_size_bytes: Option<usize>,
     http_transport: Option<Arc<dyn HttpTransport>>,
 }
 
@@ -230,6 +334,24 @@ impl CloudSyncBuilder {
         self
     }
 
+    /// Enables transparent lossless payload compression (`CLZ1`).
+    pub fn with_compression(mut self) -> Self {
+        self.enable_compression = true;
+        self
+    }
+
+    /// Enables TTL metadata caching for directory listings with write-through invalidation.
+    pub fn with_cache(mut self, ttl: Duration) -> Self {
+        self.cache_ttl = Some(ttl);
+        self
+    }
+
+    /// Enables transparent large-file chunking for files exceeding `chunk_size_bytes`.
+    pub fn with_chunker(mut self, chunk_size_bytes: usize) -> Self {
+        self.chunk_size_bytes = Some(chunk_size_bytes);
+        self
+    }
+
     /// Injects a custom HTTP transport (useful for mocks or offline unit testing).
     pub fn with_http_transport(mut self, transport: Arc<dyn HttpTransport>) -> Self {
         self.http_transport = Some(transport);
@@ -279,6 +401,18 @@ impl CloudSyncBuilder {
 
         if self.enable_metrics {
             backend = backend.with_layer(MetricsLayer::default());
+        }
+
+        if self.enable_compression {
+            backend = backend.with_layer(CompressionLayer::new());
+        }
+
+        if let Some(chunk_size) = self.chunk_size_bytes {
+            backend = Arc::new(ChunkerBackend::new(backend, chunk_size));
+        }
+
+        if let Some(ttl) = self.cache_ttl {
+            backend = backend.with_layer(CacheLayer::new(ttl));
         }
 
         if self.enable_logging {

@@ -143,5 +143,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    #[cfg(feature = "ftp")]
+    if let Some(creds) = &config.ftp_credentials {
+        if config::is_provider_enabled(&config.ftp_credentials) {
+            let provider = FtpProvider::new(creds.clone());
+            check_provider("FTP", &provider).await;
+        }
+    }
+
+    #[cfg(feature = "http")]
+    if let Some(creds) = &config.http_credentials {
+        if config::is_provider_enabled(&config.http_credentials) {
+            let provider = HttpProvider::new(creds.clone());
+            check_provider("HTTP", &provider).await;
+        }
+    }
+
+    #[cfg(feature = "smb")]
+    if let Some(creds) = &config.smb_credentials {
+        if config::is_provider_enabled(&config.smb_credentials) {
+            let provider = SmbProvider::new(creds.clone());
+            check_provider("SMB", &provider).await;
+        }
+    }
+
     Ok(())
 }
