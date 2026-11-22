@@ -21,7 +21,7 @@ pub use catalog::PhotoCatalog;
 pub use config::PhotosConfig;
 pub use engine::{PhotoLibrary, PhotoSyncResult};
 pub use models::{
-    Album, ExifMetadata, GeoLocation, LibraryStats, MediaItem, MediaType, SearchFilter,
-    TimelineGroup,
+    Album, ExifMetadata, GeoLocation, LibraryStats, MediaItem, MediaType, PhotosError,
+    SearchFilter, TimelineGroup,
 };
 pub use organizer::OrganizeStrategy;

@@ -72,7 +72,8 @@ pub use providers::{
 
 pub use cloud_sync_std::SyncIgnore;
 pub use providers::utils::{
-    copy_async, copy_buffered, get_global_retry_config, set_global_retry_config, RetryConfig,
+    copy_async, copy_buffered, get_global_retry_config, set_global_retry_config, walk_remote_tree,
+    RetryConfig, TempFileGuard,
 };
 
 /// Dynamically constructs a fully-wrapped `StorageBackend` instance from `BackendCredentials` and target root path.
@@ -1183,6 +1184,8 @@ mod tests {
                 max_download_rate: None,
                 selective_sync: None,
                 compress: None,
+                chunk_size_kb: None,
+                cache_ttl_secs: None,
             },
         };
 
@@ -1410,6 +1413,8 @@ mod tests {
                 max_download_rate: None,
                 selective_sync: None,
                 compress: None,
+                chunk_size_kb: None,
+                cache_ttl_secs: None,
             },
         };
 

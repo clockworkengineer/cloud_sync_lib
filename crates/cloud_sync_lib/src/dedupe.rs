@@ -50,19 +50,16 @@ pub struct DedupeSummary {
     pub bytes_recovered: u64,
 }
 
-/// Recursively traverses a backend and collects all files into `items`.
+/// Recursively traverses a backend and collects all files into `items` using the shared tree walker.
 async fn collect_all_items(
     backend: &(dyn StorageBackend + Send + Sync),
     remote_path: &str,
     items: &mut Vec<DedupeFile>,
 ) -> Result<(), StorageError> {
-    let clean_path = remote_path.trim_matches('/');
-    let list = backend.list(clean_path).await?;
+    let list = crate::providers::utils::walk_remote_tree(backend, remote_path).await?;
     for item in list {
-        let path_str = item.path.to_string_lossy().replace('\\', "/");
-        if item.is_dir {
-            Box::pin(collect_all_items(backend, &path_str, items)).await?;
-        } else {
+        if !item.is_dir {
+            let path_str = item.path.to_string_lossy().replace('\\', "/");
             let modified_secs = item
                 .modified
                 .duration_since(SystemTime::UNIX_EPOCH)

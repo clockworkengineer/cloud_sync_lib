@@ -3,16 +3,20 @@
 //! Splits files exceeding `chunk_size_bytes` into numbered chunks (`<file>.cschunk_00001`, ...)
 //! along with a JSON manifest (`<file>.cschunk_manifest`) storing original file size and per-chunk
 //! SHA-256 hashes.
-//! - Files smaller than `chunk_size_bytes` are uploaded directly without chunking overhead.
+//! - Streams chunks in $O(1)$ memory using 64 KB buffers and `TempFileGuard`.
 //! - `list()` hides raw `.cschunk_*` parts and synthesizes the logical original file entry.
 //! - `download()` transparently reassembles chunks and verifies every chunk's SHA-256 digest.
 
-use crate::traits::{StorageBackend, StorageCapabilities, StorageError, StorageItem};
+use crate::providers::utils::TempFileGuard;
+use crate::traits::{
+    ServerSideOperations, StorageBackend, StorageCapabilities, StorageError, StorageItem,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const MANIFEST_SUFFIX: &str = ".cschunk_manifest";
 const PART_MIDFIX: &str = ".cschunk_";
@@ -71,28 +75,15 @@ impl ChunkerBackend {
         }
     }
 
-    fn compute_bytes_sha256(data: &[u8]) -> String {
-        let digest = ring::digest::digest(&ring::digest::SHA256, data);
-        let mut hex = String::with_capacity(64);
-        for b in digest.as_ref() {
-            use std::fmt::Write;
-            let _ = write!(&mut hex, "{:02x}", b);
-        }
-        hex
-    }
-
     async fn fetch_manifest(
         &self,
         remote_path: &str,
     ) -> Result<Option<ChunkManifest>, StorageError> {
         let m_path = Self::manifest_path(remote_path);
-        let temp_file =
-            std::env::temp_dir().join(format!("cschunk_mf_{}.tmp", rand::random::<u64>()));
-        match self.inner.download(&m_path, &temp_file).await {
+        let temp_guard = TempFileGuard::new("cschunk_mf");
+        match self.inner.download(&m_path, temp_guard.path()).await {
             Ok(()) => {
-                let bytes = tokio::fs::read(&temp_file).await;
-                let _ = tokio::fs::remove_file(&temp_file).await;
-                let bytes = bytes?;
+                let bytes = tokio::fs::read(temp_guard.path()).await?;
                 let manifest: ChunkManifest =
                     serde_json::from_slice(&bytes).map_err(|e| StorageError::Provider {
                         message: format!("Corrupted chunk manifest for '{}': {}", remote_path, e),
@@ -100,15 +91,52 @@ impl ChunkerBackend {
                     })?;
                 Ok(Some(manifest))
             }
-            Err(StorageError::NotFound(_)) => {
-                let _ = tokio::fs::remove_file(&temp_file).await;
-                Ok(None)
-            }
-            Err(e) => {
-                let _ = tokio::fs::remove_file(&temp_file).await;
-                Err(e)
-            }
+            Err(StorageError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e),
         }
+    }
+}
+
+#[async_trait]
+impl ServerSideOperations for ChunkerBackend {
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let temp_guard = TempFileGuard::new("cschunk_cp");
+        self.download(from, temp_guard.path()).await?;
+        self.upload(temp_guard.path(), to).await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        if let Some(mut manifest) = self.fetch_manifest(from).await? {
+            let mut new_chunks = Vec::with_capacity(manifest.chunks.len());
+            for part in manifest.chunks {
+                let new_part_remote = Self::part_path(to, part.part_index);
+                self.inner
+                    .rename(&part.remote_path, &new_part_remote)
+                    .await?;
+                new_chunks.push(ChunkPartInfo {
+                    part_index: part.part_index,
+                    remote_path: new_part_remote,
+                    size: part.size,
+                    sha256: part.sha256,
+                });
+            }
+            manifest.original_path = to.to_string();
+            manifest.chunks = new_chunks;
+
+            let mf_bytes =
+                serde_json::to_vec_pretty(&manifest).map_err(|e| StorageError::Provider {
+                    message: e.to_string(),
+                    status: None,
+                })?;
+            let temp_mf = TempFileGuard::new("cschunk_mv_mf");
+            tokio::fs::write(temp_mf.path(), &mf_bytes).await?;
+            self.inner
+                .upload(temp_mf.path(), &Self::manifest_path(to))
+                .await?;
+            let _ = self.inner.delete(&Self::manifest_path(from)).await;
+            return Ok(());
+        }
+        self.inner.rename(from, to).await
     }
 }
 
@@ -116,6 +144,10 @@ impl ChunkerBackend {
 impl StorageBackend for ChunkerBackend {
     fn name(&self) -> &str {
         self.inner.name()
+    }
+
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        Some(self)
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -162,9 +194,10 @@ impl StorageBackend for ChunkerBackend {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let data = tokio::fs::read(local_path).await?;
-        if data.len() <= self.chunk_size_bytes {
-            // Remove any stale chunk manifest if file shrank below threshold
+        let meta = tokio::fs::metadata(local_path).await?;
+        let total_size = meta.len();
+
+        if total_size <= self.chunk_size_bytes as u64 {
             if let Ok(Some(old_mf)) = self.fetch_manifest(remote_path).await {
                 for part in old_mf.chunks {
                     let _ = self.inner.delete(&part.remote_path).await;
@@ -174,36 +207,51 @@ impl StorageBackend for ChunkerBackend {
             return self.inner.upload(local_path, remote_path).await;
         }
 
-        // Remove any previous single-file object at remote_path
         let _ = self.inner.delete(remote_path).await;
 
+        let mut file = tokio::fs::File::open(local_path).await?;
         let mut chunks = Vec::new();
-        for (idx, slice) in data.chunks(self.chunk_size_bytes).enumerate() {
-            let part_num = idx + 1;
-            let p_remote = Self::part_path(remote_path, part_num);
-            let sha256 = Self::compute_bytes_sha256(slice);
+        let mut part_num = 1usize;
+        let mut remaining = total_size;
+        let mut buf = vec![0u8; 64 * 1024];
 
-            let temp_part = std::env::temp_dir().join(format!(
-                "cschunk_up_{}_{}.tmp",
-                part_num,
-                rand::random::<u64>()
-            ));
-            tokio::fs::write(&temp_part, slice).await?;
-            let up_res = self.inner.upload(&temp_part, &p_remote).await;
-            let _ = tokio::fs::remove_file(&temp_part).await;
-            up_res?;
+        while remaining > 0 {
+            let part_target = remaining.min(self.chunk_size_bytes as u64);
+            let p_remote = Self::part_path(remote_path, part_num);
+            let temp_part = TempFileGuard::new("cschunk_up_part");
+
+            {
+                let mut part_file = tokio::fs::File::create(temp_part.path()).await?;
+                let mut left_in_part = part_target as usize;
+                while left_in_part > 0 {
+                    let to_read = left_in_part.min(buf.len());
+                    let n = file.read(&mut buf[..to_read]).await?;
+                    if n == 0 {
+                        break;
+                    }
+                    part_file.write_all(&buf[..n]).await?;
+                    left_in_part -= n;
+                }
+                part_file.flush().await?;
+            }
+
+            let sha256 = crate::checksum::compute_sha256(temp_part.path()).await?;
+            self.inner.upload(temp_part.path(), &p_remote).await?;
 
             chunks.push(ChunkPartInfo {
                 part_index: part_num,
                 remote_path: p_remote,
-                size: slice.len() as u64,
+                size: part_target,
                 sha256,
             });
+
+            remaining -= part_target;
+            part_num += 1;
         }
 
         let manifest = ChunkManifest {
             original_path: remote_path.to_string(),
-            total_size: data.len() as u64,
+            total_size,
             chunk_size: self.chunk_size_bytes,
             chunks,
         };
@@ -213,48 +261,44 @@ impl StorageBackend for ChunkerBackend {
                 message: format!("Failed to serialize chunk manifest: {}", e),
                 status: None,
             })?;
-        let temp_mf =
-            std::env::temp_dir().join(format!("cschunk_up_mf_{}.tmp", rand::random::<u64>()));
-        tokio::fs::write(&temp_mf, &mf_bytes).await?;
-        let mf_res = self
-            .inner
-            .upload(&temp_mf, &Self::manifest_path(remote_path))
-            .await;
-        let _ = tokio::fs::remove_file(&temp_mf).await;
-        mf_res
+        let temp_mf = TempFileGuard::new("cschunk_up_mf");
+        tokio::fs::write(temp_mf.path(), &mf_bytes).await?;
+        self.inner
+            .upload(temp_mf.path(), &Self::manifest_path(remote_path))
+            .await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         if let Some(manifest) = self.fetch_manifest(remote_path).await? {
-            let mut reassembled = Vec::with_capacity(manifest.total_size as usize);
-            for part in &manifest.chunks {
-                let temp_part = std::env::temp_dir().join(format!(
-                    "cschunk_dl_{}_{}.tmp",
-                    part.part_index,
-                    rand::random::<u64>()
-                ));
-                self.inner.download(&part.remote_path, &temp_part).await?;
-                let part_bytes = tokio::fs::read(&temp_part).await;
-                let _ = tokio::fs::remove_file(&temp_part).await;
-                let part_bytes = part_bytes?;
-
-                let actual_sha = Self::compute_bytes_sha256(&part_bytes);
-                if actual_sha != part.sha256 {
-                    return Err(StorageError::Provider {
-                        message: format!(
-                            "Chunk integrity verification failed for '{}' part {}: expected SHA-256 {}, got {}",
-                            remote_path, part.part_index, part.sha256, actual_sha
-                        ),
-                        status: None,
-                    });
-                }
-                reassembled.extend_from_slice(&part_bytes);
-            }
-
             if let Some(parent) = local_path.parent() {
                 tokio::fs::create_dir_all(parent).await?;
             }
-            tokio::fs::write(local_path, &reassembled).await?;
+            let temp_out = TempFileGuard::new("cschunk_dl_assembled");
+            {
+                let mut out_file = tokio::fs::File::create(temp_out.path()).await?;
+                for part in &manifest.chunks {
+                    let temp_part = TempFileGuard::new("cschunk_dl_part");
+                    self.inner
+                        .download(&part.remote_path, temp_part.path())
+                        .await?;
+
+                    let actual_sha = crate::checksum::compute_sha256(temp_part.path()).await?;
+                    if actual_sha != part.sha256 {
+                        return Err(StorageError::Provider {
+                            message: format!(
+                                "Chunk integrity verification failed for '{}' part {}: expected SHA-256 {}, got {}",
+                                remote_path, part.part_index, part.sha256, actual_sha
+                            ),
+                            status: None,
+                        });
+                    }
+
+                    let mut part_reader = tokio::fs::File::open(temp_part.path()).await?;
+                    crate::providers::utils::copy_async(&mut part_reader, &mut out_file).await?;
+                }
+                out_file.flush().await?;
+            }
+            tokio::fs::copy(temp_out.path(), local_path).await?;
             return Ok(());
         }
 
@@ -276,42 +320,18 @@ impl StorageBackend for ChunkerBackend {
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
-        if let Some(mut manifest) = self.fetch_manifest(from).await? {
-            let mut new_chunks = Vec::with_capacity(manifest.chunks.len());
-            for part in manifest.chunks {
-                let new_part_remote = Self::part_path(to, part.part_index);
-                self.inner
-                    .rename(&part.remote_path, &new_part_remote)
-                    .await?;
-                new_chunks.push(ChunkPartInfo {
-                    part_index: part.part_index,
-                    remote_path: new_part_remote,
-                    size: part.size,
-                    sha256: part.sha256,
-                });
-            }
-            manifest.original_path = to.to_string();
-            manifest.chunks = new_chunks;
+        ServerSideOperations::rename(self, from, to).await
+    }
 
-            let mf_bytes =
-                serde_json::to_vec_pretty(&manifest).map_err(|e| StorageError::Provider {
-                    message: e.to_string(),
-                    status: None,
-                })?;
-            let temp_mf =
-                std::env::temp_dir().join(format!("cschunk_mv_mf_{}.tmp", rand::random::<u64>()));
-            tokio::fs::write(&temp_mf, &mf_bytes).await?;
-            let res = self.inner.upload(&temp_mf, &Self::manifest_path(to)).await;
-            let _ = tokio::fs::remove_file(&temp_mf).await;
-            res?;
-            let _ = self.inner.delete(&Self::manifest_path(from)).await;
-            return Ok(());
-        }
-        self.inner.rename(from, to).await
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        ServerSideOperations::copy(self, from, to).await
     }
 
     fn capabilities(&self) -> StorageCapabilities {
-        self.inner.capabilities()
+        let mut caps = self.inner.capabilities();
+        caps.remove(StorageCapabilities::RESUMABLE_UPLOAD);
+        caps.remove(StorageCapabilities::CHANGE_CURSOR);
+        caps
     }
 }
 
@@ -322,7 +342,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[tokio::test]
-    async fn test_chunker_backend_split_list_reassemble_and_delete() {
+    async fn test_chunker_backend_split_list_reassemble_delete_and_compliance() {
         let remote_dir = tempdir().unwrap();
         let local_dir = tempdir().unwrap();
 
@@ -330,34 +350,33 @@ mod tests {
             remote_dir.path().to_path_buf(),
             "ChunkedSim".into(),
         ));
-        // Set 2 KB chunk threshold
         let chunker = ChunkerBackend::new(sim.clone(), 2048);
 
-        // Create a 5,500-byte payload (will split into 3 chunks: 2048 + 2048 + 1404)
         let payload: Vec<u8> = (0..5500).map(|i| (i % 251) as u8).collect();
         let src_file = local_dir.path().join("video.mp4");
         tokio::fs::write(&src_file, &payload).await.unwrap();
 
         chunker.upload(&src_file, "media/video.mp4").await.unwrap();
 
-        // Underlying storage should have 3 chunk files + 1 manifest file = 4 items
         let raw_list = sim.list("media").await.unwrap();
         assert_eq!(raw_list.len(), 4);
 
-        // Logical list on ChunkerBackend should present a single 5,500-byte file
         let logical_list = chunker.list("media").await.unwrap();
         assert_eq!(logical_list.len(), 1);
         assert_eq!(logical_list[0].path, PathBuf::from("media/video.mp4"));
         assert_eq!(logical_list[0].size, 5500);
 
-        // Download and verify byte-for-byte identity
         let dl_file = local_dir.path().join("reassembled.mp4");
         chunker.download("media/video.mp4", &dl_file).await.unwrap();
         let downloaded = tokio::fs::read(&dl_file).await.unwrap();
         assert_eq!(downloaded, payload);
 
-        // Delete removes all chunks and manifest
         chunker.delete("media/video.mp4").await.unwrap();
         assert!(sim.list("media").await.unwrap().is_empty());
+
+        // Run specification compliance suite on ChunkerBackend
+        cloud_sync_core::testing::verify_backend_compliance(&chunker, local_dir.path())
+            .await
+            .unwrap();
     }
 }

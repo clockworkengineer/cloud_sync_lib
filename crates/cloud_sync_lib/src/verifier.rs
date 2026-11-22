@@ -70,18 +70,16 @@ async fn collect_local_files(
     Ok(())
 }
 
-/// Recursively collects all remote items starting from `remote_prefix`.
+/// Recursively collects all remote items starting from `remote_prefix` using the shared tree walker.
 async fn collect_remote_files(
     backend: &(dyn StorageBackend + Send + Sync),
     remote_prefix: &str,
     results: &mut HashMap<String, (u64, Option<String>)>,
 ) -> Result<(), StorageError> {
-    let items = backend.list(remote_prefix).await?;
+    let items = crate::providers::utils::walk_remote_tree(backend, remote_prefix).await?;
     for item in items {
-        let path_str = item.path.to_string_lossy().replace('\\', "/");
-        if item.is_dir {
-            Box::pin(collect_remote_files(backend, &path_str, results)).await?;
-        } else {
+        if !item.is_dir {
+            let path_str = item.path.to_string_lossy().replace('\\', "/");
             let key = path_str.trim_start_matches('/').to_string();
             results.insert(key, (item.size, item.checksum));
         }

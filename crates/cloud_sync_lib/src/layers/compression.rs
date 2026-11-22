@@ -8,7 +8,10 @@
 //! 3. Pre-existing uncompressed files on the remote backend are downloaded transparently.
 
 use crate::layers::StorageLayer;
-use crate::traits::{StorageBackend, StorageCapabilities, StorageError, StorageItem};
+use crate::providers::utils::TempFileGuard;
+use crate::traits::{
+    ServerSideOperations, StorageBackend, StorageCapabilities, StorageError, StorageItem,
+};
 use async_trait::async_trait;
 use std::path::Path;
 use std::sync::Arc;
@@ -244,9 +247,24 @@ fn lz_decompress(payload: &[u8], expected_len: usize) -> Result<Vec<u8>, Storage
 }
 
 #[async_trait]
+impl ServerSideOperations for CompressedBackend {
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.inner.copy(from, to).await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.inner.rename(from, to).await
+    }
+}
+
+#[async_trait]
 impl StorageBackend for CompressedBackend {
     fn name(&self) -> &str {
         self.inner.name()
+    }
+
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        Some(self)
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -257,20 +275,15 @@ impl StorageBackend for CompressedBackend {
         let raw = tokio::fs::read(local_path).await?;
         let compressed = Self::compress_bytes(&raw, self.min_size_bytes);
 
-        let temp_path = std::env::temp_dir().join(format!("clz1_up_{}.tmp", rand::random::<u64>()));
-        tokio::fs::write(&temp_path, &compressed).await?;
-        let res = self.inner.upload(&temp_path, remote_path).await;
-        let _ = tokio::fs::remove_file(&temp_path).await;
-        res
+        let temp_guard = TempFileGuard::new("clz1_up");
+        tokio::fs::write(temp_guard.path(), &compressed).await?;
+        self.inner.upload(temp_guard.path(), remote_path).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let temp_path = std::env::temp_dir().join(format!("clz1_dl_{}.tmp", rand::random::<u64>()));
-        self.inner.download(remote_path, &temp_path).await?;
-
-        let raw = tokio::fs::read(&temp_path).await;
-        let _ = tokio::fs::remove_file(&temp_path).await;
-        let raw = raw?;
+        let temp_guard = TempFileGuard::new("clz1_dl");
+        self.inner.download(remote_path, temp_guard.path()).await?;
+        let raw = tokio::fs::read(temp_guard.path()).await?;
 
         let decompressed = Self::decompress_bytes(&raw)?;
         if let Some(parent) = local_path.parent() {
@@ -297,7 +310,10 @@ impl StorageBackend for CompressedBackend {
     }
 
     fn capabilities(&self) -> StorageCapabilities {
-        self.inner.capabilities()
+        let mut caps = self.inner.capabilities();
+        caps.remove(StorageCapabilities::RESUMABLE_UPLOAD);
+        caps.remove(StorageCapabilities::CHANGE_CURSOR);
+        caps
     }
 }
 

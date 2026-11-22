@@ -3,6 +3,54 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Structured domain error for `cloud_sync_photos` operations (Attribute 1: Intuitive API Design).
+#[derive(Debug)]
+pub enum PhotosError {
+    Io(std::io::Error),
+    Storage(cloud_sync_core::StorageError),
+    Config(String),
+    InvalidPath(String),
+    NotFound(String),
+}
+
+impl std::fmt::Display for PhotosError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PhotosError::Io(e) => write!(f, "Photos I/O error: {}", e),
+            PhotosError::Storage(e) => write!(f, "Photos cloud storage error: {}", e),
+            PhotosError::Config(msg) => write!(f, "Photos configuration error: {}", msg),
+            PhotosError::InvalidPath(msg) => write!(f, "Invalid media path: {}", msg),
+            PhotosError::NotFound(msg) => write!(f, "Media item not found: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for PhotosError {}
+
+impl From<std::io::Error> for PhotosError {
+    fn from(e: std::io::Error) -> Self {
+        PhotosError::Io(e)
+    }
+}
+
+impl From<cloud_sync_core::StorageError> for PhotosError {
+    fn from(e: cloud_sync_core::StorageError) -> Self {
+        PhotosError::Storage(e)
+    }
+}
+
+impl From<String> for PhotosError {
+    fn from(s: String) -> Self {
+        PhotosError::Config(s)
+    }
+}
+
+impl From<PhotosError> for String {
+    fn from(e: PhotosError) -> Self {
+        e.to_string()
+    }
+}
+
 /// Type of media item (photo or video).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MediaType {

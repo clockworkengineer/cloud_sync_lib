@@ -80,18 +80,16 @@ impl PhotoLibrary {
             .map_err(|e| e.to_string())?
         };
 
-        if let Ok(temp_file) = tempfile::NamedTempFile::new() {
-            let temp_path = temp_file.path().to_path_buf();
-            if self
-                .backend
-                .download(remote_catalog_path.as_str(), &temp_path)
-                .await
-                .is_ok()
-            {
-                if let Ok(remote_catalog) = PhotoCatalog::load_from_file(&temp_path) {
-                    let mut local = self.catalog.write().await;
-                    local.merge(remote_catalog);
-                }
+        let temp_guard = cloud_sync_lib::TempFileGuard::new("photos_cat_pull");
+        if self
+            .backend
+            .download(remote_catalog_path.as_str(), temp_guard.path())
+            .await
+            .is_ok()
+        {
+            if let Ok(remote_catalog) = PhotoCatalog::load_from_file(temp_guard.path()) {
+                let mut local = self.catalog.write().await;
+                local.merge(remote_catalog);
             }
         }
 
@@ -114,15 +112,15 @@ impl PhotoLibrary {
             .map_err(|e| e.to_string())?
         };
 
-        let temp_file = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
-        let temp_path = temp_file.path().to_path_buf();
+        let temp_guard = cloud_sync_lib::TempFileGuard::new("photos_cat_push");
         {
             let cat = self.catalog.read().await;
-            cat.save_to_file(&temp_path).map_err(|e| e.to_string())?;
+            cat.save_to_file(temp_guard.path())
+                .map_err(|e| e.to_string())?;
         }
 
         self.backend
-            .upload(&temp_path, remote_catalog_path.as_str())
+            .upload(temp_guard.path(), remote_catalog_path.as_str())
             .await
             .map_err(|e| e.to_string())?;
 

@@ -32,6 +32,10 @@ pub struct CommonProviderSettings {
     pub selective_sync: Option<Vec<String>>,
     /// Optional toggle for transparent lossless payload compression (CLZ1) before upload.
     pub compress: Option<bool>,
+    /// Optional chunk size threshold in KB for transparent large-file splitting (`ChunkerBackend`).
+    pub chunk_size_kb: Option<usize>,
+    /// Optional directory listing metadata cache TTL in seconds (`CachedBackend`).
+    pub cache_ttl_secs: Option<u64>,
 }
 
 pub trait ProviderConfig {
@@ -81,6 +85,14 @@ pub trait ProviderConfig {
 
     fn compress(&self) -> bool {
         self.common_settings().compress.unwrap_or(false)
+    }
+
+    fn chunk_size_kb(&self) -> Option<usize> {
+        self.common_settings().chunk_size_kb
+    }
+
+    fn cache_ttl_secs(&self) -> Option<u64> {
+        self.common_settings().cache_ttl_secs
     }
 }
 
@@ -305,7 +317,7 @@ impl ProviderConfig for IPFSCredentials {
 }
 
 /// Credentials configuration for FTP / FTPS backends.
-#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct FtpCredentials {
     /// FTP Host address.
     pub host: String,
@@ -321,6 +333,19 @@ pub struct FtpCredentials {
     pub common: CommonProviderSettings,
 }
 
+impl std::fmt::Debug for FtpCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FtpCredentials")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
+            .field("secure", &self.secure)
+            .field("common", &self.common)
+            .finish()
+    }
+}
+
 impl ProviderConfig for FtpCredentials {
     fn common_settings(&self) -> &CommonProviderSettings {
         &self.common
@@ -328,7 +353,7 @@ impl ProviderConfig for FtpCredentials {
 }
 
 /// Credentials configuration for HTTP / HTTPS remote directory & file servers.
-#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct HttpCredentials {
     /// Base HTTP/HTTPS server URL (e.g. https://files.example.com/pub).
     pub url: String,
@@ -342,6 +367,21 @@ pub struct HttpCredentials {
     pub common: CommonProviderSettings,
 }
 
+impl std::fmt::Debug for HttpCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpCredentials")
+            .field("url", &self.url)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "bearer_token",
+                &self.bearer_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("common", &self.common)
+            .finish()
+    }
+}
+
 impl ProviderConfig for HttpCredentials {
     fn common_settings(&self) -> &CommonProviderSettings {
         &self.common
@@ -349,7 +389,7 @@ impl ProviderConfig for HttpCredentials {
 }
 
 /// Credentials configuration for SMB / CIFS network shares.
-#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct SmbCredentials {
     /// SMB Server hostname or IP (e.g. 192.168.1.50 or nas.local).
     pub server: String,
@@ -365,6 +405,20 @@ pub struct SmbCredentials {
     pub mount_path: Option<String>,
     #[serde(flatten)]
     pub common: CommonProviderSettings,
+}
+
+impl std::fmt::Debug for SmbCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SmbCredentials")
+            .field("server", &self.server)
+            .field("share", &self.share)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
+            .field("workgroup", &self.workgroup)
+            .field("mount_path", &self.mount_path)
+            .field("common", &self.common)
+            .finish()
+    }
 }
 
 impl ProviderConfig for SmbCredentials {
@@ -742,6 +796,8 @@ impl BackendRegistry {
         let max_download_rate = creds.max_download_rate();
         let encryption_password = creds.encryption_password();
         let compress_enabled = creds.compress();
+        let chunk_size_kb = creds.chunk_size_kb();
+        let cache_ttl_secs = creds.cache_ttl_secs();
 
         let upload_limiter = max_upload_rate
             .map(|rate| crate::rate_limit::TokenBucket::new(rate * 1024))
@@ -760,17 +816,32 @@ impl BackendRegistry {
         let rate_limited =
             crate::rate_limit::RateLimitingBackend::new(fallback, upload_limiter, download_limiter);
 
-        let base_backend: Arc<dyn StorageBackend> = if let Some(password) = encryption_password {
+        let mut backend: Arc<dyn StorageBackend> = if let Some(password) = encryption_password {
             Arc::new(encryption::EncryptedBackend::new(rate_limited, password))
         } else {
             Arc::new(rate_limited)
         };
 
         if compress_enabled {
-            Arc::new(crate::layers::CompressedBackend::new(base_backend, 64))
-        } else {
-            base_backend
+            backend = Arc::new(crate::layers::CompressedBackend::new(backend, 64));
         }
+
+        if let Some(kb) = chunk_size_kb {
+            if kb > 0 {
+                backend = Arc::new(chunker::ChunkerBackend::new(backend, kb * 1024));
+            }
+        }
+
+        if let Some(ttl) = cache_ttl_secs {
+            if ttl > 0 {
+                backend = Arc::new(crate::layers::CachedBackend::new(
+                    backend,
+                    std::time::Duration::from_secs(ttl),
+                ));
+            }
+        }
+
+        backend
     }
 
     /// Convenience factory to build a fully wrapped storage backend with default limiters.

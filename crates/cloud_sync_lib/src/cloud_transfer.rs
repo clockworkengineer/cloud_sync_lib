@@ -51,14 +51,12 @@ async fn collect_backend_tree(
     current_path: &str,
     out: &mut HashMap<String, StorageItem>,
 ) -> Result<(), StorageError> {
-    let items = backend.list(current_path).await?;
+    let items = crate::providers::utils::walk_remote_tree(backend, current_path).await?;
     let clean_base = base_prefix.trim_matches('/');
 
     for item in items {
-        let item_path = item.path.to_string_lossy().replace('\\', "/");
-        if item.is_dir {
-            Box::pin(collect_backend_tree(backend, base_prefix, &item_path, out)).await?;
-        } else {
+        if !item.is_dir {
+            let item_path = item.path.to_string_lossy().replace('\\', "/");
             let trimmed = item_path.trim_start_matches('/');
             let rel = if !clean_base.is_empty() && trimmed.starts_with(clean_base) {
                 trimmed[clean_base.len()..]
@@ -127,12 +125,9 @@ pub async fn transfer_between_backends(
         };
 
         if !options.dry_run {
-            let temp_file =
-                std::env::temp_dir().join(format!("c2c_stage_{}.tmp", rand::random::<u64>()));
-            source.download(&src_remote, &temp_file).await?;
-            let upload_res = dest.upload(&temp_file, &dst_remote).await;
-            let _ = tokio::fs::remove_file(&temp_file).await;
-            upload_res?;
+            let temp_guard = crate::providers::utils::TempFileGuard::new("c2c_stage");
+            source.download(&src_remote, temp_guard.path()).await?;
+            dest.upload(temp_guard.path(), &dst_remote).await?;
         }
 
         report.files_transferred += 1;

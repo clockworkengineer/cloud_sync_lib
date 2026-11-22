@@ -7,7 +7,9 @@ use crate::layers::{
     CacheLayer, CircuitBreakerConfig, CircuitBreakerLayer, CompressionLayer, LayeredBackendExt,
     LoggingLayer, MetricsLayer, RateLimitLayer, RetryConfig, RetryLayer,
 };
-use crate::providers::{ChunkerBackend, DynamicBackendRegistry};
+use crate::providers::{
+    ChunkerBackend, DynamicBackendRegistry, EncryptedBackend, UnionBackend, UnionPolicy,
+};
 use crate::rate_limit::TokenBucket;
 use crate::transport::HttpTransport;
 use cloud_sync_core::{StorageBackend, StorageError, StorageItem};
@@ -236,6 +238,7 @@ pub struct CloudSyncBuilder {
     enable_logging: bool,
     enable_metrics: bool,
     enable_compression: bool,
+    encryption_password: Option<String>,
     cache_ttl: Option<Duration>,
     chunk_size_bytes: Option<usize>,
     http_transport: Option<Arc<dyn HttpTransport>>,
@@ -250,6 +253,17 @@ impl CloudSyncBuilder {
     /// Sets an already constructed backend.
     pub fn with_backend(mut self, backend: Arc<dyn StorageBackend>) -> Self {
         self.backend = Some(backend);
+        self
+    }
+
+    /// Configures a multi-cloud virtual union backend combining `upstreams` under `policy`.
+    pub fn with_union(
+        mut self,
+        name: impl Into<String>,
+        upstreams: Vec<Arc<dyn StorageBackend>>,
+        policy: UnionPolicy,
+    ) -> Self {
+        self.backend = Some(Arc::new(UnionBackend::new(name, upstreams, policy)));
         self
     }
 
@@ -340,6 +354,12 @@ impl CloudSyncBuilder {
         self
     }
 
+    /// Enables client-side zero-knowledge AES-256-GCM encryption with `password`.
+    pub fn with_encryption(mut self, password: impl Into<String>) -> Self {
+        self.encryption_password = Some(password.into());
+        self
+    }
+
     /// Enables TTL metadata caching for directory listings with write-through invalidation.
     pub fn with_cache(mut self, ttl: Duration) -> Self {
         self.cache_ttl = Some(ttl);
@@ -405,6 +425,10 @@ impl CloudSyncBuilder {
 
         if self.enable_compression {
             backend = backend.with_layer(CompressionLayer::new());
+        }
+
+        if let Some(pwd) = self.encryption_password {
+            backend = Arc::new(EncryptedBackend::new(backend, &pwd));
         }
 
         if let Some(chunk_size) = self.chunk_size_bytes {

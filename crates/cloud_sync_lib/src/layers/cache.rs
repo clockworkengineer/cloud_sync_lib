@@ -5,7 +5,9 @@
 //! (`upload`, `delete`, `create_folder`, `rename`, `copy`).
 
 use crate::layers::StorageLayer;
-use crate::traits::{StorageBackend, StorageCapabilities, StorageError, StorageItem};
+use crate::traits::{
+    ServerSideOperations, StorageBackend, StorageCapabilities, StorageError, StorageItem,
+};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::Path;
@@ -90,9 +92,41 @@ impl CachedBackend {
 }
 
 #[async_trait]
+impl ServerSideOperations for CachedBackend {
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let res = self.inner.copy(from, to).await;
+        if res.is_ok() {
+            self.invalidate_path(to);
+        }
+        res
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let res = self.inner.rename(from, to).await;
+        if res.is_ok() {
+            self.invalidate_path(from);
+            self.invalidate_path(to);
+        }
+        res
+    }
+}
+
+#[async_trait]
 impl StorageBackend for CachedBackend {
     fn name(&self) -> &str {
         self.inner.name()
+    }
+
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        Some(self)
+    }
+
+    fn as_change_feed(&self) -> Option<&dyn cloud_sync_core::ChangeFeed> {
+        self.inner.as_change_feed()
+    }
+
+    fn as_resumable_uploader(&self) -> Option<&dyn cloud_sync_core::ResumableUploader> {
+        self.inner.as_resumable_uploader()
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -200,5 +234,10 @@ mod tests {
 
         let list2 = cached.list("").await.unwrap();
         assert_eq!(list2.len(), 2);
+
+        // Run specification compliance suite on CachedBackend
+        cloud_sync_core::testing::verify_backend_compliance(&cached, local_dir.path())
+            .await
+            .unwrap();
     }
 }

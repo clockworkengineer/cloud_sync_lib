@@ -111,7 +111,7 @@ impl SyncOrchestrator {
         ))
     }
 
-    /// Executes a computed `SyncPlan` with optional trash can versioning.
+    /// Executes a computed `SyncPlan` with optional trash can versioning and configured `SyncInterceptor`.
     pub async fn execute_sync(
         &self,
         backend: Arc<dyn StorageBackend>,
@@ -119,7 +119,8 @@ impl SyncOrchestrator {
         trash_mgr: Option<&TrashManager>,
         dry_run: bool,
     ) -> Result<ExecutionResult, cloud_sync_lib::StorageError> {
-        PlanExecutor::execute(backend, plan, trash_mgr, dry_run).await
+        let hook = self.interceptor.as_deref();
+        PlanExecutor::execute_with_interceptor(backend, plan, None, trash_mgr, hook, dry_run).await
     }
 
     /// Resolves a file conflict using an injected ConflictResolver strategy.
@@ -209,11 +210,13 @@ impl SyncOrchestrator {
             retention_days: 30,
             max_versions_per_file: 5,
         });
-        let _result = PlanExecutor::execute_with_watch_dir(
+        let hook = self.interceptor.as_deref();
+        let _result = PlanExecutor::execute_with_interceptor(
             backend.clone(),
             &plan,
             Some(watch_dir),
             Some(&trash_mgr),
+            hook,
             dry_run,
         )
         .await?;
@@ -376,5 +379,79 @@ mod tests {
         // Verify state catalog updated
         let state = orchestrator.state_repo().load(&state_file).await;
         assert!(state.files.contains_key("document.txt"));
+    }
+
+    struct CountingInterceptor {
+        before_count: std::sync::atomic::AtomicUsize,
+        after_count: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl SyncInterceptor for CountingInterceptor {
+        async fn before_action(
+            &self,
+            _action: &crate::engine::plan::SyncAction,
+        ) -> Result<(), cloud_sync_lib::StorageError> {
+            self.before_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn after_action(
+            &self,
+            _action: &crate::engine::plan::SyncAction,
+            _duration: std::time::Duration,
+        ) {
+            self.after_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_orchestrator_sync_interceptor_hooks() {
+        use cloud_sync_lib::{LocalSimulation, SyncMode, SyncPolicy};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tempfile::tempdir;
+
+        let watch_dir = tempdir().unwrap();
+        let sim_dir = tempdir().unwrap();
+        let state_dir = tempdir().unwrap();
+
+        tokio::fs::write(watch_dir.path().join("hooked.txt"), b"hook payload")
+            .await
+            .unwrap();
+
+        let backend: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(
+            sim_dir.path().to_path_buf(),
+            "hook_test".into(),
+        ));
+        let state_file = state_dir.path().join(".sync_state_hook.bin");
+        let gitignore = SyncIgnore::new(watch_dir.path(), &[]);
+
+        let interceptor = Arc::new(CountingInterceptor {
+            before_count: AtomicUsize::new(0),
+            after_count: AtomicUsize::new(0),
+        });
+
+        let orchestrator = SyncOrchestrator::default_real().with_interceptor(interceptor.clone());
+
+        orchestrator
+            .sync_bidirectional(
+                watch_dir.path(),
+                backend,
+                SyncPolicy::new(SyncMode::TwoWay),
+                &state_file,
+                &gitignore,
+                2,
+                ConflictPolicy::RenameLocal,
+                false,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(interceptor.before_count.load(Ordering::SeqCst), 1);
+        assert_eq!(interceptor.after_count.load(Ordering::SeqCst), 1);
     }
 }

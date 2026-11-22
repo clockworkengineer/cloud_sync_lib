@@ -871,6 +871,67 @@ where
     }
 }
 
+/// RAII temporary file guard that automatically deletes the file from `std::env::temp_dir()` on drop.
+pub struct TempFileGuard {
+    path: std::path::PathBuf,
+}
+
+impl TempFileGuard {
+    /// Creates a new uniquely named temporary file path in the OS temp directory with `prefix`.
+    pub fn new(prefix: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("{}_{}.tmp", prefix, rand::random::<u64>()));
+        Self { path }
+    }
+
+    /// Returns the underlying temporary file path.
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl std::ops::Deref for TempFileGuard {
+    type Target = std::path::Path;
+    fn deref(&self) -> &Self::Target {
+        &self.path
+    }
+}
+
+impl AsRef<std::path::Path> for TempFileGuard {
+    fn as_ref(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if self.path.exists() {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// Recursively traverses a remote [`crate::traits::StorageBackend`] starting at `prefix` and collects all items.
+pub async fn walk_remote_tree(
+    backend: &(dyn crate::traits::StorageBackend + Send + Sync),
+    prefix: &str,
+) -> Result<Vec<crate::traits::StorageItem>, StorageError> {
+    let mut results = Vec::new();
+    let mut queue = vec![prefix.trim_matches('/').to_string()];
+
+    while let Some(current) = queue.pop() {
+        let items = backend.list(&current).await?;
+        for item in items {
+            if item.is_dir {
+                let sub = item.path.to_string_lossy().replace('\\', "/");
+                queue.push(sub);
+            }
+            results.push(item);
+        }
+    }
+
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

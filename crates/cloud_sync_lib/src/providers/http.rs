@@ -300,11 +300,9 @@ impl StorageBackend for HttpProvider {
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("http_move_{}.tmp", rand::random::<u64>()));
-        self.download(from, &temp_path).await?;
-        self.upload(&temp_path, to).await?;
-        let _ = tokio::fs::remove_file(&temp_path).await;
+        let temp_guard = crate::providers::utils::TempFileGuard::new("http_move");
+        self.download(from, temp_guard.path()).await?;
+        self.upload(temp_guard.path(), to).await?;
         self.delete(from).await
     }
 

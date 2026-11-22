@@ -16,7 +16,7 @@ workspace = true
 cloud_sync_core = { path = "../cloud_sync_core", version = "0.3.0" }
 cloud_sync_std = { path = "../cloud_sync_std", version = "0.3.0" }
 cloud_sync_lib = { path = "../cloud_sync_lib", version = "0.3.0", default-features = false }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["fs", "rt", "sync", "time", "macros"] }
 async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -26,13 +26,12 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 toml = { workspace = true }
 clap = { version = "4.4", features = ["derive"] }
-tempfile = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 
 [features]
-default = ["google_drive", "onedrive", "dropbox", "s3", "webdav", "box", "mega"]
+default = ["google_drive", "onedrive", "dropbox", "s3", "webdav", "box", "mega", "ftp", "http", "smb"]
 google_drive = ["cloud_sync_lib/google_drive"]
 onedrive = ["cloud_sync_lib/onedrive"]
 dropbox = ["cloud_sync_lib/dropbox"]
@@ -46,7 +45,11 @@ gcs = ["cloud_sync_lib/gcs"]
 b2 = ["cloud_sync_lib/b2"]
 pcloud = ["cloud_sync_lib/pcloud"]
 ipfs = ["cloud_sync_lib/ipfs"]
+ftp = ["cloud_sync_lib/ftp"]
+http = ["cloud_sync_lib/http"]
+smb = ["cloud_sync_lib/smb"]
 all_providers = [
     "google_drive", "onedrive", "dropbox", "s3", "webdav",
-    "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs"
+    "nextcloud", "box", "mega", "azure_blob", "gcs", "b2", "pcloud", "ipfs",
+    "ftp", "http", "smb"
 ]

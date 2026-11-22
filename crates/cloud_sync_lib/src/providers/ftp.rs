@@ -1,16 +1,29 @@
-//! FTP and FTPS storage provider implementation (RFC 959 / RFC 4217).
+//! Asynchronous Non-Blocking FTP and FTPS storage provider implementation (RFC 959 / RFC 4217).
+//!
+//! Uses non-blocking `tokio::net::TcpStream` sockets, enforces CRLF command injection defenses
+//! and `NormalizedPath` path traversal validation, and implements `ServerSideOperations`.
 
+use crate::providers::utils::TempFileGuard;
 use crate::providers::FtpCredentials;
-use crate::traits::{StorageBackend, StorageCapabilities, StorageError, StorageItem};
+use crate::traits::{
+    ServerSideOperations, StorageBackend, StorageCapabilities, StorageError, StorageItem,
+};
 use async_trait::async_trait;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpStream;
+use cloud_sync_core::NormalizedPath;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tracing::info;
+
+const CONTROL_TIMEOUT: Duration = Duration::from_secs(15);
+const DATA_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Storage provider for FTP and FTPS backends.
 pub struct FtpProvider {
     creds: FtpCredentials,
+    timeout_dur: Duration,
 }
 
 crate::impl_provider_builder!(FtpProvider, FtpProviderBuilder, FtpCredentials);
@@ -18,30 +31,75 @@ crate::impl_provider_builder!(FtpProvider, FtpProviderBuilder, FtpCredentials);
 impl FtpProvider {
     pub fn with_client_options(
         creds: FtpCredentials,
-        _timeout: Option<std::time::Duration>,
+        custom_timeout: Option<Duration>,
         _custom_headers: Option<reqwest::header::HeaderMap>,
     ) -> Self {
-        Self { creds }
+        Self {
+            creds,
+            timeout_dur: custom_timeout.unwrap_or(CONTROL_TIMEOUT),
+        }
     }
 
-    /// Establishes an FTP control connection and authenticates.
-    fn connect_control(&self) -> Result<(BufReader<TcpStream>, TcpStream), StorageError> {
+    /// Rejects any argument containing CR (`\r`), LF (`\n`), or NUL (`\0`) to prevent FTP Command Injection.
+    pub fn sanitize_ftp_arg(arg: &str) -> Result<&str, StorageError> {
+        if arg.contains('\r') || arg.contains('\n') || arg.contains('\0') {
+            return Err(StorageError::Provider {
+                message:
+                    "Security violation: FTP argument contains illegal CR/LF/NUL control characters"
+                        .into(),
+                status: None,
+            });
+        }
+        Ok(arg)
+    }
+
+    async fn read_ftp_line(
+        reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+    ) -> Result<String, StorageError> {
+        let mut line = String::new();
+        timeout(CONTROL_TIMEOUT, reader.read_line(&mut line))
+            .await
+            .map_err(|_| StorageError::ConnectionFailed("FTP control read timed out".into()))??;
+        Ok(line)
+    }
+
+    async fn send_ftp_cmd(
+        writer: &mut tokio::net::tcp::OwnedWriteHalf,
+        cmd: &str,
+    ) -> Result<(), StorageError> {
+        timeout(CONTROL_TIMEOUT, writer.write_all(cmd.as_bytes()))
+            .await
+            .map_err(|_| StorageError::ConnectionFailed("FTP control write timed out".into()))??;
+        writer.flush().await?;
+        Ok(())
+    }
+
+    /// Establishes an asynchronous FTP control connection and authenticates.
+    async fn connect_control(
+        &self,
+    ) -> Result<
+        (
+            BufReader<tokio::net::tcp::OwnedReadHalf>,
+            tokio::net::tcp::OwnedWriteHalf,
+        ),
+        StorageError,
+    > {
+        let user = Self::sanitize_ftp_arg(&self.creds.username)?;
+        let pass = Self::sanitize_ftp_arg(self.creds.password.as_deref().unwrap_or(""))?;
+
         let port = self.creds.port.unwrap_or(21);
         let addr = format!("{}:{}", self.creds.host, port);
-        let stream = TcpStream::connect(&addr)?;
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(15)))
-            .ok();
-        stream
-            .set_write_timeout(Some(std::time::Duration::from_secs(15)))
-            .ok();
+        let stream = timeout(self.timeout_dur, TcpStream::connect(&addr))
+            .await
+            .map_err(|_| {
+                StorageError::ConnectionFailed(format!("FTP connection timed out to {}", addr))
+            })??;
 
-        let mut reader = BufReader::new(stream.try_clone()?);
-        let mut writer = stream;
+        let (read_half, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(read_half);
 
         // Read initial greeting banner (220)
-        let mut banner = String::new();
-        reader.read_line(&mut banner)?;
+        let banner = Self::read_ftp_line(&mut reader).await?;
         if !banner.starts_with("220") {
             return Err(StorageError::Provider {
                 message: format!("Unexpected FTP banner: {}", banner.trim()),
@@ -49,51 +107,51 @@ impl FtpProvider {
             });
         }
 
+        // If explicit FTPS (`secure = true`) is requested, send AUTH TLS and verify server acceptance
+        if self.creds.secure.unwrap_or(false) {
+            Self::send_ftp_cmd(&mut writer, "AUTH TLS\r\n").await?;
+            let auth_resp = Self::read_ftp_line(&mut reader).await?;
+            if !auth_resp.starts_with("234") {
+                return Err(StorageError::Authentication(format!(
+                    "FTPS required (secure=true) but server rejected AUTH TLS: {}",
+                    auth_resp.trim()
+                )));
+            }
+        }
+
         // Send USER
-        writer.write_all(format!("USER {}\r\n", self.creds.username).as_bytes())?;
-        writer.flush()?;
-        let mut resp = String::new();
-        reader.read_line(&mut resp)?;
+        Self::send_ftp_cmd(&mut writer, &format!("USER {}\r\n", user)).await?;
+        let mut resp = Self::read_ftp_line(&mut reader).await?;
 
         if resp.starts_with("331") {
-            // Needs PASS
-            let pass = self.creds.password.as_deref().unwrap_or("");
-            writer.write_all(format!("PASS {}\r\n", pass).as_bytes())?;
-            writer.flush()?;
-            resp.clear();
-            reader.read_line(&mut resp)?;
+            Self::send_ftp_cmd(&mut writer, &format!("PASS {}\r\n", pass)).await?;
+            resp = Self::read_ftp_line(&mut reader).await?;
         }
 
         if !resp.starts_with("230") {
             return Err(StorageError::Authentication(format!(
                 "FTP Authentication failed for user {}: {}",
-                self.creds.username,
+                user,
                 resp.trim()
             )));
         }
 
         // Set Binary mode (TYPE I)
-        writer.write_all(b"TYPE I\r\n")?;
-        writer.flush()?;
-        resp.clear();
-        reader.read_line(&mut resp)?;
+        Self::send_ftp_cmd(&mut writer, "TYPE I\r\n").await?;
+        let _ = Self::read_ftp_line(&mut reader).await?;
 
         Ok((reader, writer))
     }
 
-    /// Enters Passive Mode (PASV) and connects data stream socket.
-    fn enter_passive_mode(
+    /// Enters Passive Mode (PASV) and connects an asynchronous data stream socket.
+    async fn enter_passive_mode(
         &self,
-        reader: &mut BufReader<TcpStream>,
-        writer: &mut TcpStream,
+        reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+        writer: &mut tokio::net::tcp::OwnedWriteHalf,
     ) -> Result<TcpStream, StorageError> {
-        writer.write_all(b"PASV\r\n")?;
-        writer.flush()?;
+        Self::send_ftp_cmd(writer, "PASV\r\n").await?;
+        let resp = Self::read_ftp_line(reader).await?;
 
-        let mut resp = String::new();
-        reader.read_line(&mut resp)?;
-
-        // Parse (h1,h2,h3,h4,p1,p2)
         let start = resp.find('(').ok_or_else(|| StorageError::Provider {
             message: format!("Malformed PASV response: {}", resp.trim()),
             status: None,
@@ -123,32 +181,79 @@ impl FtpProvider {
         let port = (p1 << 8) + p2;
 
         let data_addr = format!("{}:{}", ip, port);
-        let stream = TcpStream::connect(&data_addr)?;
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(30)))
-            .ok();
-        stream
-            .set_write_timeout(Some(std::time::Duration::from_secs(30)))
-            .ok();
+        let stream = timeout(DATA_TIMEOUT, TcpStream::connect(&data_addr))
+            .await
+            .map_err(|_| {
+                StorageError::ConnectionFailed(format!(
+                    "FTP passive data connection timed out to {}",
+                    data_addr
+                ))
+            })??;
 
         Ok(stream)
     }
 
-    /// Formats remote path combining destination folder prefix if present.
-    fn resolve_remote_path(&self, path: &str) -> String {
-        let clean = path.trim_matches('/').replace('\\', "/");
+    /// Validates and formats remote path combining destination folder prefix if present.
+    pub fn resolve_remote_path(&self, path: &str) -> Result<String, StorageError> {
+        Self::sanitize_ftp_arg(path)?;
+        let norm = NormalizedPath::new(path).map_err(|e| StorageError::Provider {
+            message: format!("Invalid FTP path '{}': {}", path, e),
+            status: None,
+        })?;
+        let clean = norm.as_str();
+
         if let Some(ref dest) = self.creds.common.destination_folder {
-            let clean_dest = dest.trim_matches('/').replace('\\', "/");
+            Self::sanitize_ftp_arg(dest)?;
+            let norm_dest = NormalizedPath::new(dest).map_err(|e| StorageError::Provider {
+                message: format!("Invalid FTP destination_folder '{}': {}", dest, e),
+                status: None,
+            })?;
+            let clean_dest = norm_dest.as_str();
             if clean.is_empty() {
-                clean_dest
+                Ok(clean_dest.to_string())
             } else if clean_dest.is_empty() {
-                clean
+                Ok(clean.to_string())
             } else {
-                format!("{}/{}", clean_dest, clean)
+                Ok(format!("{}/{}", clean_dest, clean))
             }
         } else {
-            clean
+            Ok(clean.to_string())
         }
+    }
+}
+
+#[async_trait]
+impl ServerSideOperations for FtpProvider {
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let temp_guard = TempFileGuard::new("ftp_copy");
+        self.download(from, temp_guard.path()).await?;
+        self.upload(temp_guard.path(), to).await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let resolved_from = self.resolve_remote_path(from)?;
+        let resolved_to = self.resolve_remote_path(to)?;
+        let (mut reader, mut writer) = self.connect_control().await?;
+
+        Self::send_ftp_cmd(&mut writer, &format!("RNFR {}\r\n", resolved_from)).await?;
+        let resp = Self::read_ftp_line(&mut reader).await?;
+        if !resp.starts_with("350") {
+            return Err(StorageError::Provider {
+                message: format!("FTP RNFR failed: {}", resp.trim()),
+                status: None,
+            });
+        }
+
+        Self::send_ftp_cmd(&mut writer, &format!("RNTO {}\r\n", resolved_to)).await?;
+        let resp2 = Self::read_ftp_line(&mut reader).await?;
+        if !resp2.starts_with("250") {
+            return Err(StorageError::Provider {
+                message: format!("FTP RNTO failed: {}", resp2.trim()),
+                status: None,
+            });
+        }
+
+        Ok(())
     }
 }
 
@@ -162,22 +267,23 @@ impl StorageBackend for FtpProvider {
         }
     }
 
-    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let resolved = self.resolve_remote_path(remote_path);
-        let (mut reader, mut writer) = self.connect_control()?;
-        let mut data_stream = self.enter_passive_mode(&mut reader, &mut writer)?;
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        Some(self)
+    }
 
-        // Send LIST
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        let resolved = self.resolve_remote_path(remote_path)?;
+        let (mut reader, mut writer) = self.connect_control().await?;
+        let data_stream = self.enter_passive_mode(&mut reader, &mut writer).await?;
+
         let cmd = if resolved.is_empty() {
             "LIST\r\n".to_string()
         } else {
             format!("LIST {}\r\n", resolved)
         };
-        writer.write_all(cmd.as_bytes())?;
-        writer.flush()?;
+        Self::send_ftp_cmd(&mut writer, &cmd).await?;
 
-        let mut resp = String::new();
-        reader.read_line(&mut resp)?;
+        let resp = Self::read_ftp_line(&mut reader).await?;
         if !resp.starts_with("150") && !resp.starts_with("125") {
             return Err(StorageError::Provider {
                 message: format!("FTP LIST failed: {}", resp.trim()),
@@ -185,14 +291,17 @@ impl StorageBackend for FtpProvider {
             });
         }
 
-        let mut data_reader = BufReader::new(&mut data_stream);
+        let mut data_reader = BufReader::new(data_stream);
         let mut items = Vec::new();
         let mut line = String::new();
 
-        while data_reader.read_line(&mut line)? > 0 {
+        while timeout(DATA_TIMEOUT, data_reader.read_line(&mut line))
+            .await
+            .map_err(|_| StorageError::ConnectionFailed("FTP data LIST read timed out".into()))??
+            > 0
+        {
             let trimmed = line.trim();
             if !trimmed.is_empty() {
-                // Parse standard UNIX-style listing: drwxr-xr-x 2 user group 4096 Nov 20 12:00 dir
                 let parts: Vec<&str> = trimmed.split_whitespace().collect();
                 if parts.len() >= 9 {
                     let is_dir = parts[0].starts_with('d');
@@ -200,7 +309,7 @@ impl StorageBackend for FtpProvider {
                     let name = parts[8..].join(" ");
                     if name != "." && name != ".." {
                         let item_path = if resolved.is_empty() {
-                            name.clone()
+                            name
                         } else {
                             format!("{}/{}", resolved, name)
                         };
@@ -218,23 +327,17 @@ impl StorageBackend for FtpProvider {
             line.clear();
         }
 
-        // Read completion response (226)
-        resp.clear();
-        reader.read_line(&mut resp)?;
-
+        let _ = Self::read_ftp_line(&mut reader).await?;
         Ok(items)
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let resolved = self.resolve_remote_path(remote_path);
-        let (mut reader, mut writer) = self.connect_control()?;
-        let mut data_stream = self.enter_passive_mode(&mut reader, &mut writer)?;
+        let resolved = self.resolve_remote_path(remote_path)?;
+        let (mut reader, mut writer) = self.connect_control().await?;
+        let mut data_stream = self.enter_passive_mode(&mut reader, &mut writer).await?;
 
-        writer.write_all(format!("STOR {}\r\n", resolved).as_bytes())?;
-        writer.flush()?;
-
-        let mut resp = String::new();
-        reader.read_line(&mut resp)?;
+        Self::send_ftp_cmd(&mut writer, &format!("STOR {}\r\n", resolved)).await?;
+        let resp = Self::read_ftp_line(&mut reader).await?;
         if !resp.starts_with("150") && !resp.starts_with("125") {
             return Err(StorageError::Provider {
                 message: format!("FTP STOR initialization failed: {}", resp.trim()),
@@ -242,41 +345,35 @@ impl StorageBackend for FtpProvider {
             });
         }
 
-        let mut file = std::fs::File::open(local_path)?;
-        let mut buffer = [0u8; 16384];
-        loop {
-            let n = file.read(&mut buffer)?;
-            if n == 0 {
-                break;
-            }
-            data_stream.write_all(&buffer[..n])?;
-        }
-        data_stream.flush()?;
+        let mut file = tokio::fs::File::open(local_path).await?;
+        let bytes_copied = crate::providers::utils::copy_async(&mut file, &mut data_stream).await?;
+        data_stream.flush().await?;
         drop(data_stream);
 
-        resp.clear();
-        reader.read_line(&mut resp)?;
-        if !resp.starts_with("226") && !resp.starts_with("250") {
+        let resp2 = Self::read_ftp_line(&mut reader).await?;
+        if !resp2.starts_with("226") && !resp2.starts_with("250") {
             return Err(StorageError::Provider {
-                message: format!("FTP STOR completion failed: {}", resp.trim()),
+                message: format!("FTP STOR completion failed: {}", resp2.trim()),
                 status: None,
             });
         }
 
-        info!("Successfully uploaded to FTP: {}", resolved);
+        info!(
+            storage.provider = self.name(),
+            storage.path = %resolved,
+            storage.bytes = bytes_copied,
+            "Successfully uploaded to FTP"
+        );
         Ok(())
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let resolved = self.resolve_remote_path(remote_path);
-        let (mut reader, mut writer) = self.connect_control()?;
-        let mut data_stream = self.enter_passive_mode(&mut reader, &mut writer)?;
+        let resolved = self.resolve_remote_path(remote_path)?;
+        let (mut reader, mut writer) = self.connect_control().await?;
+        let mut data_stream = self.enter_passive_mode(&mut reader, &mut writer).await?;
 
-        writer.write_all(format!("RETR {}\r\n", resolved).as_bytes())?;
-        writer.flush()?;
-
-        let mut resp = String::new();
-        reader.read_line(&mut resp)?;
+        Self::send_ftp_cmd(&mut writer, &format!("RETR {}\r\n", resolved)).await?;
+        let resp = Self::read_ftp_line(&mut reader).await?;
         if !resp.starts_with("150") && !resp.starts_with("125") {
             return Err(StorageError::NotFound(format!(
                 "FTP RETR failed for {}: {}",
@@ -286,58 +383,47 @@ impl StorageBackend for FtpProvider {
         }
 
         if let Some(parent) = local_path.parent() {
-            std::fs::create_dir_all(parent)?;
+            tokio::fs::create_dir_all(parent).await?;
         }
-        let mut file = std::fs::File::create(local_path)?;
-        let mut buffer = [0u8; 16384];
-        loop {
-            let n = data_stream.read(&mut buffer)?;
-            if n == 0 {
-                break;
-            }
-            file.write_all(&buffer[..n])?;
-        }
-        file.flush()?;
+        let mut file = tokio::fs::File::create(local_path).await?;
+        let bytes_copied = crate::providers::utils::copy_async(&mut data_stream, &mut file).await?;
+        file.flush().await?;
         drop(data_stream);
 
-        resp.clear();
-        reader.read_line(&mut resp)?;
-        if !resp.starts_with("226") && !resp.starts_with("250") {
+        let resp2 = Self::read_ftp_line(&mut reader).await?;
+        if !resp2.starts_with("226") && !resp2.starts_with("250") {
             return Err(StorageError::Provider {
-                message: format!("FTP RETR completion failed: {}", resp.trim()),
+                message: format!("FTP RETR completion failed: {}", resp2.trim()),
                 status: None,
             });
         }
 
-        info!("Successfully downloaded from FTP: {}", resolved);
+        info!(
+            storage.provider = self.name(),
+            storage.path = %resolved,
+            storage.bytes = bytes_copied,
+            "Successfully downloaded from FTP"
+        );
         Ok(())
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let resolved = self.resolve_remote_path(remote_path);
-        let (mut reader, mut writer) = self.connect_control()?;
+        let resolved = self.resolve_remote_path(remote_path)?;
+        let (mut reader, mut writer) = self.connect_control().await?;
 
-        // Try DELE (file) first
-        writer.write_all(format!("DELE {}\r\n", resolved).as_bytes())?;
-        writer.flush()?;
-        let mut resp = String::new();
-        reader.read_line(&mut resp)?;
-
+        Self::send_ftp_cmd(&mut writer, &format!("DELE {}\r\n", resolved)).await?;
+        let resp = Self::read_ftp_line(&mut reader).await?;
         if resp.starts_with("250") {
             return Ok(());
         }
 
-        // If DELE fails, try RMD (directory)
-        writer.write_all(format!("RMD {}\r\n", resolved).as_bytes())?;
-        writer.flush()?;
-        resp.clear();
-        reader.read_line(&mut resp)?;
-
-        if !resp.starts_with("250") {
+        Self::send_ftp_cmd(&mut writer, &format!("RMD {}\r\n", resolved)).await?;
+        let resp2 = Self::read_ftp_line(&mut reader).await?;
+        if !resp2.starts_with("250") {
             return Err(StorageError::NotFound(format!(
                 "FTP delete failed for {}: {}",
                 resolved,
-                resp.trim()
+                resp2.trim()
             )));
         }
 
@@ -345,15 +431,12 @@ impl StorageBackend for FtpProvider {
     }
 
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
-        let resolved = self.resolve_remote_path(remote_path);
-        let (mut reader, mut writer) = self.connect_control()?;
+        let resolved = self.resolve_remote_path(remote_path)?;
+        let (mut reader, mut writer) = self.connect_control().await?;
 
-        writer.write_all(format!("MKD {}\r\n", resolved).as_bytes())?;
-        writer.flush()?;
-        let mut resp = String::new();
-        reader.read_line(&mut resp)?;
+        Self::send_ftp_cmd(&mut writer, &format!("MKD {}\r\n", resolved)).await?;
+        let resp = Self::read_ftp_line(&mut reader).await?;
 
-        // 257 = "PATHNAME" created, 550 = Directory already exists
         if !resp.starts_with("257") && !resp.starts_with("550") {
             return Err(StorageError::Provider {
                 message: format!("FTP MKD failed for {}: {}", resolved, resp.trim()),
@@ -365,42 +448,11 @@ impl StorageBackend for FtpProvider {
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
-        let resolved_from = self.resolve_remote_path(from);
-        let resolved_to = self.resolve_remote_path(to);
-        let (mut reader, mut writer) = self.connect_control()?;
-
-        writer.write_all(format!("RNFR {}\r\n", resolved_from).as_bytes())?;
-        writer.flush()?;
-        let mut resp = String::new();
-        reader.read_line(&mut resp)?;
-        if !resp.starts_with("350") {
-            return Err(StorageError::Provider {
-                message: format!("FTP RNFR failed: {}", resp.trim()),
-                status: None,
-            });
-        }
-
-        writer.write_all(format!("RNTO {}\r\n", resolved_to).as_bytes())?;
-        writer.flush()?;
-        resp.clear();
-        reader.read_line(&mut resp)?;
-        if !resp.starts_with("250") {
-            return Err(StorageError::Provider {
-                message: format!("FTP RNTO failed: {}", resp.trim()),
-                status: None,
-            });
-        }
-
-        Ok(())
+        ServerSideOperations::rename(self, from, to).await
     }
 
     async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("ftp_copy_{}.tmp", rand::random::<u64>()));
-        self.download(from, &temp_path).await?;
-        let res = self.upload(&temp_path, to).await;
-        let _ = tokio::fs::remove_file(&temp_path).await;
-        res
+        ServerSideOperations::copy(self, from, to).await
     }
 
     fn capabilities(&self) -> StorageCapabilities {
@@ -411,7 +463,7 @@ impl StorageBackend for FtpProvider {
 /// Builder for [`FtpProvider`].
 pub struct FtpProviderBuilder {
     pub credentials: FtpCredentials,
-    pub timeout: Option<std::time::Duration>,
+    pub timeout: Option<Duration>,
     pub custom_headers: Option<reqwest::header::HeaderMap>,
 }
 
@@ -426,5 +478,35 @@ impl FtpProviderBuilder {
 
     pub fn build(self) -> FtpProvider {
         FtpProvider::with_client_options(self.credentials, self.timeout, self.custom_headers)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ftp_crlf_injection_and_path_traversal_defense() {
+        assert!(FtpProvider::sanitize_ftp_arg("valid_user").is_ok());
+        assert!(FtpProvider::sanitize_ftp_arg("evil\r\nDELE /important").is_err());
+        assert!(FtpProvider::sanitize_ftp_arg("null\0byte").is_err());
+
+        let creds = FtpCredentials {
+            host: "127.0.0.1".into(),
+            port: Some(21),
+            username: "user".into(),
+            password: Some("super_secret_pw".into()),
+            secure: Some(false),
+            common: Default::default(),
+        };
+        // Verify Debug redacts password
+        let dbg_str = format!("{:?}", creds);
+        assert!(!dbg_str.contains("super_secret_pw"));
+        assert!(dbg_str.contains("[REDACTED]"));
+
+        let provider = FtpProvider::new(creds);
+        assert!(provider.resolve_remote_path("../etc/passwd").is_err());
+        assert!(provider.resolve_remote_path("docs/report.pdf").is_ok());
+        assert!(provider.as_server_side_ops().is_some());
     }
 }

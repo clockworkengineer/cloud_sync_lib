@@ -246,6 +246,8 @@ mod tests {
                 max_download_rate: None,
                 selective_sync: None,
                 compress: None,
+                chunk_size_kb: None,
+                cache_ttl_secs: None,
             },
         });
         assert!(!is_provider_enabled(&creds_disabled));
@@ -263,6 +265,8 @@ mod tests {
                 max_download_rate: None,
                 selective_sync: None,
                 compress: None,
+                chunk_size_kb: None,
+                cache_ttl_secs: None,
             },
         });
         assert!(is_provider_enabled(&creds_enabled));

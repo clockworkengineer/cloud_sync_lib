@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tracing::{error, info, warn};
 
 use crate::engine::conflict::ConflictResolutionAction;
+use crate::engine::orchestrator::SyncInterceptor;
 use crate::engine::plan::{SyncAction, SyncPlan};
 use crate::engine::versioning::TrashManager;
 
@@ -28,7 +29,7 @@ impl PlanExecutor {
         trash_mgr: Option<&TrashManager>,
         dry_run: bool,
     ) -> Result<ExecutionResult, StorageError> {
-        Self::execute_with_watch_dir(backend, plan, None, trash_mgr, dry_run).await
+        Self::execute_with_interceptor(backend, plan, None, trash_mgr, None, dry_run).await
     }
 
     /// Executes a `SyncPlan` with an optional local `watch_dir` for complete automated conflict resolution.
@@ -39,6 +40,18 @@ impl PlanExecutor {
         trash_mgr: Option<&TrashManager>,
         dry_run: bool,
     ) -> Result<ExecutionResult, StorageError> {
+        Self::execute_with_interceptor(backend, plan, watch_dir, trash_mgr, None, dry_run).await
+    }
+
+    /// Executes a `SyncPlan` with optional `watch_dir`, `TrashManager`, and [`SyncInterceptor`] lifecycle hooks.
+    pub async fn execute_with_interceptor(
+        backend: Arc<dyn StorageBackend>,
+        plan: &SyncPlan,
+        watch_dir: Option<&std::path::Path>,
+        trash_mgr: Option<&TrashManager>,
+        interceptor: Option<&dyn SyncInterceptor>,
+        dry_run: bool,
+    ) -> Result<ExecutionResult, StorageError> {
         let mut executed_actions = 0;
         let mut failed_actions = 0;
         let mut bytes_uploaded = 0;
@@ -47,9 +60,27 @@ impl PlanExecutor {
         let capabilities = backend.capabilities();
 
         for action in &plan.actions {
+            if let Some(hook) = interceptor {
+                if let Err(e) = hook.before_action(action).await {
+                    warn!(
+                        "[{}] Action canceled by SyncInterceptor::before_action: {}",
+                        backend.name(),
+                        e
+                    );
+                    failed_actions += 1;
+                    hook.on_error(action, &e).await;
+                    continue;
+                }
+            }
+            let action_start = std::time::Instant::now();
+            let prev_failed = failed_actions;
+
             if dry_run {
                 info!("[{}] [DRY-RUN] Would execute: {:?}", backend.name(), action);
                 executed_actions += 1;
+                if let Some(hook) = interceptor {
+                    hook.after_action(action, action_start.elapsed()).await;
+                }
                 continue;
             }
 
@@ -347,6 +378,18 @@ impl PlanExecutor {
                         let _ = tm.archive_file(path).await;
                     }
                     executed_actions += 1;
+                }
+            }
+
+            if let Some(hook) = interceptor {
+                if failed_actions == prev_failed {
+                    hook.after_action(action, action_start.elapsed()).await;
+                } else {
+                    let err = StorageError::Provider {
+                        message: format!("SyncAction failed on {}", backend.name()),
+                        status: None,
+                    };
+                    hook.on_error(action, &err).await;
                 }
             }
         }

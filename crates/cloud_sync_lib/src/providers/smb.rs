@@ -1,12 +1,15 @@
 //! SMB / CIFS Network Share Provider (Rclone `smb` & FreeFileSync network share equivalent).
 //!
 //! Provides synchronization with Windows / Samba / NAS SMB network shares via UNC paths
-//! (`\\server\share`) or mounted CIFS share points, supporting atomic file transfers,
-//! server-side move/copy, and MD5 checksum calculation.
+//! (`\\server\share`) or mounted CIFS share points, enforcing `NormalizedPath` path traversal
+//! defenses and implementing `ServerSideOperations`.
 
 use crate::providers::SmbCredentials;
-use crate::traits::{StorageBackend, StorageCapabilities, StorageError, StorageItem};
+use crate::traits::{
+    ServerSideOperations, StorageBackend, StorageCapabilities, StorageError, StorageItem,
+};
 use async_trait::async_trait;
+use cloud_sync_core::NormalizedPath;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tracing::info;
@@ -46,21 +49,53 @@ impl SmbProvider {
         }
     }
 
-    fn resolve_share_path(&self, remote_path: &str) -> PathBuf {
+    pub fn resolve_share_path(&self, remote_path: &str) -> Result<PathBuf, StorageError> {
+        let norm_input = NormalizedPath::new(remote_path).map_err(|e| StorageError::Provider {
+            message: format!("Invalid SMB path '{}': {}", remote_path, e),
+            status: None,
+        })?;
         let rel = crate::providers::utils::format_relative_path(
-            remote_path,
+            norm_input.as_str(),
             self.credentials.common.destination_folder.as_deref(),
         );
-        let clean = rel.trim_matches('/').trim_matches('\\');
+        let norm = NormalizedPath::new(&rel).map_err(|e| StorageError::Provider {
+            message: format!("Invalid SMB resolved path '{}': {}", rel, e),
+            status: None,
+        })?;
+
+        let clean = norm.as_str();
         if clean.is_empty() {
-            self.share_root.clone()
+            Ok(self.share_root.clone())
         } else {
             let mut p = self.share_root.clone();
-            for segment in clean.split('/').filter(|s| !s.is_empty() && *s != "..") {
+            for segment in clean.split('/') {
                 p.push(segment);
             }
-            p
+            Ok(p)
         }
+    }
+}
+
+#[async_trait]
+impl ServerSideOperations for SmbProvider {
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let src = self.resolve_share_path(from)?;
+        let dst = self.resolve_share_path(to)?;
+        if let Some(parent) = dst.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::copy(&src, &dst).await?;
+        Ok(())
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let src = self.resolve_share_path(from)?;
+        let dst = self.resolve_share_path(to)?;
+        if let Some(parent) = dst.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::rename(&src, &dst).await?;
+        Ok(())
     }
 }
 
@@ -70,13 +105,14 @@ impl StorageBackend for SmbProvider {
         "SMB"
     }
 
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        Some(self)
+    }
+
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let target_dir = self.resolve_share_path(remote_path);
+        let target_dir = self.resolve_share_path(remote_path)?;
         if !target_dir.exists() {
-            return Err(StorageError::NotFound(format!(
-                "SMB share path not found or unreachable: {}",
-                target_dir.display()
-            )));
+            return Ok(Vec::new());
         }
 
         let mut entries = tokio::fs::read_dir(&target_dir).await?;
@@ -117,22 +153,26 @@ impl StorageBackend for SmbProvider {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let dest = self.resolve_share_path(remote_path);
+        let dest = self.resolve_share_path(remote_path)?;
         if let Some(parent) = dest.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        // Atomic write via temporary file on the SMB share
         let tmp_dest = dest.with_extension("smb_tmp");
-        tokio::fs::copy(local_path, &tmp_dest).await?;
+        let bytes = tokio::fs::copy(local_path, &tmp_dest).await?;
         tokio::fs::rename(&tmp_dest, &dest).await?;
 
-        info!("Uploaded file to SMB share: {}", remote_path);
+        info!(
+            storage.provider = "SMB",
+            storage.path = %remote_path,
+            storage.bytes = bytes,
+            "Uploaded file to SMB share"
+        );
         Ok(())
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let src = self.resolve_share_path(remote_path);
+        let src = self.resolve_share_path(remote_path)?;
         if !src.exists() {
             return Err(StorageError::NotFound(format!(
                 "SMB remote file not found: {}",
@@ -144,13 +184,18 @@ impl StorageBackend for SmbProvider {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        tokio::fs::copy(&src, local_path).await?;
-        info!("Downloaded file from SMB share: {}", remote_path);
+        let bytes = tokio::fs::copy(&src, local_path).await?;
+        info!(
+            storage.provider = "SMB",
+            storage.path = %remote_path,
+            storage.bytes = bytes,
+            "Downloaded file from SMB share"
+        );
         Ok(())
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let target = self.resolve_share_path(remote_path);
+        let target = self.resolve_share_path(remote_path)?;
         if !target.exists() {
             return Err(StorageError::NotFound(format!(
                 "SMB target not found: {}",
@@ -167,29 +212,17 @@ impl StorageBackend for SmbProvider {
     }
 
     async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
-        let target = self.resolve_share_path(remote_path);
+        let target = self.resolve_share_path(remote_path)?;
         tokio::fs::create_dir_all(&target).await?;
         Ok(())
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
-        let src = self.resolve_share_path(from);
-        let dst = self.resolve_share_path(to);
-        if let Some(parent) = dst.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        tokio::fs::rename(&src, &dst).await?;
-        Ok(())
+        ServerSideOperations::rename(self, from, to).await
     }
 
     async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
-        let src = self.resolve_share_path(from);
-        let dst = self.resolve_share_path(to);
-        if let Some(parent) = dst.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        tokio::fs::copy(&src, &dst).await?;
-        Ok(())
+        ServerSideOperations::copy(self, from, to).await
     }
 
     async fn compute_local_checksum(
@@ -233,7 +266,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[tokio::test]
-    async fn test_smb_provider_share_operations() {
+    async fn test_smb_provider_share_operations_and_compliance() {
         let share_dir = tempdir().unwrap();
         let local_dir = tempdir().unwrap();
 
@@ -241,45 +274,23 @@ mod tests {
             server: "nas.local".into(),
             share: "backups".into(),
             username: Some("user".into()),
-            password: None,
+            password: Some("smb_secret".into()),
             workgroup: Some("WORKGROUP".into()),
             mount_path: Some(share_dir.path().to_string_lossy().to_string()),
             common: Default::default(),
         };
 
+        // Verify password redaction in Debug output
+        assert!(!format!("{:?}", creds).contains("smb_secret"));
+
         let provider = SmbProvider::new(creds);
-        let src_file = local_dir.path().join("doc.txt");
-        tokio::fs::write(&src_file, b"smb network share payload")
+
+        // Verify NormalizedPath traversal defense
+        assert!(provider.resolve_share_path("../outside").is_err());
+
+        // Run standard specification compliance suite
+        cloud_sync_core::testing::verify_backend_compliance(&provider, local_dir.path())
             .await
             .unwrap();
-
-        provider.upload(&src_file, "folder/doc.txt").await.unwrap();
-
-        let items = provider.list("folder").await.unwrap();
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].size, 25);
-        assert!(items[0].checksum.is_some());
-
-        provider
-            .rename("folder/doc.txt", "folder/renamed.txt")
-            .await
-            .unwrap();
-        provider
-            .copy("folder/renamed.txt", "folder/copied.txt")
-            .await
-            .unwrap();
-
-        let dl_path = local_dir.path().join("downloaded.txt");
-        provider
-            .download("folder/copied.txt", &dl_path)
-            .await
-            .unwrap();
-        assert_eq!(
-            tokio::fs::read_to_string(&dl_path).await.unwrap(),
-            "smb network share payload"
-        );
-
-        provider.delete("folder/renamed.txt").await.unwrap();
-        provider.delete("folder/copied.txt").await.unwrap();
     }
 }

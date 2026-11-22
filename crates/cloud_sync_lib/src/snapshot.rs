@@ -7,6 +7,7 @@
 //! - Supports incremental snapshot creation, listing, SHA-256-verified restoration, and
 //!   retention pruning with unreferenced blob garbage collection (`prune_snapshots`).
 
+use crate::providers::utils::TempFileGuard;
 use crate::traits::{StorageBackend, StorageError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -56,16 +57,6 @@ pub struct SnapshotPruneReport {
     pub orphan_blobs_deleted: usize,
 }
 
-fn compute_sha256_hex(data: &[u8]) -> String {
-    let digest = ring::digest::digest(&ring::digest::SHA256, data);
-    let mut hex = String::with_capacity(64);
-    for b in digest.as_ref() {
-        use std::fmt::Write;
-        let _ = write!(&mut hex, "{:02x}", b);
-    }
-    hex
-}
-
 async fn walk_local_files(
     root: &Path,
     current: &Path,
@@ -84,8 +75,8 @@ async fn walk_local_files(
         } else if meta.is_file() {
             if let Ok(rel) = path.strip_prefix(root) {
                 let rel_str = rel.to_string_lossy().replace('\\', "/");
-                let bytes = tokio::fs::read(&path).await?;
-                let sha256 = compute_sha256_hex(&bytes);
+                // Stream SHA-256 in O(1) memory instead of loading entire file into RAM
+                let sha256 = crate::checksum::compute_sha256(&path).await?;
                 let modified_secs = meta
                     .modified()
                     .ok()
@@ -190,12 +181,10 @@ pub async fn create_snapshot(
         message: format!("Failed to serialize snapshot manifest: {}", e),
         status: None,
     })?;
-    let temp_mf = std::env::temp_dir().join(format!("snap_mf_{}.tmp", rand::random::<u64>()));
-    tokio::fs::write(&temp_mf, &mf_bytes).await?;
+    let temp_mf = TempFileGuard::new("snap_mf");
+    tokio::fs::write(temp_mf.path(), &mf_bytes).await?;
     let mf_remote = format!("{}/{}.json", MANIFESTS_DIR, id);
-    let res = backend.upload(&temp_mf, &mf_remote).await;
-    let _ = tokio::fs::remove_file(&temp_mf).await;
-    res?;
+    backend.upload(temp_mf.path(), &mf_remote).await?;
 
     Ok(manifest)
 }
@@ -219,15 +208,14 @@ pub async fn list_snapshots(
         if !remote_path.ends_with(".json") {
             continue;
         }
-        let temp_mf = std::env::temp_dir().join(format!("snap_list_{}.tmp", rand::random::<u64>()));
-        if backend.download(&remote_path, &temp_mf).await.is_ok() {
-            if let Ok(bytes) = tokio::fs::read(&temp_mf).await {
+        let temp_mf = TempFileGuard::new("snap_list");
+        if backend.download(&remote_path, temp_mf.path()).await.is_ok() {
+            if let Ok(bytes) = tokio::fs::read(temp_mf.path()).await {
                 if let Ok(mf) = serde_json::from_slice::<SnapshotManifest>(&bytes) {
                     manifests.push(mf);
                 }
             }
         }
-        let _ = tokio::fs::remove_file(&temp_mf).await;
     }
 
     manifests.sort_by(|a, b| b.id.cmp(&a.id));
@@ -243,11 +231,9 @@ pub async fn restore_snapshot(
 ) -> Result<SnapshotRestoreReport, StorageError> {
     let clean_id = snapshot_id.trim_end_matches(".json");
     let mf_remote = format!("{}/{}.json", MANIFESTS_DIR, clean_id);
-    let temp_mf = std::env::temp_dir().join(format!("snap_rest_mf_{}.tmp", rand::random::<u64>()));
-    backend.download(&mf_remote, &temp_mf).await?;
-    let mf_bytes = tokio::fs::read(&temp_mf).await;
-    let _ = tokio::fs::remove_file(&temp_mf).await;
-    let mf_bytes = mf_bytes?;
+    let temp_mf = TempFileGuard::new("snap_rest_mf");
+    backend.download(&mf_remote, temp_mf.path()).await?;
+    let mf_bytes = tokio::fs::read(temp_mf.path()).await?;
 
     let manifest: SnapshotManifest =
         serde_json::from_slice(&mf_bytes).map_err(|e| StorageError::Provider {
@@ -265,8 +251,7 @@ pub async fn restore_snapshot(
             tokio::fs::create_dir_all(parent).await?;
         }
         backend.download(&blob_remote, &dest_path).await?;
-        let downloaded = tokio::fs::read(&dest_path).await?;
-        let actual_sha = compute_sha256_hex(&downloaded);
+        let actual_sha = crate::checksum::compute_sha256(&dest_path).await?;
         if actual_sha != entry.sha256 {
             return Err(StorageError::Provider {
                 message: format!(

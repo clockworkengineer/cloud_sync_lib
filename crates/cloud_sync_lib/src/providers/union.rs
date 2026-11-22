@@ -6,7 +6,9 @@
 //! - [`UnionPolicy::FirstAvailable`]: Writes to the first available upstream, falling back to subsequent upstreams on failure.
 //! - [`UnionPolicy::RoundRobin`]: Distributes uploads evenly across member backends to pool storage quotas across accounts.
 
-use crate::traits::{StorageBackend, StorageCapabilities, StorageError, StorageItem};
+use crate::traits::{
+    ServerSideOperations, StorageBackend, StorageCapabilities, StorageError, StorageItem,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -61,9 +63,48 @@ impl UnionBackend {
 }
 
 #[async_trait]
+impl ServerSideOperations for UnionBackend {
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let mut any_ok = false;
+        let mut last_err = None;
+        for upstream in &self.upstreams {
+            match upstream.copy(from, to).await {
+                Ok(()) => any_ok = true,
+                Err(e) => last_err = Some(e),
+            }
+        }
+        if any_ok {
+            Ok(())
+        } else {
+            Err(last_err.unwrap_or_else(|| StorageError::NotFound(from.to_string())))
+        }
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        let mut any_ok = false;
+        let mut last_err = None;
+        for upstream in &self.upstreams {
+            match upstream.rename(from, to).await {
+                Ok(()) => any_ok = true,
+                Err(e) => last_err = Some(e),
+            }
+        }
+        if any_ok {
+            Ok(())
+        } else {
+            Err(last_err.unwrap_or_else(|| StorageError::NotFound(from.to_string())))
+        }
+    }
+}
+
+#[async_trait]
 impl StorageBackend for UnionBackend {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn as_server_side_ops(&self) -> Option<&dyn ServerSideOperations> {
+        Some(self)
     }
 
     async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
@@ -226,6 +267,8 @@ impl StorageBackend for UnionBackend {
             for u in self.upstreams.iter().skip(1) {
                 caps = StorageCapabilities(caps.0 & u.capabilities().0);
             }
+            caps.remove(StorageCapabilities::RESUMABLE_UPLOAD);
+            caps.remove(StorageCapabilities::CHANGE_CURSOR);
             caps
         } else {
             StorageCapabilities::NONE
@@ -281,6 +324,11 @@ mod tests {
             tokio::fs::read_to_string(&dl).await.unwrap(),
             "redundant payload"
         );
+
+        // Run specification compliance check on UnionBackend
+        cloud_sync_core::testing::verify_backend_compliance(&union, local.path())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
