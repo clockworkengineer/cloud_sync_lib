@@ -16,6 +16,13 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+/// Pluggable routing strategy for selecting target upstream indices on upload (OCP).
+pub trait UnionRoutingStrategy: Send + Sync {
+    /// Returns the ordered list of upstream indices (`0..upstreams_len`) to write to,
+    /// along with a boolean indicating whether *all* returned targets must succeed (`require_all`).
+    fn select_write_targets(&self, upstreams_len: usize) -> (Vec<usize>, bool);
+}
+
 /// Write and allocation policy for a [`UnionBackend`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum UnionPolicy {
@@ -34,6 +41,7 @@ pub struct UnionBackend {
     upstreams: Vec<Arc<dyn StorageBackend>>,
     policy: UnionPolicy,
     rr_counter: AtomicUsize,
+    custom_strategy: Option<Arc<dyn UnionRoutingStrategy>>,
 }
 
 impl UnionBackend {
@@ -48,7 +56,14 @@ impl UnionBackend {
             upstreams,
             policy,
             rr_counter: AtomicUsize::new(0),
+            custom_strategy: None,
         }
+    }
+
+    /// Attaches a custom [`UnionRoutingStrategy`] implementation (Open/Closed Principle).
+    pub fn with_routing_strategy(mut self, strategy: Arc<dyn UnionRoutingStrategy>) -> Self {
+        self.custom_strategy = Some(strategy);
+        self
     }
 
     /// Returns the list of member upstreams.
@@ -155,6 +170,33 @@ impl StorageBackend for UnionBackend {
                 message: "UnionBackend has no configured upstreams".into(),
                 status: None,
             });
+        }
+
+        if let Some(ref strategy) = self.custom_strategy {
+            let (targets, require_all) = strategy.select_write_targets(self.upstreams.len());
+            let mut last_err = None;
+            let mut success_count = 0;
+            for idx in targets {
+                if let Some(upstream) = self.upstreams.get(idx) {
+                    match upstream.upload(local_path, remote_path).await {
+                        Ok(()) => {
+                            success_count += 1;
+                            if !require_all {
+                                return Ok(());
+                            }
+                        }
+                        Err(e) => last_err = Some(e),
+                    }
+                }
+            }
+            return if success_count > 0 && !require_all || (require_all && last_err.is_none()) {
+                Ok(())
+            } else {
+                Err(last_err.unwrap_or_else(|| StorageError::Provider {
+                    message: "Custom UnionRoutingStrategy selected no valid upstream targets".into(),
+                    status: None,
+                }))
+            };
         }
 
         match self.policy {
@@ -364,5 +406,43 @@ mod tests {
         assert_eq!(b1.list("").await.unwrap().len(), 1);
         assert_eq!(b2.list("").await.unwrap().len(), 1);
         assert_eq!(union.list("").await.unwrap().len(), 2);
+    }
+
+    struct ReversePriorityRouter;
+    impl UnionRoutingStrategy for ReversePriorityRouter {
+        fn select_write_targets(&self, upstreams_len: usize) -> (Vec<usize>, bool) {
+            ((0..upstreams_len).rev().collect(), false)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_union_backend_custom_routing_strategy() {
+        let dir1 = tempdir().unwrap();
+        let dir2 = tempdir().unwrap();
+        let local = tempdir().unwrap();
+
+        let b1: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(
+            dir1.path().to_path_buf(),
+            "Upstream0".into(),
+        ));
+        let b2: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(
+            dir2.path().to_path_buf(),
+            "Upstream1".into(),
+        ));
+
+        let union = UnionBackend::new(
+            "CustomRoutedUnion",
+            vec![b1.clone(), b2.clone()],
+            UnionPolicy::FirstAvailable,
+        )
+        .with_routing_strategy(Arc::new(ReversePriorityRouter));
+
+        let f1 = local.path().join("routed.txt");
+        tokio::fs::write(&f1, b"custom route").await.unwrap();
+        union.upload(&f1, "routed.txt").await.unwrap();
+
+        // ReversePriorityRouter selects upstream 1 first
+        assert_eq!(b1.list("").await.unwrap().len(), 0);
+        assert_eq!(b2.list("").await.unwrap().len(), 1);
     }
 }

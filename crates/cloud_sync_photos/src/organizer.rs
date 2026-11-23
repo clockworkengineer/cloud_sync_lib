@@ -4,6 +4,12 @@ use crate::models::MediaItem;
 use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 
+/// Pluggable path organization strategy trait for determining remote directory hierarchy (OCP).
+pub trait PhotoPathOrganizer: Send + Sync {
+    /// Generates the destination remote relative path for a media item.
+    fn organize_path(&self, item: &MediaItem) -> String;
+}
+
 /// Strategy used to determine remote directory hierarchy in cloud storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OrganizeStrategy {
@@ -20,6 +26,12 @@ pub enum OrganizeStrategy {
 impl Default for OrganizeStrategy {
     fn default() -> Self {
         Self::YearMonth
+    }
+}
+
+impl PhotoPathOrganizer for OrganizeStrategy {
+    fn organize_path(&self, item: &MediaItem) -> String {
+        generate_remote_path(item, *self)
     }
 }
 

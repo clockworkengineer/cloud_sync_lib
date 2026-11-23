@@ -228,6 +228,77 @@ pub trait ChecksumOps: Send + Sync {
     ) -> Result<Option<String>, StorageError>;
 }
 
+/// Zero-cost adapter projecting any [`StorageBackend`] into segregated ISP role traits
+/// ([`StorageReader`], [`StorageWriter`], [`DirectoryLister`], [`FolderOps`], [`ChecksumOps`])
+/// without causing method-name ambiguity when wildcard imports are used.
+pub struct SegregatedBackend<'a, B: ?Sized>(pub &'a B);
+
+impl<'a, B: StorageBackend + ?Sized> SegregatedBackend<'a, B> {
+    pub fn new(backend: &'a B) -> Self {
+        Self(backend)
+    }
+}
+
+#[cfg(feature = "std")]
+#[async_trait::async_trait]
+impl<'a, T: StorageBackend + ?Sized> StorageReader for SegregatedBackend<'a, T> {
+    async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+        self.0.download(remote_path, local_path).await
+    }
+
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
+        self.0.compute_local_checksum(local_path).await
+    }
+}
+
+#[cfg(feature = "std")]
+#[async_trait::async_trait]
+impl<'a, T: StorageBackend + ?Sized> StorageWriter for SegregatedBackend<'a, T> {
+    async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        self.0.upload(local_path, remote_path).await
+    }
+
+    async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+        self.0.delete(remote_path).await
+    }
+}
+
+#[async_trait::async_trait]
+impl<'a, T: StorageBackend + ?Sized> DirectoryLister for SegregatedBackend<'a, T> {
+    async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+        self.0.list(remote_path).await
+    }
+
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        self.0.create_folder(remote_path).await
+    }
+}
+
+#[async_trait::async_trait]
+impl<'a, T: StorageBackend + ?Sized> FolderOps for SegregatedBackend<'a, T> {
+    async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
+        self.0.create_folder(remote_path).await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.0.rename(from, to).await
+    }
+}
+
+#[cfg(feature = "std")]
+#[async_trait::async_trait]
+impl<'a, T: StorageBackend + ?Sized> ChecksumOps for SegregatedBackend<'a, T> {
+    async fn compute_local_checksum(
+        &self,
+        local_path: &Path,
+    ) -> Result<Option<String>, StorageError> {
+        self.0.compute_local_checksum(local_path).await
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct StorageCapabilities(pub u32);
 
@@ -772,6 +843,23 @@ mod tests {
 
         let resumable = backend.as_resumable_uploader();
         assert!(resumable.is_none());
+
+        // ISP verification: pass StorageBackend to segregated role-trait consumers
+        async fn list_only(lister: &dyn DirectoryLister) -> Result<Vec<StorageItem>, StorageError> {
+            lister.list("").await
+        }
+        async fn read_only(reader: &dyn StorageReader) -> Result<(), StorageError> {
+            reader.download("remote", Path::new("local")).await
+        }
+        async fn write_only(writer: &dyn StorageWriter) -> Result<(), StorageError> {
+            writer.upload(Path::new("local"), "remote").await
+        }
+
+        let concrete = AdvancedBackend;
+        let seg = SegregatedBackend::new(&concrete);
+        assert!(list_only(&seg).await.is_ok());
+        assert!(read_only(&seg).await.is_ok());
+        assert!(write_only(&seg).await.is_ok());
     }
 
     #[test]

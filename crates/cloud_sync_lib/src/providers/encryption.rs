@@ -99,9 +99,28 @@ impl<B: StorageBackend> EncryptedBackend<B> {
 }
 
 #[async_trait]
+impl<B: StorageBackend> cloud_sync_core::ServerSideOperations for EncryptedBackend<B> {
+    async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.inner.copy(from, to).await
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
+        self.inner.rename(from, to).await
+    }
+}
+
+#[async_trait]
 impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn as_server_side_ops(&self) -> Option<&dyn cloud_sync_core::ServerSideOperations> {
+        if self.inner.as_server_side_ops().is_some() {
+            Some(self)
+        } else {
+            None
+        }
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
@@ -358,7 +377,12 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
     }
 
     fn capabilities(&self) -> cloud_sync_core::StorageCapabilities {
-        self.inner.capabilities()
+        let mut caps = self.inner.capabilities();
+        // EncryptedBackend transforms file payloads with AEAD chunk framing, so raw byte-offset
+        // resumable upload sessions and raw change cursors are masked to uphold LSP invariants.
+        caps.remove(cloud_sync_core::StorageCapabilities::RESUMABLE_UPLOAD);
+        caps.remove(cloud_sync_core::StorageCapabilities::CHANGE_CURSOR);
+        caps
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
@@ -575,5 +599,21 @@ mod tests {
             fs::read(&dl2).await.unwrap(),
             b"Cached PBKDF2 key derivation test"
         );
+    }
+
+    #[tokio::test]
+    async fn test_encrypted_backend_specification_compliance() {
+        let temp_dir = tempdir().unwrap();
+        let remote_root = temp_dir.path().join("remote");
+        let local_root = temp_dir.path().join("local");
+        fs::create_dir_all(&remote_root).await.unwrap();
+        fs::create_dir_all(&local_root).await.unwrap();
+
+        let local_sim = LocalSimulation::new(remote_root, "ComplianceSim".to_string());
+        let enc_backend = EncryptedBackend::new(local_sim, "lsp_compliance_secret");
+
+        cloud_sync_core::testing::verify_backend_compliance(&enc_backend, &local_root)
+            .await
+            .expect("EncryptedBackend must satisfy LSP specification compliance");
     }
 }

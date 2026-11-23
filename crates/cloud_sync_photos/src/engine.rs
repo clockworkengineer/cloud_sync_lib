@@ -1,9 +1,9 @@
 //! Synchronization and library orchestration engine for Google Photos equivalence.
 
-use crate::catalog::PhotoCatalog;
+use crate::catalog::{JsonPhotoCatalogStore, PhotoCatalog, PhotoCatalogStore};
 use crate::metadata::inspect_media_file;
 use crate::models::{LibraryStats, MediaItem, SearchFilter, TimelineGroup};
-use crate::organizer::{generate_remote_path, OrganizeStrategy};
+use crate::organizer::{OrganizeStrategy, PhotoPathOrganizer};
 use cloud_sync_core::{NormalizedPath, StorageBackend};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -25,7 +25,8 @@ pub struct PhotoLibrary {
     remote_root: NormalizedPath,
     local_catalog_path: PathBuf,
     catalog: Arc<RwLock<PhotoCatalog>>,
-    strategy: OrganizeStrategy,
+    catalog_store: Arc<dyn PhotoCatalogStore>,
+    organizer: Arc<dyn PhotoPathOrganizer>,
 }
 
 impl PhotoLibrary {
@@ -37,9 +38,11 @@ impl PhotoLibrary {
         strategy: OrganizeStrategy,
     ) -> Result<Self, String> {
         let root_path = NormalizedPath::new(remote_root).map_err(|e| e.to_string())?;
+        let store: Arc<dyn PhotoCatalogStore> = Arc::new(JsonPhotoCatalogStore);
 
         let catalog = if local_catalog_path.exists() {
-            PhotoCatalog::load_from_file(&local_catalog_path)
+            store
+                .load(&local_catalog_path)
                 .unwrap_or_else(|_| PhotoCatalog::default())
         } else {
             PhotoCatalog::default()
@@ -50,8 +53,21 @@ impl PhotoLibrary {
             remote_root: root_path,
             local_catalog_path,
             catalog: Arc::new(RwLock::new(catalog)),
-            strategy,
+            catalog_store: store,
+            organizer: Arc::new(strategy),
         })
+    }
+
+    /// Injects a custom [`PhotoCatalogStore`] persistence implementation (DIP & SRP).
+    pub fn with_catalog_store(mut self, store: Arc<dyn PhotoCatalogStore>) -> Self {
+        self.catalog_store = store;
+        self
+    }
+
+    /// Injects a custom [`PhotoPathOrganizer`] strategy implementation (OCP).
+    pub fn with_custom_organizer(mut self, organizer: Arc<dyn PhotoPathOrganizer>) -> Self {
+        self.organizer = organizer;
+        self
     }
 
     /// Returns a reference to the in-memory catalog.
@@ -59,10 +75,11 @@ impl PhotoLibrary {
         self.catalog.clone()
     }
 
-    /// Saves the current catalog to the local disk.
+    /// Saves the current catalog via the configured [`PhotoCatalogStore`].
     pub async fn save_local_catalog(&self) -> Result<(), String> {
         let cat = self.catalog.read().await;
-        cat.save_to_file(&self.local_catalog_path)
+        self.catalog_store
+            .save(&self.local_catalog_path, &cat)
             .map_err(|e| e.to_string())
     }
 
@@ -185,8 +202,8 @@ impl PhotoLibrary {
             }
         }
 
-        // Determine remote path using selected organization strategy
-        let rel_remote = generate_remote_path(&item, self.strategy);
+        // Determine remote path using injected PhotoPathOrganizer strategy
+        let rel_remote = self.organizer.organize_path(&item);
         let full_remote_str = if self.remote_root.as_str().is_empty() {
             rel_remote.clone()
         } else {

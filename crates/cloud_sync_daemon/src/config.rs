@@ -222,6 +222,139 @@ pub fn is_provider_enabled<C: ProviderConfig>(credentials: &Option<C>) -> bool {
     credentials.as_ref().map_or(true, |c| c.is_enabled())
 }
 
+impl AppConfig {
+    /// Returns all enabled provider credentials paired with their configured simulation root directory (OCP).
+    #[allow(unused_mut)]
+    pub fn enabled_credentials(&self) -> Vec<(cloud_sync_lib::BackendCredentials, PathBuf)> {
+        let mut entries = Vec::new();
+        macro_rules! push_if_enabled {
+            ($feature:literal, $field:expr, $variant:ident, $root:expr) => {
+                #[cfg(feature = $feature)]
+                if is_provider_enabled(&$field) {
+                    if let Some(c) = $field.clone() {
+                        entries.push((cloud_sync_lib::BackendCredentials::$variant(c), $root));
+                    }
+                }
+            };
+        }
+
+        push_if_enabled!(
+            "google_drive",
+            self.google_credentials,
+            GoogleDrive,
+            self.google_drive_root.clone()
+        );
+        push_if_enabled!(
+            "dropbox",
+            self.dropbox_credentials,
+            Dropbox,
+            self.dropbox_root.clone()
+        );
+        push_if_enabled!(
+            "onedrive",
+            self.onedrive_credentials,
+            OneDrive,
+            self.onedrive_root.clone()
+        );
+        push_if_enabled!(
+            "webdav",
+            self.webdav_credentials,
+            WebDAV,
+            self.webdav_root.clone()
+        );
+        push_if_enabled!("s3", self.s3_credentials, S3, self.s3_root.clone());
+        push_if_enabled!("sftp", self.sftp_credentials, SFTP, self.sftp_root.clone());
+        push_if_enabled!(
+            "nextcloud",
+            self.nextcloud_credentials,
+            Nextcloud,
+            self.nextcloud_root.clone()
+        );
+        push_if_enabled!(
+            "box",
+            self.box_credentials,
+            Box,
+            self.box_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_BOX_ROOT))
+        );
+        push_if_enabled!(
+            "mega",
+            self.mega_credentials,
+            Mega,
+            self.mega_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_MEGA_ROOT))
+        );
+        push_if_enabled!(
+            "azure_blob",
+            self.azure_blob_credentials,
+            AzureBlob,
+            self.azure_blob_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_AZURE_BLOB_ROOT))
+        );
+        push_if_enabled!(
+            "gcs",
+            self.gcs_credentials,
+            GCS,
+            self.gcs_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_GCS_ROOT))
+        );
+        push_if_enabled!(
+            "b2",
+            self.b2_credentials,
+            B2,
+            self.b2_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_B2_ROOT))
+        );
+        push_if_enabled!(
+            "pcloud",
+            self.pcloud_credentials,
+            PCloud,
+            self.pcloud_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_PCLOUD_ROOT))
+        );
+        push_if_enabled!(
+            "ipfs",
+            self.ipfs_credentials,
+            IPFS,
+            self.ipfs_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_IPFS_ROOT))
+        );
+        push_if_enabled!(
+            "ftp",
+            self.ftp_credentials,
+            FTP,
+            self.ftp_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_FTP_ROOT))
+        );
+        push_if_enabled!(
+            "http",
+            self.http_credentials,
+            HTTP,
+            self.http_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_HTTP_ROOT))
+        );
+        push_if_enabled!(
+            "smb",
+            self.smb_credentials,
+            SMB,
+            self.smb_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_SMB_ROOT))
+        );
+
+        entries
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

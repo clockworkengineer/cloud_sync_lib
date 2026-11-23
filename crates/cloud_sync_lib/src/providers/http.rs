@@ -6,8 +6,10 @@
 
 use crate::providers::HttpCredentials;
 use crate::traits::{StorageBackend, StorageCapabilities, StorageError, StorageItem};
+use crate::transport::HttpTransport;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 use tracing::info;
 
@@ -15,6 +17,7 @@ use tracing::info;
 pub struct HttpProvider {
     client: reqwest::Client,
     credentials: HttpCredentials,
+    transport: Option<Arc<dyn HttpTransport>>,
 }
 
 crate::impl_provider_builder!(HttpProvider, HttpProviderBuilder, HttpCredentials);
@@ -29,6 +32,24 @@ impl HttpProvider {
         Self {
             client,
             credentials,
+            transport: None,
+        }
+    }
+
+    /// Injects a custom [`HttpTransport`] implementation for socket-free testing or custom proxies (DIP).
+    pub fn with_transport(mut self, transport: Arc<dyn HttpTransport>) -> Self {
+        self.transport = Some(transport);
+        self
+    }
+
+    async fn send_req(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, StorageError> {
+        if let Some(ref transport) = self.transport {
+            transport.send(builder).await
+        } else {
+            builder.send().await.map_err(StorageError::Reqwest)
         }
     }
 
@@ -178,7 +199,7 @@ impl StorageBackend for HttpProvider {
         }
 
         let req = self.apply_auth(self.client.get(&url));
-        let resp = req.send().await?;
+        let resp = self.send_req(req).await?;
         if !resp.status().is_success() {
             return Err(crate::providers::utils::translate_status_code_error(
                 resp.status().as_u16(),
@@ -203,7 +224,10 @@ impl StorageBackend for HttpProvider {
             if !item.is_dir {
                 let item_path_str = item.path.to_string_lossy().replace('\\', "/");
                 let file_url = self.resolve_url(&item_path_str);
-                if let Ok(head_resp) = self.apply_auth(self.client.head(&file_url)).send().await {
+                if let Ok(head_resp) = self
+                    .send_req(self.apply_auth(self.client.head(&file_url)))
+                    .await
+                {
                     if head_resp.status().is_success() {
                         if let Some(len) = head_resp
                             .headers()
@@ -232,7 +256,7 @@ impl StorageBackend for HttpProvider {
         let url = self.resolve_url(remote_path);
         let bytes = tokio::fs::read(local_path).await?;
         let req = self.apply_auth(self.client.put(&url)).body(bytes);
-        let resp = req.send().await?;
+        let resp = self.send_req(req).await?;
 
         if !resp.status().is_success() {
             return Err(crate::providers::utils::translate_status_code_error(
@@ -250,7 +274,7 @@ impl StorageBackend for HttpProvider {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
         let url = self.resolve_url(remote_path);
         let req = self.apply_auth(self.client.get(&url));
-        let resp = req.send().await?;
+        let resp = self.send_req(req).await?;
 
         if !resp.status().is_success() {
             return Err(crate::providers::utils::translate_status_code_error(
@@ -274,7 +298,7 @@ impl StorageBackend for HttpProvider {
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         let url = self.resolve_url(remote_path);
         let req = self.apply_auth(self.client.delete(&url));
-        let resp = req.send().await?;
+        let resp = self.send_req(req).await?;
 
         if !resp.status().is_success() {
             return Err(crate::providers::utils::translate_status_code_error(
@@ -295,7 +319,7 @@ impl StorageBackend for HttpProvider {
         let req = self
             .apply_auth(self.client.put(&url))
             .body(Vec::<u8>::new());
-        let _ = req.send().await;
+        let _ = self.send_req(req).await;
         Ok(())
     }
 
@@ -417,5 +441,34 @@ mod tests {
         assert_eq!(downloaded, "hello http!");
 
         provider.delete("notes.txt").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_http_provider_with_mock_http_transport_dip() {
+        use crate::transport::MockHttpTransport;
+        use http::{Response, StatusCode};
+
+        let mock_transport = Arc::new(MockHttpTransport::new(|req| {
+            assert_eq!(req.method(), reqwest::Method::GET);
+            let raw = Response::builder()
+                .status(StatusCode::OK)
+                .body(r#"[{"name":"dip_test.txt","size":42,"is_dir":false}]"#)
+                .unwrap();
+            Ok(reqwest::Response::from(raw))
+        }));
+
+        let creds = HttpCredentials {
+            url: "https://offline.example.test/files".into(),
+            username: None,
+            password: None,
+            bearer_token: Some("jwt_token".into()),
+            common: Default::default(),
+        };
+
+        let provider = HttpProvider::new(creds).with_transport(mock_transport);
+        let items = provider.list("").await.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path, PathBuf::from("dip_test.txt"));
+        assert_eq!(items[0].size, 42);
     }
 }

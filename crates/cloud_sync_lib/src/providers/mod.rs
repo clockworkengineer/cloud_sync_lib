@@ -503,7 +503,7 @@ pub use s3::{S3Provider, S3ProviderBuilder};
 pub use sftp::{SFTPProvider, SFTPProviderBuilder};
 #[cfg(feature = "smb")]
 pub use smb::{SmbProvider, SmbProviderBuilder};
-pub use union::{UnionBackend, UnionPolicy};
+pub use union::{UnionBackend, UnionPolicy, UnionRoutingStrategy};
 pub use utils::OAuthTokenManager;
 #[cfg(feature = "webdav")]
 pub use webdav::{WebDAVProvider, WebDAVProviderBuilder};
@@ -601,6 +601,106 @@ impl BackendCredentials {
 
     pub fn selective_sync(&self) -> Option<Vec<String>> {
         ProviderConfig::selective_sync(self)
+    }
+
+    /// Returns the canonical human-readable display name for this provider credential variant (OCP).
+    #[allow(unreachable_patterns)]
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "google_drive")]
+            BackendCredentials::GoogleDrive(_) => "Google Drive",
+            #[cfg(feature = "dropbox")]
+            BackendCredentials::Dropbox(_) => "Dropbox",
+            #[cfg(feature = "onedrive")]
+            BackendCredentials::OneDrive(_) => "OneDrive",
+            #[cfg(feature = "webdav")]
+            BackendCredentials::WebDAV(_) => "WebDAV",
+            #[cfg(feature = "s3")]
+            BackendCredentials::S3(_) => "S3",
+            #[cfg(feature = "sftp")]
+            BackendCredentials::SFTP(_) => "SFTP",
+            #[cfg(feature = "nextcloud")]
+            BackendCredentials::Nextcloud(_) => "Nextcloud",
+            #[cfg(feature = "box")]
+            BackendCredentials::Box(_) => "Box",
+            #[cfg(feature = "mega")]
+            BackendCredentials::Mega(_) => "MEGA",
+            #[cfg(feature = "azure_blob")]
+            BackendCredentials::AzureBlob(_) => "Azure Blob",
+            #[cfg(feature = "gcs")]
+            BackendCredentials::GCS(_) => "Google Cloud Storage",
+            #[cfg(feature = "b2")]
+            BackendCredentials::B2(_) => "Backblaze B2",
+            #[cfg(feature = "pcloud")]
+            BackendCredentials::PCloud(_) => "pCloud",
+            #[cfg(feature = "ipfs")]
+            BackendCredentials::IPFS(_) => "IPFS",
+            #[cfg(feature = "ftp")]
+            BackendCredentials::FTP(_) => "FTP",
+            #[cfg(feature = "http")]
+            BackendCredentials::HTTP(_) => "HTTP",
+            #[cfg(feature = "smb")]
+            BackendCredentials::SMB(_) => "SMB",
+            _ => "Unknown",
+        }
+    }
+
+    /// Returns `true` if the primary credential secret/token still holds an unconfigured placeholder string (SRP & OCP).
+    #[allow(unreachable_patterns)]
+    pub fn has_placeholder_secret(&self) -> bool {
+        let is_placeholder = |val: &str| -> bool {
+            val.is_empty()
+                || val.contains("PLACEHOLDER")
+                || val.contains("your_")
+                || val.contains("your-")
+        };
+
+        match self {
+            #[cfg(feature = "google_drive")]
+            BackendCredentials::GoogleDrive(c) => is_placeholder(&c.refresh_token),
+            #[cfg(feature = "dropbox")]
+            BackendCredentials::Dropbox(c) => is_placeholder(&c.refresh_token),
+            #[cfg(feature = "onedrive")]
+            BackendCredentials::OneDrive(c) => is_placeholder(&c.refresh_token),
+            #[cfg(feature = "box")]
+            BackendCredentials::Box(c) => is_placeholder(&c.refresh_token),
+            #[cfg(feature = "mega")]
+            BackendCredentials::Mega(c) => is_placeholder(&c.password),
+            #[cfg(feature = "webdav")]
+            BackendCredentials::WebDAV(c) => is_placeholder(&c.password),
+            #[cfg(feature = "s3")]
+            BackendCredentials::S3(c) => is_placeholder(&c.secret_access_key),
+            #[cfg(feature = "sftp")]
+            BackendCredentials::SFTP(c) => {
+                let pw_placeholder = c.password.as_ref().is_some_and(|p| is_placeholder(p));
+                let key_placeholder = c
+                    .private_key_path
+                    .as_ref()
+                    .map_or(true, |k| is_placeholder(k));
+                pw_placeholder && key_placeholder
+            }
+            #[cfg(feature = "nextcloud")]
+            BackendCredentials::Nextcloud(c) => is_placeholder(&c.app_password),
+            #[cfg(feature = "azure_blob")]
+            BackendCredentials::AzureBlob(c) => {
+                is_placeholder(&c.account_key) || c.account_key == "devstoreaccount1"
+            }
+            #[cfg(feature = "gcs")]
+            BackendCredentials::GCS(c) => is_placeholder(&c.service_account_key_path),
+            #[cfg(feature = "b2")]
+            BackendCredentials::B2(c) => is_placeholder(&c.application_key),
+            #[cfg(feature = "pcloud")]
+            BackendCredentials::PCloud(c) => is_placeholder(&c.access_token),
+            #[cfg(feature = "ipfs")]
+            BackendCredentials::IPFS(c) => is_placeholder(&c.jwt_token),
+            #[cfg(feature = "ftp")]
+            BackendCredentials::FTP(c) => is_placeholder(&c.username),
+            #[cfg(feature = "http")]
+            BackendCredentials::HTTP(c) => is_placeholder(&c.url),
+            #[cfg(feature = "smb")]
+            BackendCredentials::SMB(c) => is_placeholder(&c.server),
+            _ => false,
+        }
     }
 }
 

@@ -4,12 +4,11 @@
 //! cloud storage providers, performing file operations, and executing synchronization tasks.
 
 use crate::layers::{
-    CacheLayer, CircuitBreakerConfig, CircuitBreakerLayer, CompressionLayer, LayeredBackendExt,
-    LoggingLayer, MetricsLayer, RateLimitLayer, RetryConfig, RetryLayer,
+    CacheLayer, ChunkerLayer, CircuitBreakerConfig, CircuitBreakerLayer, CompressionLayer,
+    EncryptionLayer, LayeredBackendExt, LoggingLayer, MetricsLayer, RateLimitLayer, RetryConfig,
+    RetryLayer, StorageLayer,
 };
-use crate::providers::{
-    ChunkerBackend, DynamicBackendRegistry, EncryptedBackend, UnionBackend, UnionPolicy,
-};
+use crate::providers::{DynamicBackendRegistry, UnionBackend, UnionPolicy};
 use crate::rate_limit::TokenBucket;
 use crate::transport::HttpTransport;
 use cloud_sync_core::{StorageBackend, StorageError, StorageItem};
@@ -242,6 +241,7 @@ pub struct CloudSyncBuilder {
     cache_ttl: Option<Duration>,
     chunk_size_bytes: Option<usize>,
     http_transport: Option<Arc<dyn HttpTransport>>,
+    custom_layers: Vec<Arc<dyn StorageLayer>>,
 }
 
 impl CloudSyncBuilder {
@@ -378,6 +378,12 @@ impl CloudSyncBuilder {
         self
     }
 
+    /// Appends an arbitrary custom [`StorageLayer`] middleware (Open/Closed Principle).
+    pub fn with_custom_layer(mut self, layer: impl StorageLayer + 'static) -> Self {
+        self.custom_layers.push(Arc::new(layer));
+        self
+    }
+
     /// Finalizes construction and returns a layered `CloudSyncClient`.
     pub fn build(self) -> Result<CloudSyncClient, StorageError> {
         let mut backend = if let Some(b) = self.backend {
@@ -385,10 +391,34 @@ impl CloudSyncBuilder {
         } else if let (Some(name), Some(cfg), Some(root)) =
             (self.provider_name, self.provider_config, self.sim_root)
         {
-            let registry = self
-                .registry
-                .unwrap_or_else(|| Arc::new(DynamicBackendRegistry::with_defaults()));
-            registry.create_backend(&name, &cfg, root)?
+            #[cfg(feature = "http")]
+            let custom_http: Option<Arc<dyn StorageBackend>> = if name == "http" {
+                if let Some(ref transport) = self.http_transport {
+                    serde_json::from_value::<crate::providers::HttpCredentials>(cfg.clone())
+                        .ok()
+                        .map(|creds| {
+                            Arc::new(
+                                crate::providers::HttpProvider::new(creds)
+                                    .with_transport(transport.clone()),
+                            ) as Arc<dyn StorageBackend>
+                        })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            #[cfg(not(feature = "http"))]
+            let custom_http: Option<Arc<dyn StorageBackend>> = None;
+
+            if let Some(b) = custom_http {
+                b
+            } else {
+                let registry = self
+                    .registry
+                    .unwrap_or_else(|| Arc::new(DynamicBackendRegistry::with_defaults()));
+                registry.create_backend(&name, &cfg, root)?
+            }
         } else {
             return Err(StorageError::Provider {
                 message: "No backend or provider configuration provided to CloudSyncBuilder".into(),
@@ -396,7 +426,7 @@ impl CloudSyncBuilder {
             });
         };
 
-        // Apply layers in standard order: CircuitBreaker -> Retry -> RateLimit -> Metrics -> Logging
+        // Apply layers in standard order: CircuitBreaker -> Retry -> RateLimit -> Metrics -> Compression -> Encryption -> Chunker -> Cache -> Custom -> Logging
         if let Some(cb_cfg) = self.circuit_breaker {
             backend = backend.with_layer(CircuitBreakerLayer::new(cb_cfg));
         }
@@ -428,15 +458,19 @@ impl CloudSyncBuilder {
         }
 
         if let Some(pwd) = self.encryption_password {
-            backend = Arc::new(EncryptedBackend::new(backend, &pwd));
+            backend = backend.with_layer(EncryptionLayer::new(pwd));
         }
 
         if let Some(chunk_size) = self.chunk_size_bytes {
-            backend = Arc::new(ChunkerBackend::new(backend, chunk_size));
+            backend = backend.with_layer(ChunkerLayer::new(chunk_size));
         }
 
         if let Some(ttl) = self.cache_ttl {
             backend = backend.with_layer(CacheLayer::new(ttl));
+        }
+
+        for custom in self.custom_layers {
+            backend = custom.layer(backend);
         }
 
         if self.enable_logging {

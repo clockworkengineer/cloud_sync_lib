@@ -44,3 +44,47 @@ impl LayeredBackendExt for dyn StorageBackend {
         layer.layer(self)
     }
 }
+
+/// Composable middleware layer applying zero-knowledge AES-256-GCM encryption (OCP).
+#[derive(Clone)]
+pub struct EncryptionLayer {
+    password: String,
+}
+
+impl EncryptionLayer {
+    pub fn new(password: impl Into<String>) -> Self {
+        Self {
+            password: password.into(),
+        }
+    }
+}
+
+impl StorageLayer for EncryptionLayer {
+    fn layer(&self, backend: Arc<dyn StorageBackend>) -> Arc<dyn StorageBackend> {
+        Arc::new(crate::providers::EncryptedBackend::new(
+            backend,
+            &self.password,
+        ))
+    }
+}
+
+/// Composable middleware layer applying transparent large-file chunking (OCP).
+#[derive(Debug, Clone, Copy)]
+pub struct ChunkerLayer {
+    chunk_size_bytes: usize,
+}
+
+impl ChunkerLayer {
+    pub fn new(chunk_size_bytes: usize) -> Self {
+        Self { chunk_size_bytes }
+    }
+}
+
+impl StorageLayer for ChunkerLayer {
+    fn layer(&self, backend: Arc<dyn StorageBackend>) -> Arc<dyn StorageBackend> {
+        Arc::new(crate::providers::ChunkerBackend::new(
+            backend,
+            self.chunk_size_bytes,
+        ))
+    }
+}

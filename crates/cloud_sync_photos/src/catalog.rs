@@ -331,3 +331,59 @@ impl PhotoCatalog {
         Ok(())
     }
 }
+
+/// Abstract persistence store for [`PhotoCatalog`] instances (SRP & DIP).
+pub trait PhotoCatalogStore: Send + Sync {
+    /// Loads a `PhotoCatalog` from the given path.
+    fn load(&self, path: &Path) -> Result<PhotoCatalog, crate::models::PhotosError>;
+
+    /// Atomically persists a `PhotoCatalog` to the given path.
+    fn save(&self, path: &Path, catalog: &PhotoCatalog) -> Result<(), crate::models::PhotosError>;
+}
+
+/// Default JSON file-backed implementation of [`PhotoCatalogStore`].
+#[derive(Debug, Clone, Default)]
+pub struct JsonPhotoCatalogStore;
+
+impl PhotoCatalogStore for JsonPhotoCatalogStore {
+    fn load(&self, path: &Path) -> Result<PhotoCatalog, crate::models::PhotosError> {
+        PhotoCatalog::load_from_file(path).map_err(crate::models::PhotosError::Io)
+    }
+
+    fn save(&self, path: &Path, catalog: &PhotoCatalog) -> Result<(), crate::models::PhotosError> {
+        catalog
+            .save_to_file(path)
+            .map_err(crate::models::PhotosError::Io)
+    }
+}
+
+/// In-memory implementation of [`PhotoCatalogStore`] for isolated, disk-free unit testing (DIP).
+#[derive(Debug, Default)]
+pub struct InMemoryPhotoCatalogStore {
+    inner: std::sync::RwLock<Option<PhotoCatalog>>,
+}
+
+impl InMemoryPhotoCatalogStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl PhotoCatalogStore for InMemoryPhotoCatalogStore {
+    fn load(&self, _path: &Path) -> Result<PhotoCatalog, crate::models::PhotosError> {
+        let guard = self
+            .inner
+            .read()
+            .map_err(|e| crate::models::PhotosError::Config(e.to_string()))?;
+        Ok(guard.clone().unwrap_or_default())
+    }
+
+    fn save(&self, _path: &Path, catalog: &PhotoCatalog) -> Result<(), crate::models::PhotosError> {
+        let mut guard = self
+            .inner
+            .write()
+            .map_err(|e| crate::models::PhotosError::Config(e.to_string()))?;
+        *guard = Some(catalog.clone());
+        Ok(())
+    }
+}

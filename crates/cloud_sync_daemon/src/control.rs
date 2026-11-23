@@ -7,15 +7,8 @@ use tracing::{error, info};
 use crate::config::load_or_create_config;
 use crate::DaemonState;
 
-/// Handles a string command sent from the daemon controller via TCP.
-///
-/// # Arguments
-/// * `cmd` - Command string (e.g., "status", "pause", "resume", "reload", "sync", "stop").
-/// * `state` - The daemon's internal state.
-/// * `shutdown_tx` - Send channel for shutdown signals.
-///
-/// # Returns
-/// A response string to be sent back to the TCP client.
+/// Handles a string command sent from the daemon controller via TCP,
+/// delegating to single-responsibility command handlers (SRP).
 pub async fn handle_control_command(
     cmd: &str,
     state: &Arc<Mutex<DaemonState>>,
@@ -26,207 +19,126 @@ pub async fn handle_control_command(
         return "Error: Empty command\n".to_string();
     }
     match parts[0] {
-        "status" => {
-            let s = state.lock().await;
-            let backend_names: Vec<String> = s
-                .backends
-                .iter()
-                .map(|ab| ab.backend.name().to_string())
-                .collect();
-
-            let mut failed_backends: Vec<String> = s
-                .connection_errors
-                .keys()
-                .map(|k| {
-                    if k.starts_with("Encrypted(") && k.ends_with(')') {
-                        k["Encrypted(".len()..k.len() - 1].to_string()
-                    } else {
-                        k.clone()
-                    }
-                })
-                .collect();
-
-            if let Ok(config) = load_or_create_config(&s.config_file).await {
-                let is_placeholder = |val: &str| -> bool {
-                    val.is_empty()
-                        || val.contains("PLACEHOLDER")
-                        || val.contains("your_")
-                        || val.contains("your-")
-                };
-
-                macro_rules! add_if_placeholder_enabled {
-                    ($name:expr, $creds:expr, $token:expr) => {
-                        if crate::config::is_provider_enabled($creds)
-                            && is_placeholder($token)
-                            && !failed_backends.contains(&$name.to_string())
-                        {
-                            failed_backends.push($name.to_string());
-                        }
-                    };
-                }
-
-                if let Some(ref creds) = config.google_credentials {
-                    add_if_placeholder_enabled!(
-                        "Google Drive",
-                        &config.google_credentials,
-                        &creds.refresh_token
-                    );
-                }
-                if let Some(ref creds) = config.dropbox_credentials {
-                    add_if_placeholder_enabled!(
-                        "Dropbox",
-                        &config.dropbox_credentials,
-                        &creds.refresh_token
-                    );
-                }
-                if let Some(ref creds) = config.onedrive_credentials {
-                    add_if_placeholder_enabled!(
-                        "OneDrive",
-                        &config.onedrive_credentials,
-                        &creds.refresh_token
-                    );
-                }
-                if let Some(ref creds) = config.box_credentials {
-                    add_if_placeholder_enabled!(
-                        "Box",
-                        &config.box_credentials,
-                        &creds.refresh_token
-                    );
-                }
-                if let Some(ref creds) = config.mega_credentials {
-                    add_if_placeholder_enabled!("MEGA", &config.mega_credentials, &creds.password);
-                }
-                if let Some(ref creds) = config.webdav_credentials {
-                    add_if_placeholder_enabled!(
-                        "WebDAV",
-                        &config.webdav_credentials,
-                        &creds.password
-                    );
-                }
-                if let Some(ref creds) = config.s3_credentials {
-                    add_if_placeholder_enabled!(
-                        "S3",
-                        &config.s3_credentials,
-                        &creds.secret_access_key
-                    );
-                }
-                if let Some(ref creds) = config.sftp_credentials {
-                    if crate::config::is_provider_enabled(&config.sftp_credentials) {
-                        let pw_placeholder =
-                            creds.password.as_ref().is_some_and(|p| is_placeholder(p));
-                        let key_placeholder = creds
-                            .private_key_path
-                            .as_ref()
-                            .map_or(true, |k| is_placeholder(k));
-                        if pw_placeholder
-                            && key_placeholder
-                            && !failed_backends.contains(&"SFTP".to_string())
-                        {
-                            failed_backends.push("SFTP".to_string());
-                        }
-                    }
-                }
-                if let Some(ref creds) = config.nextcloud_credentials {
-                    add_if_placeholder_enabled!(
-                        "Nextcloud",
-                        &config.nextcloud_credentials,
-                        &creds.app_password
-                    );
-                }
-                if let Some(ref creds) = config.azure_blob_credentials {
-                    if crate::config::is_provider_enabled(&config.azure_blob_credentials)
-                        && (is_placeholder(&creds.account_key)
-                            || creds.account_key == "devstoreaccount1")
-                        && !failed_backends.contains(&"Azure Blob".to_string())
-                    {
-                        failed_backends.push("Azure Blob".to_string());
-                    }
-                }
-                if let Some(ref creds) = config.gcs_credentials {
-                    add_if_placeholder_enabled!(
-                        "Google Cloud Storage",
-                        &config.gcs_credentials,
-                        &creds.service_account_key_path
-                    );
-                }
-                if let Some(ref creds) = config.b2_credentials {
-                    add_if_placeholder_enabled!(
-                        "Backblaze B2",
-                        &config.b2_credentials,
-                        &creds.application_key
-                    );
-                }
-                if let Some(ref creds) = config.pcloud_credentials {
-                    add_if_placeholder_enabled!(
-                        "pCloud",
-                        &config.pcloud_credentials,
-                        &creds.access_token
-                    );
-                }
-                if let Some(ref creds) = config.ipfs_credentials {
-                    add_if_placeholder_enabled!("IPFS", &config.ipfs_credentials, &creds.jwt_token);
-                }
-                if let Some(ref creds) = config.ftp_credentials {
-                    add_if_placeholder_enabled!("FTP", &config.ftp_credentials, &creds.username);
-                }
-                if let Some(ref creds) = config.http_credentials {
-                    add_if_placeholder_enabled!("HTTP", &config.http_credentials, &creds.url);
-                }
-                if let Some(ref creds) = config.smb_credentials {
-                    add_if_placeholder_enabled!("SMB", &config.smb_credentials, &creds.server);
-                }
-            }
-
-            let watch_dir_str = s.watch_dir.to_string_lossy().to_string();
-            let clean_watch_dir = if let Some(stripped) = watch_dir_str.strip_prefix(r"\\?\") {
-                stripped.to_string()
-            } else {
-                watch_dir_str
-            };
-
-            let mut simulated_backends: Vec<String> = Vec::new();
-            let mut backend_details: Vec<serde_json::Value> = Vec::new();
-
-            for ab in &s.backends {
-                let raw_name = ab.backend.name().to_string();
-                let clean_name = if raw_name.starts_with("Encrypted(") && raw_name.ends_with(')') {
-                    raw_name["Encrypted(".len()..raw_name.len() - 1].to_string()
-                } else {
-                    raw_name.clone()
-                };
-
-                let is_failed = failed_backends.contains(&clean_name);
-                let is_sim = ab.backend.is_simulated();
-                let sim_reason = ab.backend.simulation_reason();
-
-                if is_sim && !simulated_backends.contains(&clean_name) {
-                    simulated_backends.push(clean_name.clone());
-                }
-
-                let mode = if is_failed {
-                    "failed"
-                } else if is_sim {
-                    "simulated"
-                } else {
-                    "cloud"
-                };
-
-                backend_details.push(serde_json::json!({
-                    "name": clean_name,
-                    "mode": mode,
-                    "is_simulated": is_sim,
-                    "simulation_reason": sim_reason,
-                    "is_failed": is_failed,
-                }));
-            }
-
-            let backend_details_json = serde_json::to_string(&backend_details).unwrap_or_else(|_| "[]".to_string());
-
-            format!(
-                "Status: OK\nPaused: {}\nWatch Directory: \"{}\"\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSimulated Backends: {:?}\nBackend Details: {}\nSyncing: {}\nWeb UI Address: {}\nLog File: \"{}\"\nState Directory: \"{}\"\n",
-                s.paused, clean_watch_dir, s.config_file, backend_names, failed_backends, simulated_backends, backend_details_json, s.syncing, s.ui_addr.as_deref().unwrap_or("-"), s.log_file, s.state_dir.display()
-            )
+        "status" => handle_status_command(state).await,
+        "get_log" | "log" | "pause" | "resume" | "reload" | "sync" | "clear" | "stop" => {
+            handle_lifecycle_command(&parts, state, shutdown_tx).await
         }
+        "conflicts" | "resolve_conflict" | "get_plan" | "plan" | "preview" => {
+            handle_conflict_and_plan_command(&parts, state).await
+        }
+        "verify" | "check" | "dedupe" | "stats" | "size" | "tree" => {
+            handle_diagnostics_command(&parts, state).await
+        }
+        "trash" | "trash_list" | "trash_restore" | "transfer" | "snapshot_create" | "snapshot"
+        | "snapshot_list" | "snapshots" | "snapshot_restore" => {
+            handle_storage_ops_command(&parts, state).await
+        }
+        _ => {
+            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, conflicts, resolve_conflict, verify, dedupe, size, tree, preview, trash, trash_restore, transfer, snapshot_create, snapshot_list, snapshot_restore, stop\n"
+                .to_string()
+        }
+    }
+}
+
+/// Handles the `status` command, reporting active, simulated, and placeholder-configured providers (SRP & OCP).
+async fn handle_status_command(state: &Arc<Mutex<DaemonState>>) -> String {
+    let s = state.lock().await;
+    let backend_names: Vec<String> = s
+        .backends
+        .iter()
+        .map(|ab| ab.backend.name().to_string())
+        .collect();
+
+    let mut failed_backends: Vec<String> = s
+        .connection_errors
+        .keys()
+        .map(|k| {
+            if k.starts_with("Encrypted(") && k.ends_with(')') {
+                k["Encrypted(".len()..k.len() - 1].to_string()
+            } else {
+                k.clone()
+            }
+        })
+        .collect();
+
+    if let Ok(config) = load_or_create_config(&s.config_file).await {
+        for (creds, _) in config.enabled_credentials() {
+            let display_name = creds.display_name().to_string();
+            if creds.has_placeholder_secret() && !failed_backends.contains(&display_name) {
+                failed_backends.push(display_name);
+            }
+        }
+    }
+
+    let watch_dir_str = s.watch_dir.to_string_lossy().to_string();
+    let clean_watch_dir = if let Some(stripped) = watch_dir_str.strip_prefix(r"\\?\") {
+        stripped.to_string()
+    } else {
+        watch_dir_str
+    };
+
+    let mut simulated_backends: Vec<String> = Vec::new();
+    let mut backend_details: Vec<serde_json::Value> = Vec::new();
+
+    for ab in &s.backends {
+        let raw_name = ab.backend.name().to_string();
+        let clean_name = if raw_name.starts_with("Encrypted(") && raw_name.ends_with(')') {
+            raw_name["Encrypted(".len()..raw_name.len() - 1].to_string()
+        } else {
+            raw_name.clone()
+        };
+
+        let is_failed = failed_backends.contains(&clean_name);
+        let is_sim = ab.backend.is_simulated();
+        let sim_reason = ab.backend.simulation_reason();
+
+        if is_sim && !simulated_backends.contains(&clean_name) {
+            simulated_backends.push(clean_name.clone());
+        }
+
+        let mode = if is_failed {
+            "failed"
+        } else if is_sim {
+            "simulated"
+        } else {
+            "cloud"
+        };
+
+        backend_details.push(serde_json::json!({
+            "name": clean_name,
+            "mode": mode,
+            "is_simulated": is_sim,
+            "simulation_reason": sim_reason,
+            "is_failed": is_failed,
+        }));
+    }
+
+    let backend_details_json =
+        serde_json::to_string(&backend_details).unwrap_or_else(|_| "[]".to_string());
+
+    format!(
+        "Status: OK\nPaused: {}\nWatch Directory: \"{}\"\nConfig File: {}\nActive Backends: {:?}\nFailed Backends: {:?}\nSimulated Backends: {:?}\nBackend Details: {}\nSyncing: {}\nWeb UI Address: {}\nLog File: \"{}\"\nState Directory: \"{}\"\n",
+        s.paused,
+        clean_watch_dir,
+        s.config_file,
+        backend_names,
+        failed_backends,
+        simulated_backends,
+        backend_details_json,
+        s.syncing,
+        s.ui_addr.as_deref().unwrap_or("-"),
+        s.log_file,
+        s.state_dir.display()
+    )
+}
+
+/// Handles daemon lifecycle and runtime control commands (`pause`, `resume`, `reload`, `sync`, `clear`, `get_log`, `stop`) (SRP).
+async fn handle_lifecycle_command(
+    parts: &[&str],
+    state: &Arc<Mutex<DaemonState>>,
+    shutdown_tx: &mpsc::Sender<()>,
+) -> String {
+    match parts[0] {
         "get_log" | "log" => {
             let log_file = {
                 let s = state.lock().await;
@@ -234,7 +146,10 @@ pub async fn handle_control_command(
             };
             match tokio::fs::read_to_string(&log_file).await {
                 Ok(content) => format!("Status: OK\nLog File: \"{}\"\n\n{}", log_file, content),
-                Err(e) => format!("Status: Error\nCould not read log file '{}': {}\n", log_file, e),
+                Err(e) => format!(
+                    "Status: Error\nCould not read log file '{}': {}\n",
+                    log_file, e
+                ),
             }
         }
         "pause" => {
@@ -341,7 +256,8 @@ pub async fn handle_control_command(
         }
         "clear" => {
             if parts.len() < 2 {
-                return "Error: clear command requires a provider name argument (e.g. 'clear MEGA')\n".to_string();
+                return "Error: clear command requires a provider name argument (e.g. 'clear MEGA')\n"
+                    .to_string();
             }
             let target_provider = parts[1..].join(" ");
             let s = state.lock().await;
@@ -390,6 +306,20 @@ pub async fn handle_control_command(
                 }
             }
         }
+        "stop" => {
+            let _ = shutdown_tx.send(()).await;
+            "Status: Stopping daemon...\n".to_string()
+        }
+        _ => unreachable!(),
+    }
+}
+
+/// Handles conflict inspection, resolution, and dry-run plan preview commands (SRP).
+async fn handle_conflict_and_plan_command(
+    parts: &[&str],
+    state: &Arc<Mutex<DaemonState>>,
+) -> String {
+    match parts[0] {
         "conflicts" => {
             let s = state.lock().await;
             let list = s.conflict_manager.list_conflicts().await;
@@ -537,6 +467,13 @@ pub async fn handle_control_command(
             }
             serde_json::to_string(&plans).unwrap_or_else(|_| "[]".to_string()) + "\n"
         }
+        _ => unreachable!(),
+    }
+}
+
+/// Handles storage diagnostic commands (`verify`, `dedupe`, `stats`, `tree`) (SRP).
+async fn handle_diagnostics_command(parts: &[&str], state: &Arc<Mutex<DaemonState>>) -> String {
+    match parts[0] {
         "verify" | "check" => {
             let s = state.lock().await;
             let watch_dir = s.watch_dir.clone();
@@ -669,6 +606,13 @@ pub async fn handle_control_command(
             }
             serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string()) + "\n"
         }
+        _ => unreachable!(),
+    }
+}
+
+/// Handles versioning, cloud-to-cloud transfer, and snapshot commands (SRP).
+async fn handle_storage_ops_command(parts: &[&str], state: &Arc<Mutex<DaemonState>>) -> String {
+    match parts[0] {
         "trash" | "trash_list" => {
             let s = state.lock().await;
             let trash_dir = s.state_dir.join("trash");
@@ -825,14 +769,7 @@ pub async fn handle_control_command(
             }
             format!("Error: Snapshot '{}' not found on any active backend\n", snap_id)
         }
-        "stop" => {
-            let _ = shutdown_tx.send(()).await;
-            "Status: Stopping daemon...\n".to_string()
-        }
-        _ => {
-            "Error: Unknown command. Supported: status, pause, resume, reload, sync, clear, conflicts, resolve_conflict, verify, dedupe, size, tree, preview, trash, trash_restore, transfer, snapshot_create, snapshot_list, snapshot_restore, stop\n"
-                .to_string()
-        }
+        _ => unreachable!(),
     }
 }
 

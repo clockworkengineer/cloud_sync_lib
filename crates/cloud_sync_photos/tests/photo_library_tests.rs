@@ -143,3 +143,57 @@ async fn test_photo_library_sync_deduplication_and_albums() {
     assert_eq!(stats.favorites_count, 1);
     assert_eq!(stats.albums_count, 1);
 }
+
+struct CameraModelOrganizer;
+
+impl cloud_sync_photos::PhotoPathOrganizer for CameraModelOrganizer {
+    fn organize_path(&self, item: &cloud_sync_photos::MediaItem) -> String {
+        let model = item.exif.model.as_deref().unwrap_or("GenericCamera");
+        format!("by_camera/{}/{}", model, item.file_name)
+    }
+}
+
+#[tokio::test]
+async fn test_photo_library_custom_organizer_and_in_memory_store_solid() {
+    let dir = tempdir().unwrap();
+    let local_photos = dir.path().join("camera_roll");
+    std::fs::create_dir_all(&local_photos).unwrap();
+
+    let photo = local_photos.join("shot.jpg");
+    std::fs::write(&photo, b"SOLID_CUSTOM_ORGANIZER_PHOTO").unwrap();
+
+    let cloud_root = dir.path().join("cloud");
+    std::fs::create_dir_all(&cloud_root).unwrap();
+    let backend = Arc::new(cloud_sync_lib::LocalSimulation::new(
+        cloud_root.clone(),
+        "local".to_string(),
+    ));
+
+    let mem_store = Arc::new(cloud_sync_photos::InMemoryPhotoCatalogStore::new());
+    let dummy_catalog_path = dir.path().join("non_existent_disk_catalog.json");
+
+    let library = PhotoLibrary::new(
+        backend,
+        "Photos",
+        dummy_catalog_path.clone(),
+        OrganizeStrategy::Flat,
+    )
+    .await
+    .unwrap()
+    .with_catalog_store(mem_store)
+    .with_custom_organizer(Arc::new(CameraModelOrganizer));
+
+    let res = library.sync_folder(&local_photos).await.unwrap();
+    assert_eq!(res.files_imported, 1);
+
+    // In-memory store should not have written dummy_catalog_path to local disk
+    assert!(!dummy_catalog_path.exists());
+
+    // Custom organizer should have placed the photo under Photos/by_camera/GenericCamera/shot.jpg
+    assert!(cloud_root
+        .join("Photos")
+        .join("by_camera")
+        .join("GenericCamera")
+        .join("shot.jpg")
+        .exists());
+}

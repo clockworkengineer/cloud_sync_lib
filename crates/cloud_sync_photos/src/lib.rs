@@ -17,11 +17,13 @@ pub mod metadata;
 pub mod models;
 pub mod organizer;
 
-pub use catalog::PhotoCatalog;
+pub use catalog::{
+    InMemoryPhotoCatalogStore, JsonPhotoCatalogStore, PhotoCatalog, PhotoCatalogStore,
+};
 pub use config::PhotosConfig;
 pub use engine::{PhotoLibrary, PhotoSyncResult};
 pub use models::{
     Album, ExifMetadata, GeoLocation, LibraryStats, MediaItem, MediaType, PhotosError,
     SearchFilter, TimelineGroup,
 };
-pub use organizer::OrganizeStrategy;
+pub use organizer::{OrganizeStrategy, PhotoPathOrganizer};

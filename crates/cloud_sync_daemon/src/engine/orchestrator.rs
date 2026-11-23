@@ -245,7 +245,7 @@ impl SyncOrchestrator {
                     } => {
                         let mtime = std::fs::metadata(local_path)
                             .and_then(|m| m.modified())
-                            .unwrap_or_else(|_| SystemTime::now());
+                            .unwrap_or_else(|_| self.clock.now());
                         state.files.insert(
                             remote_path.clone(),
                             cloud_sync_lib::FileState {
@@ -267,7 +267,7 @@ impl SyncOrchestrator {
                     } => {
                         let mtime = std::fs::metadata(local_path)
                             .and_then(|m| m.modified())
-                            .unwrap_or_else(|_| SystemTime::now());
+                            .unwrap_or_else(|_| self.clock.now());
                         state.files.insert(
                             remote_path.clone(),
                             cloud_sync_lib::FileState {
