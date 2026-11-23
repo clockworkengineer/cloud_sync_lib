@@ -52,39 +52,135 @@ impl PlanExecutor {
         interceptor: Option<&dyn SyncInterceptor>,
         dry_run: bool,
     ) -> Result<ExecutionResult, StorageError> {
+        Self::execute_with_options(backend, plan, watch_dir, trash_mgr, interceptor, dry_run, 1)
+            .await
+    }
+
+    /// Executes a `SyncPlan` with bounded concurrency (`max_concurrency`), optional `watch_dir`,
+    /// `TrashManager`, and [`SyncInterceptor`] lifecycle hooks.
+    pub async fn execute_with_options(
+        backend: Arc<dyn StorageBackend>,
+        plan: &SyncPlan,
+        watch_dir: Option<&std::path::Path>,
+        trash_mgr: Option<&TrashManager>,
+        interceptor: Option<&dyn SyncInterceptor>,
+        dry_run: bool,
+        max_concurrency: usize,
+    ) -> Result<ExecutionResult, StorageError> {
+        let concurrency = max_concurrency.max(1);
+        let capabilities = backend.capabilities();
+
+        if concurrency > 1 && !dry_run && plan.actions.len() > 1 {
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
+            let mut futures = Vec::with_capacity(plan.actions.len());
+
+            for action in &plan.actions {
+                let sem = semaphore.clone();
+                let backend_ref = backend.clone();
+                futures.push(async move {
+                    let _permit = sem.acquire().await;
+                    Self::execute_single_action(
+                        backend_ref,
+                        capabilities,
+                        action,
+                        watch_dir,
+                        trash_mgr,
+                        interceptor,
+                        dry_run,
+                    )
+                    .await
+                });
+            }
+
+            let results = futures_util::future::join_all(futures).await;
+            let mut total = ExecutionResult {
+                executed_actions: 0,
+                failed_actions: 0,
+                bytes_uploaded: 0,
+                bytes_downloaded: 0,
+            };
+            for r in results {
+                total.executed_actions += r.executed_actions;
+                total.failed_actions += r.failed_actions;
+                total.bytes_uploaded += r.bytes_uploaded;
+                total.bytes_downloaded += r.bytes_downloaded;
+            }
+            return Ok(total);
+        }
+
+        let mut total = ExecutionResult {
+            executed_actions: 0,
+            failed_actions: 0,
+            bytes_uploaded: 0,
+            bytes_downloaded: 0,
+        };
+
+        for action in &plan.actions {
+            let r = Self::execute_single_action(
+                backend.clone(),
+                capabilities,
+                action,
+                watch_dir,
+                trash_mgr,
+                interceptor,
+                dry_run,
+            )
+            .await;
+            total.executed_actions += r.executed_actions;
+            total.failed_actions += r.failed_actions;
+            total.bytes_uploaded += r.bytes_uploaded;
+            total.bytes_downloaded += r.bytes_downloaded;
+        }
+
+        Ok(total)
+    }
+
+    async fn execute_single_action(
+        backend: Arc<dyn StorageBackend>,
+        capabilities: StorageCapabilities,
+        action: &SyncAction,
+        watch_dir: Option<&std::path::Path>,
+        trash_mgr: Option<&TrashManager>,
+        interceptor: Option<&dyn SyncInterceptor>,
+        dry_run: bool,
+    ) -> ExecutionResult {
         let mut executed_actions = 0;
         let mut failed_actions = 0;
         let mut bytes_uploaded = 0;
         let mut bytes_downloaded = 0;
 
-        let capabilities = backend.capabilities();
+        if let Some(hook) = interceptor {
+            if let Err(e) = hook.before_action(action).await {
+                warn!(
+                    "[{}] Action canceled by SyncInterceptor::before_action: {}",
+                    backend.name(),
+                    e
+                );
+                hook.on_error(action, &e).await;
+                return ExecutionResult {
+                    executed_actions: 0,
+                    failed_actions: 1,
+                    bytes_uploaded: 0,
+                    bytes_downloaded: 0,
+                };
+            }
+        }
+        let action_start = std::time::Instant::now();
 
-        for action in &plan.actions {
+        if dry_run {
+            info!("[{}] [DRY-RUN] Would execute: {:?}", backend.name(), action);
             if let Some(hook) = interceptor {
-                if let Err(e) = hook.before_action(action).await {
-                    warn!(
-                        "[{}] Action canceled by SyncInterceptor::before_action: {}",
-                        backend.name(),
-                        e
-                    );
-                    failed_actions += 1;
-                    hook.on_error(action, &e).await;
-                    continue;
-                }
+                hook.after_action(action, action_start.elapsed()).await;
             }
-            let action_start = std::time::Instant::now();
-            let prev_failed = failed_actions;
+            return ExecutionResult {
+                executed_actions: 1,
+                failed_actions: 0,
+                bytes_uploaded: 0,
+                bytes_downloaded: 0,
+            };
+        }
 
-            if dry_run {
-                info!("[{}] [DRY-RUN] Would execute: {:?}", backend.name(), action);
-                executed_actions += 1;
-                if let Some(hook) = interceptor {
-                    hook.after_action(action, action_start.elapsed()).await;
-                }
-                continue;
-            }
-
-            match action {
+        match action {
                 SyncAction::Upload {
                     local_path,
                     remote_path,
@@ -294,10 +390,12 @@ impl PlanExecutor {
                                         e
                                     );
                                     failed_actions += 1;
-                                    continue;
+                                } else {
+                                    executed_actions += 1;
                                 }
+                            } else {
+                                executed_actions += 1;
                             }
-                            executed_actions += 1;
                         }
                         ConflictResolutionAction::DownloadRemote => {
                             if let Some(wdir) = watch_dir {
@@ -313,12 +411,15 @@ impl PlanExecutor {
                                         e
                                     );
                                     failed_actions += 1;
-                                    continue;
+                                } else {
+                                    executed_actions += 1;
                                 }
+                            } else {
+                                executed_actions += 1;
                             }
-                            executed_actions += 1;
                         }
                         ConflictResolutionAction::RenameLocalAndDownloadRemote(new_local) => {
+                            let mut err_occurred = false;
                             if let Some(wdir) = watch_dir {
                                 let orig_local = wdir.join(rel_path);
                                 let renamed_local = wdir.join(new_local);
@@ -334,13 +435,16 @@ impl PlanExecutor {
                                         e
                                     );
                                     failed_actions += 1;
-                                    continue;
+                                    err_occurred = true;
                                 }
                             }
-                            info!("Renamed local conflict to '{}'", new_local);
-                            executed_actions += 1;
+                            if !err_occurred {
+                                info!("Renamed local conflict to '{}'", new_local);
+                                executed_actions += 1;
+                            }
                         }
                         ConflictResolutionAction::RenameRemoteAndUploadLocal(new_remote) => {
+                            let mut err_occurred = false;
                             let _ = backend.rename(rel_path, new_remote).await;
                             if let Some(wdir) = watch_dir {
                                 let orig_local = wdir.join(rel_path);
@@ -355,12 +459,14 @@ impl PlanExecutor {
                                             e
                                         );
                                         failed_actions += 1;
-                                        continue;
+                                        err_occurred = true;
                                     }
                                 }
                             }
-                            info!("Renamed remote conflict to '{}'", new_remote);
-                            executed_actions += 1;
+                            if !err_occurred {
+                                info!("Renamed remote conflict to '{}'", new_remote);
+                                executed_actions += 1;
+                            }
                         }
                         ConflictResolutionAction::Skip => {
                             info!("Skipped conflicting file '{}'", rel_path);
@@ -382,7 +488,7 @@ impl PlanExecutor {
             }
 
             if let Some(hook) = interceptor {
-                if failed_actions == prev_failed {
+                if failed_actions == 0 {
                     hook.after_action(action, action_start.elapsed()).await;
                 } else {
                     let err = StorageError::Provider {
@@ -392,13 +498,68 @@ impl PlanExecutor {
                     hook.on_error(action, &err).await;
                 }
             }
+
+            ExecutionResult {
+                executed_actions,
+                failed_actions,
+                bytes_uploaded,
+                bytes_downloaded,
+            }
+        }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cloud_sync_lib::providers::local_sim::LocalSimulation;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_plan_executor_concurrent_transfers() {
+        let local_dir = tempdir().unwrap();
+        let remote_dir = tempdir().unwrap();
+
+        let backend: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(
+            remote_dir.path().to_path_buf(),
+            "concurrent_test".into(),
+        ));
+
+        let mut actions = Vec::new();
+        for i in 0..8 {
+            let file_path = local_dir.path().join(format!("file_{}.txt", i));
+            let content = format!("concurrent payload {}", i);
+            tokio::fs::write(&file_path, content.as_bytes())
+                .await
+                .unwrap();
+            actions.push(SyncAction::Upload {
+                local_path: file_path,
+                remote_path: format!("batch/file_{}.txt", i),
+                size: content.len() as u64,
+            });
         }
 
-        Ok(ExecutionResult {
-            executed_actions,
-            failed_actions,
-            bytes_uploaded,
-            bytes_downloaded,
-        })
+        let plan = SyncPlan {
+            actions,
+            ..Default::default()
+        };
+
+        let result = PlanExecutor::execute_with_options(
+            backend.clone(),
+            &plan,
+            Some(local_dir.path()),
+            None,
+            None,
+            false,
+            4,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.executed_actions, 8);
+        assert_eq!(result.failed_actions, 0);
+        assert!(result.bytes_uploaded > 0);
+
+        let remote_files = backend.list("batch").await.unwrap();
+        assert_eq!(remote_files.len(), 8);
     }
 }

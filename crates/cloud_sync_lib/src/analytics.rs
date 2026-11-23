@@ -44,70 +44,76 @@ pub struct TreeNode {
     pub children: Vec<TreeNode>,
 }
 
-/// Computes comprehensive storage analytics for the target remote path.
+const TOP_LARGEST_LIMIT: usize = 10;
+
+/// Computes comprehensive storage analytics for the target remote path with $O(1)$ top-K file memory.
 pub async fn compute_storage_analytics(
     backend: &(dyn StorageBackend + Send + Sync),
     remote_path: &str,
 ) -> Result<StorageAnalytics, StorageError> {
     let mut analytics = StorageAnalytics::default();
-    let mut all_files: Vec<AnalyzedFile> = Vec::new();
+    let mut top_files: Vec<AnalyzedFile> = Vec::with_capacity(TOP_LARGEST_LIMIT + 1);
+    let base_clean = remote_path.trim_matches('/');
+    let base_depth = if base_clean.is_empty() {
+        0
+    } else {
+        base_clean.split('/').count()
+    };
 
-    collect_analytics_recursive(backend, remote_path, 0, &mut analytics, &mut all_files).await?;
-
-    // Sort and retain top 10 largest files
-    all_files.sort_by(|a, b| b.size.cmp(&a.size));
-    all_files.truncate(10);
-    analytics.largest_files = all_files;
-
-    Ok(analytics)
-}
-
-async fn collect_analytics_recursive(
-    backend: &(dyn StorageBackend + Send + Sync),
-    current_path: &str,
-    current_depth: usize,
-    analytics: &mut StorageAnalytics,
-    all_files: &mut Vec<AnalyzedFile>,
-) -> Result<(), StorageError> {
-    analytics.max_directory_depth = analytics.max_directory_depth.max(current_depth);
-    let items = backend.list(current_path).await?;
+    let items = crate::providers::utils::walk_remote_tree(backend, remote_path).await?;
 
     for item in items {
         let path_str = item.path.to_string_lossy().replace('\\', "/");
+        let clean = path_str.trim_matches('/');
+        let total_segments = if clean.is_empty() {
+            0
+        } else {
+            clean.split('/').count()
+        };
+
         if item.is_dir {
             analytics.total_folders += 1;
-            Box::pin(collect_analytics_recursive(
-                backend,
-                &path_str,
-                current_depth + 1,
-                analytics,
-                all_files,
-            ))
-            .await?;
+            let dir_depth = total_segments.saturating_sub(base_depth);
+            analytics.max_directory_depth = analytics.max_directory_depth.max(dir_depth);
         } else {
             analytics.total_files += 1;
             analytics.total_bytes += item.size;
+            let parent_depth = total_segments.saturating_sub(base_depth + 1);
+            analytics.max_directory_depth = analytics.max_directory_depth.max(parent_depth);
 
             let file_name = item.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
             let ext = Path::new(file_name)
                 .extension()
                 .and_then(|s| s.to_str())
                 .unwrap_or("no_ext")
-                .to_lowercase();
+                .to_ascii_lowercase();
 
             let entry = analytics.extension_breakdown.entry(ext).or_default();
             entry.count += 1;
             entry.bytes += item.size;
 
-            all_files.push(AnalyzedFile {
-                path: path_str,
-                size: item.size,
-                checksum: item.checksum,
-            });
+            // Maintain bounded top-10 largest files in O(1) memory
+            if top_files.len() < TOP_LARGEST_LIMIT
+                || item.size > top_files.last().map(|f| f.size).unwrap_or(0)
+            {
+                let candidate = AnalyzedFile {
+                    path: path_str,
+                    size: item.size,
+                    checksum: item.checksum,
+                };
+                let pos = top_files
+                    .binary_search_by(|probe| candidate.size.cmp(&probe.size))
+                    .unwrap_or_else(|e| e);
+                top_files.insert(pos, candidate);
+                if top_files.len() > TOP_LARGEST_LIMIT {
+                    top_files.pop();
+                }
+            }
         }
     }
-    Ok(())
+
+    analytics.largest_files = top_files;
+    Ok(analytics)
 }
 
 /// Constructs a hierarchical directory [`TreeNode`] of the remote path up to `max_depth`.

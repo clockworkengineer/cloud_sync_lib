@@ -1,11 +1,14 @@
 //! Client-side zero-knowledge encryption backend provider implementation.
 
+use crate::providers::utils::TempFileGuard;
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use async_trait::async_trait;
 use rand::RngCore;
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::RwLock;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use zeroize::Zeroize;
@@ -13,6 +16,8 @@ use zeroize::Zeroize;
 const MAGIC: &[u8; 4] = b"CSYC";
 const VERSION: u8 = 1;
 const CHUNK_SIZE: usize = 64 * 1024; // 64 KiB chunks
+const SALT_LEN: usize = 16;
+const MAX_CACHED_KEYS: usize = 128;
 
 /// Wrapper that implements `StorageBackend` and automatically encrypts/decrypts file content
 /// using authenticated 64KB streaming AEAD (AES-256-GCM) with hardened per-file salts.
@@ -20,6 +25,7 @@ pub struct EncryptedBackend<B: StorageBackend> {
     inner: B,
     password: String,
     legacy_key: Key<Aes256Gcm>,
+    key_cache: RwLock<HashMap<[u8; SALT_LEN], [u8; 32]>>,
     name: String,
 }
 
@@ -44,12 +50,22 @@ impl<B: StorageBackend> EncryptedBackend<B> {
             inner,
             password: password.to_string(),
             legacy_key,
+            key_cache: RwLock::new(HashMap::new()),
             name,
         }
     }
 
-    /// Derives a hardened per-file 256-bit AES key using PBKDF2-HMAC-SHA256 (100,000 iterations).
+    /// Derives a hardened per-file 256-bit AES key using PBKDF2-HMAC-SHA256 (100,000 iterations),
+    /// utilizing a bounded thread-safe salt-to-key cache for $O(1)$ repeat lookups.
     fn derive_file_key(&self, salt: &[u8]) -> Key<Aes256Gcm> {
+        if let Ok(salt_arr) = <[u8; SALT_LEN]>::try_from(salt) {
+            if let Ok(cache) = self.key_cache.read() {
+                if let Some(cached_bytes) = cache.get(&salt_arr) {
+                    return *Key::<Aes256Gcm>::from_slice(cached_bytes);
+                }
+            }
+        }
+
         let mut key_bytes = [0u8; 32];
         ring::pbkdf2::derive(
             ring::pbkdf2::PBKDF2_HMAC_SHA256,
@@ -58,9 +74,27 @@ impl<B: StorageBackend> EncryptedBackend<B> {
             self.password.as_bytes(),
             &mut key_bytes,
         );
+
+        if let Ok(salt_arr) = <[u8; SALT_LEN]>::try_from(salt) {
+            if let Ok(mut cache) = self.key_cache.write() {
+                if cache.len() >= MAX_CACHED_KEYS {
+                    for (_, v) in cache.iter_mut() {
+                        v.zeroize();
+                    }
+                    cache.clear();
+                }
+                cache.insert(salt_arr, key_bytes);
+            }
+        }
+
         let key = *Key::<Aes256Gcm>::from_slice(&key_bytes);
         key_bytes.zeroize();
         key
+    }
+
+    /// Returns the number of currently cached per-file keys.
+    pub fn cached_key_count(&self) -> usize {
+        self.key_cache.read().map(|c| c.len()).unwrap_or(0)
     }
 }
 
@@ -84,9 +118,8 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         let cipher = Aes256Gcm::new(&file_key);
 
         // 2. Open temporary ciphertext staging file with restricted permissions (0600 on Unix)
-        let temp_dir = std::env::temp_dir();
-        let temp_filename = format!("enc_sync_tmp_{}.enc", rand::random::<u64>());
-        let temp_path = temp_dir.join(temp_filename);
+        let temp_guard = TempFileGuard::new("enc_sync_tmp");
+        let temp_path = temp_guard.path().to_path_buf();
 
         let mut options = tokio::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true);
@@ -148,20 +181,14 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
         temp_file.flush().await?;
         buf.zeroize();
 
-        // 5. Upload encrypted file to remote destination
-        let upload_res = self.inner.upload(&temp_path, remote_path).await;
-
-        // 6. Cleanup temp file
-        let _ = fs::remove_file(&temp_path).await;
-
-        upload_res
+        // 5. Upload encrypted file to remote destination (TempFileGuard cleans up on drop)
+        self.inner.upload(&temp_path, remote_path).await
     }
 
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        // 1. Create a temporary path for downloaded encrypted file
-        let temp_dir = std::env::temp_dir();
-        let temp_filename = format!("dec_sync_tmp_{}.enc", rand::random::<u64>());
-        let temp_path = temp_dir.join(temp_filename);
+        // 1. Create a temporary path for downloaded encrypted file with RAII cleanup
+        let temp_guard = TempFileGuard::new("dec_sync_tmp");
+        let temp_path = temp_guard.path().to_path_buf();
 
         let mut options = tokio::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true);
@@ -187,7 +214,6 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
             if &magic == MAGIC {
                 let version = enc_file.read_u8().await?;
                 if version != VERSION {
-                    let _ = fs::remove_file(&temp_path).await;
                     return Err(StorageError::Provider {
                         message: format!("Unsupported encrypted version: {}", version),
                         status: None,
@@ -213,7 +239,6 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
                         Ok(len) => len as usize,
                         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
                         Err(e) => {
-                            let _ = fs::remove_file(&temp_path).await;
                             return Err(StorageError::Io(e));
                         }
                     };
@@ -253,7 +278,6 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
                     }
                 }
                 dest_file.flush().await?;
-                let _ = fs::remove_file(&temp_path).await;
                 return Ok(());
             } else {
                 enc_file.seek(std::io::SeekFrom::Start(0)).await?;
@@ -262,7 +286,6 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
 
         // 3. Fallback to legacy v0 single-pass decryption
         let mut payload = fs::read(&temp_path).await?;
-        let _ = fs::remove_file(&temp_path).await;
 
         if payload.len() < 12 {
             payload.zeroize();
@@ -359,6 +382,12 @@ impl<B: StorageBackend> Drop for EncryptedBackend<B> {
     fn drop(&mut self) {
         self.password.zeroize();
         self.legacy_key.as_mut_slice().zeroize();
+        if let Ok(mut cache) = self.key_cache.write() {
+            for (_, v) in cache.iter_mut() {
+                v.zeroize();
+            }
+            cache.clear();
+        }
     }
 }
 
@@ -510,5 +539,41 @@ mod tests {
         let res = enc_backend.download("tamper_remote.txt", &dest).await;
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("Decryption failed"));
+    }
+
+    #[tokio::test]
+    async fn test_encrypted_backend_key_cache_hit() {
+        let temp_dir = tempdir().unwrap();
+        let local_root = temp_dir.path().join("local");
+        let remote_root = temp_dir.path().join("remote");
+        fs::create_dir_all(&local_root).await.unwrap();
+        fs::create_dir_all(&remote_root).await.unwrap();
+
+        let local_sim = LocalSimulation::new(remote_root, "MockRemote".to_string());
+        let enc_backend = EncryptedBackend::new(local_sim, "cache_test_password");
+        assert_eq!(enc_backend.cached_key_count(), 0);
+
+        let local_file = local_root.join("cached.txt");
+        fs::write(&local_file, b"Cached PBKDF2 key derivation test")
+            .await
+            .unwrap();
+
+        enc_backend.upload(&local_file, "cached.txt").await.unwrap();
+        assert_eq!(enc_backend.cached_key_count(), 1);
+
+        // Repeat download hits the salt-to-key cache without adding new entries
+        let dl1 = local_root.join("dl1.txt");
+        let dl2 = local_root.join("dl2.txt");
+        enc_backend.download("cached.txt", &dl1).await.unwrap();
+        enc_backend.download("cached.txt", &dl2).await.unwrap();
+        assert_eq!(enc_backend.cached_key_count(), 1);
+        assert_eq!(
+            fs::read(&dl1).await.unwrap(),
+            b"Cached PBKDF2 key derivation test"
+        );
+        assert_eq!(
+            fs::read(&dl2).await.unwrap(),
+            b"Cached PBKDF2 key derivation test"
+        );
     }
 }

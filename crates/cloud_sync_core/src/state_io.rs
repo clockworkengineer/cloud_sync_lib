@@ -116,12 +116,10 @@ impl StateStore for PostcardStateStore {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
 
         let checksum = compute_checksum(&payload);
-
-        let mut framed_bytes = alloc::vec::Vec::with_capacity(13 + payload.len());
-        framed_bytes.extend_from_slice(CSTX_MAGIC);
-        framed_bytes.push(CSTX_VERSION);
-        framed_bytes.extend_from_slice(&checksum.to_be_bytes());
-        framed_bytes.extend_from_slice(&payload);
+        let mut header = [0u8; 13];
+        header[..4].copy_from_slice(CSTX_MAGIC);
+        header[4] = CSTX_VERSION;
+        header[5..13].copy_from_slice(&checksum.to_be_bytes());
 
         let temp_filename = format!(
             ".{}_{}.tmp",
@@ -145,9 +143,11 @@ impl StateStore for PostcardStateStore {
         {
             use tokio::io::AsyncWriteExt;
             let mut file = tokio::fs::File::create(&temp_path).await?;
-            file.write_all(&framed_bytes).await?;
+            file.write_all(&header).await?;
+            file.write_all(&payload).await?;
             file.sync_all().await?;
         }
+        drop(payload);
 
         if path.exists() {
             let bak_path = path.with_extension("bak");

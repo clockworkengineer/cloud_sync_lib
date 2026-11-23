@@ -5,9 +5,15 @@
 use crate::rate_limit::{copy_rate_limited, TokenBucket};
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
+use std::time::SystemTime;
 use tokio::fs;
 use tracing::info;
+
+const MAX_CHECKSUM_CACHE_ENTRIES: usize = 4096;
+type ChecksumCacheMap = HashMap<PathBuf, (u64, SystemTime, String)>;
 
 /// Local folder fallback simulator.
 ///
@@ -22,6 +28,8 @@ pub struct LocalSimulation {
     upload_limiter: Option<TokenBucket>,
     /// Optional download rate limiter
     download_limiter: Option<TokenBucket>,
+    /// Metadata-keyed `(size, mtime) -> sha256` cache to avoid re-reading unchanged files on `list()`.
+    checksum_cache: Arc<RwLock<ChecksumCacheMap>>,
 }
 
 impl LocalSimulation {
@@ -40,6 +48,39 @@ impl LocalSimulation {
             provider_name,
             upload_limiter: None,
             download_limiter: None,
+            checksum_cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Looks up or computes the SHA-256 checksum of `path` keyed by `(size, modified)`.
+    async fn get_or_compute_checksum(
+        &self,
+        path: &Path,
+        size: u64,
+        modified: SystemTime,
+    ) -> Option<String> {
+        if let Ok(cache) = self.checksum_cache.read() {
+            if let Some((cached_size, cached_mtime, cached_hash)) = cache.get(path) {
+                if *cached_size == size && *cached_mtime == modified {
+                    return Some(cached_hash.clone());
+                }
+            }
+        }
+
+        let hash = crate::checksum::compute_sha256(path).await.ok()?;
+        if let Ok(mut cache) = self.checksum_cache.write() {
+            if cache.len() >= MAX_CHECKSUM_CACHE_ENTRIES {
+                cache.clear();
+            }
+            cache.insert(path.to_path_buf(), (size, modified, hash.clone()));
+        }
+        Some(hash)
+    }
+
+    /// Invalidates any cached checksum entry for `path`.
+    fn invalidate_cached_checksum(&self, path: &Path) {
+        if let Ok(mut cache) = self.checksum_cache.write() {
+            cache.remove(path);
         }
     }
 
@@ -84,6 +125,7 @@ impl LocalSimulation {
             fs::create_dir_all(parent).await?;
         }
         copy_rate_limited(local_path, &destination, self.upload_limiter.clone()).await?;
+        self.invalidate_cached_checksum(&destination);
         if let Ok(metadata) = std::fs::metadata(local_path) {
             if let Ok(modified) = metadata.modified() {
                 let ft = filetime::FileTime::from_system_time(modified);
@@ -142,6 +184,7 @@ impl LocalSimulation {
         } else {
             fs::remove_file(&target).await?;
         }
+        self.invalidate_cached_checksum(&target);
         Ok(())
     }
 
@@ -170,7 +213,8 @@ impl LocalSimulation {
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).await?;
         }
-        tokio::fs::copy(source, dest).await?;
+        tokio::fs::copy(&source, &dest).await?;
+        self.invalidate_cached_checksum(&dest);
         Ok(())
     }
 
@@ -188,7 +232,9 @@ impl LocalSimulation {
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).await?;
         }
-        fs::rename(source, dest).await?;
+        fs::rename(&source, &dest).await?;
+        self.invalidate_cached_checksum(&source);
+        self.invalidate_cached_checksum(&dest);
         Ok(())
     }
 
@@ -217,19 +263,22 @@ impl LocalSimulation {
         while let Some(entry) = entries.next_entry().await? {
             let metadata = entry.metadata().await?;
             let is_dir = metadata.is_dir();
+            let size = metadata.len();
+            let modified = metadata.modified().unwrap_or_else(|_| SystemTime::now());
+            let entry_path = entry.path();
             let checksum = if is_dir {
                 None
             } else {
-                crate::checksum::compute_sha256(&entry.path()).await.ok()
+                self.get_or_compute_checksum(&entry_path, size, modified)
+                    .await
             };
             items.push(StorageItem {
-                path: entry
-                    .path()
+                path: entry_path
                     .strip_prefix(&self.root_dir)
-                    .unwrap_or(&entry.path())
+                    .unwrap_or(&entry_path)
                     .to_path_buf(),
-                size: metadata.len(),
-                modified: metadata.modified().unwrap_or(std::time::SystemTime::now()),
+                size,
+                modified,
                 is_dir,
                 checksum,
                 permissions: cloud_sync_core::get_permissions(&metadata.permissions()),
@@ -377,6 +426,11 @@ impl StorageBackend for LocalSimulation {
         &self,
         local_path: &Path,
     ) -> Result<Option<String>, StorageError> {
+        if let Ok(meta) = tokio::fs::metadata(local_path).await {
+            let size = meta.len();
+            let modified = meta.modified().unwrap_or_else(|_| SystemTime::now());
+            return Ok(self.get_or_compute_checksum(local_path, size, modified).await);
+        }
         Ok(crate::checksum::compute_sha256(local_path).await.ok())
     }
 
@@ -449,5 +503,37 @@ mod tests {
         cloud_sync_core::verify_backend_compliance(&sim, dir.path())
             .await
             .expect("Specification compliance test failed");
+    }
+
+    #[tokio::test]
+    async fn test_local_sim_metadata_checksum_cache() {
+        let dir = tempdir().unwrap();
+        let sim_root = dir.path().join("sim_root");
+        let sim = LocalSimulation::new(sim_root.clone(), "cache_test".to_string());
+
+        let src = dir.path().join("src.txt");
+        tokio::fs::write(&src, b"version_1").await.unwrap();
+        sim.upload(&src, "doc.txt").await.unwrap();
+
+        let items1 = sim.list("").await.unwrap();
+        assert_eq!(items1.len(), 1);
+        let hash1 = items1[0].checksum.clone().unwrap();
+
+        // Cache should now contain 1 entry
+        assert_eq!(sim.checksum_cache.read().unwrap().len(), 1);
+
+        // Second list returns identical cached hash
+        let items2 = sim.list("").await.unwrap();
+        assert_eq!(items2[0].checksum.as_deref(), Some(hash1.as_str()));
+
+        // Modify file with different content & size -> cache invalidates and updates
+        tokio::fs::write(&src, b"version_2_longer_payload")
+            .await
+            .unwrap();
+        sim.upload(&src, "doc.txt").await.unwrap();
+
+        let items3 = sim.list("").await.unwrap();
+        let hash3 = items3[0].checksum.clone().unwrap();
+        assert_ne!(hash1, hash3);
     }
 }

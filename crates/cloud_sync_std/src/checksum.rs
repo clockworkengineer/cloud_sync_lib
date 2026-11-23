@@ -2,35 +2,41 @@ use ring::digest;
 use std::io;
 use std::path::Path;
 
-fn hex_encode(bytes: &[u8]) -> String {
+const HEX_LUT: &[u8; 16] = b"0123456789abcdef";
+
+/// Encodes a byte slice into a lowercase hexadecimal string with a single heap allocation.
+pub fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for &b in bytes {
-        use core::fmt::Write;
-        let _ = write!(&mut s, "{:02x}", b);
+        s.push(HEX_LUT[(b >> 4) as usize] as char);
+        s.push(HEX_LUT[(b & 0x0f) as usize] as char);
     }
     s
+}
+
+/// Synchronously computes the SHA-256 checksum of a file using a 64 KiB streaming buffer.
+pub fn compute_sha256_sync(path: &Path) -> io::Result<String> {
+    use std::fs::File;
+    use std::io::Read;
+    let mut file = File::open(path)?;
+    let mut context = digest::Context::new(&digest::SHA256);
+    let mut buffer = [0u8; 65536];
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        context.update(&buffer[..n]);
+    }
+    Ok(hex_encode(context.finish().as_ref()))
 }
 
 /// Computes the SHA-256 checksum of a file at the specified path.
 pub async fn compute_sha256(path: &Path) -> io::Result<String> {
     let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || {
-        use std::fs::File;
-        use std::io::Read;
-        let mut file = File::open(&path)?;
-        let mut context = digest::Context::new(&digest::SHA256);
-        let mut buffer = [0; 65536];
-        loop {
-            let n = file.read(&mut buffer)?;
-            if n == 0 {
-                break;
-            }
-            context.update(&buffer[..n]);
-        }
-        Ok(hex_encode(context.finish().as_ref()))
-    })
-    .await
-    .map_err(io::Error::other)?
+    tokio::task::spawn_blocking(move || compute_sha256_sync(&path))
+        .await
+        .map_err(io::Error::other)?
 }
 
 /// Computes the MD5 checksum of a file at the specified path.
@@ -49,7 +55,7 @@ pub async fn compute_md5(path: &Path) -> io::Result<String> {
             }
             context.consume(&buffer[..n]);
         }
-        Ok(format!("{:x}", context.compute()))
+        Ok(hex_encode(&context.compute().0))
     })
     .await
     .map_err(io::Error::other)?

@@ -153,7 +153,7 @@ impl SyncOrchestrator {
         policy: cloud_sync_lib::SyncPolicy,
         state_file_path: &std::path::Path,
         gitignore: &SyncIgnore,
-        _max_concurrency: usize,
+        max_concurrency: usize,
         conflict_policy: ConflictPolicy,
         dry_run: bool,
         selective_sync: Option<Vec<String>>,
@@ -211,13 +211,14 @@ impl SyncOrchestrator {
             max_versions_per_file: 5,
         });
         let hook = self.interceptor.as_deref();
-        let _result = PlanExecutor::execute_with_interceptor(
+        let _result = PlanExecutor::execute_with_options(
             backend.clone(),
             &plan,
             Some(watch_dir),
             Some(&trash_mgr),
             hook,
             dry_run,
+            max_concurrency.max(1),
         )
         .await?;
 

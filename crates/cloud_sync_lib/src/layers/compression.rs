@@ -57,6 +57,47 @@ impl CompressedBackend {
         }
     }
 
+    /// Returns `true` if `path` has a pre-compressed media, archive, or encrypted extension
+    /// where LZ77 compression provides no benefit and should be bypassed.
+    pub fn is_precompressed_path(path: &str) -> bool {
+        let ext = Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase());
+        matches!(
+            ext.as_deref(),
+            Some(
+                "jpg"
+                    | "jpeg"
+                    | "png"
+                    | "gif"
+                    | "webp"
+                    | "heic"
+                    | "heif"
+                    | "mp4"
+                    | "mov"
+                    | "mkv"
+                    | "webm"
+                    | "avi"
+                    | "mp3"
+                    | "aac"
+                    | "ogg"
+                    | "flac"
+                    | "zip"
+                    | "gz"
+                    | "tgz"
+                    | "bz2"
+                    | "xz"
+                    | "7z"
+                    | "zst"
+                    | "rar"
+                    | "pdf"
+                    | "apk"
+                    | "enc"
+            )
+        )
+    }
+
     /// Compresses `input` into a `CLZ1`-framed buffer.
     /// Frame layout: `[b"CLZ1" (4B)][mode (1B)][orig_len u64 LE (8B)][payload...]`
     pub fn compress_bytes(input: &[u8], min_size: usize) -> Vec<u8> {
@@ -272,6 +313,23 @@ impl StorageBackend for CompressedBackend {
     }
 
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+        let local_str = local_path.to_string_lossy();
+        if Self::is_precompressed_path(remote_path) || Self::is_precompressed_path(&local_str) {
+            // Fast-path: stream pre-compressed media/archive directly unless it starts with CLZ1 magic
+            let starts_with_magic = {
+                use tokio::io::AsyncReadExt;
+                if let Ok(mut f) = tokio::fs::File::open(local_path).await {
+                    let mut prefix = [0u8; 4];
+                    f.read_exact(&mut prefix).await.is_ok() && &prefix == MAGIC_HEADER
+                } else {
+                    false
+                }
+            };
+            if !starts_with_magic {
+                return self.inner.upload(local_path, remote_path).await;
+            }
+        }
+
         let raw = tokio::fs::read(local_path).await?;
         let compressed = Self::compress_bytes(&raw, self.min_size_bytes);
 
@@ -369,5 +427,43 @@ mod tests {
         backend.download("logs/app.log", &dl_file).await.unwrap();
         let restored = tokio::fs::read_to_string(&dl_file).await.unwrap();
         assert_eq!(restored, original_content);
+    }
+
+    #[tokio::test]
+    async fn test_compressed_backend_precompressed_media_bypass() {
+        let remote_dir = tempdir().unwrap();
+        let local_dir = tempdir().unwrap();
+
+        let sim = Arc::new(LocalSimulation::new(
+            remote_dir.path().to_path_buf(),
+            "TestSim".into(),
+        ));
+        let backend = sim.clone().with_layer(CompressionLayer::new());
+
+        assert!(CompressedBackend::is_precompressed_path("photos/IMG_001.JPG"));
+        assert!(CompressedBackend::is_precompressed_path("videos/clip.mp4"));
+        assert!(CompressedBackend::is_precompressed_path("archive.zip"));
+        assert!(!CompressedBackend::is_precompressed_path("notes/readme.txt"));
+
+        // Upload a .jpg file; it should bypass CLZ1 framing and have exact byte-for-byte size on remote
+        let jpeg_payload = vec![0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let src_jpg = local_dir.path().join("photo.jpg");
+        tokio::fs::write(&src_jpg, &jpeg_payload).await.unwrap();
+
+        backend
+            .upload(&src_jpg, "photos/photo.jpg")
+            .await
+            .unwrap();
+
+        let stored = sim.list("photos").await.unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].size, jpeg_payload.len() as u64);
+
+        let dl_jpg = local_dir.path().join("downloaded.jpg");
+        backend
+            .download("photos/photo.jpg", &dl_jpg)
+            .await
+            .unwrap();
+        assert_eq!(tokio::fs::read(&dl_jpg).await.unwrap(), jpeg_payload);
     }
 }

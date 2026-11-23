@@ -33,26 +33,7 @@ pub fn detect_media_format(path: &Path) -> (MediaType, String) {
 
 /// Computes the SHA-256 hash of a file for content deduplication.
 pub fn compute_file_sha256(path: &Path) -> std::io::Result<String> {
-    use ring::digest::{Context, SHA256};
-    let mut file = File::open(path)?;
-    let mut context = Context::new(&SHA256);
-    let mut buffer = [0u8; 65536];
-
-    loop {
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        context.update(&buffer[..count]);
-    }
-
-    let digest = context.finish();
-    let hex_str: String = digest
-        .as_ref()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect();
-    Ok(hex_str)
+    cloud_sync_std::checksum::compute_sha256_sync(path)
 }
 
 /// Parses an EXIF date string formatted as "YYYY:MM:DD HH:MM:SS".
