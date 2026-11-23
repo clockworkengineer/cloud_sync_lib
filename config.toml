@@ -1,4 +1,4 @@
-watch_directory = "~/CloudSync"
+watch_directory = 'C:\Users\User\CloudSync'
 google_drive_root = ""
 dropbox_root = ""
 onedrive_root = ""
@@ -129,3 +129,11 @@ jwt_token = ""
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync_mode = "one-way"
+
+[ftp_credentials]
+host = "127.0.0.1"
+port = 21
+username = "PLACEHOLDER_USERNAME"
+password = "PLACEHOLDER_PASSWORD"
+destination_folder = "files"
+enabled = false

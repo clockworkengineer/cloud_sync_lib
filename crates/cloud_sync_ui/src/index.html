@@ -1278,10 +1278,12 @@
                         <div class="form-group">
                             <label class="form-label">Conflict Resolution Policy</label>
                             <select class="form-select" id="cfg-conflict-policy">
-                                <option value="RenameLocal">Rename Local (Append .local-conflict)</option>
-                                <option value="OverwriteLocal">Overwrite Local with Cloud Version</option>
-                                <option value="OverwriteRemote">Overwrite Cloud with Local Version</option>
-                                <option value="Manual">Manual (Queue in Conflict Center)</option>
+                                <option value="rename-local">Rename Local (Append .local-conflict)</option>
+                                <option value="keep-remote">Overwrite Local with Cloud Version</option>
+                                <option value="keep-local">Overwrite Cloud with Local Version</option>
+                                <option value="rename-remote">Rename Cloud Version</option>
+                                <option value="keep-newer">Keep Newer Timestamp</option>
+                                <option value="manual">Manual (Queue in Conflict Center)</option>
                             </select>
                         </div>
 
@@ -1644,13 +1646,15 @@
                 
                 const allProviders = [
                     'Google Drive', 'Dropbox', 'OneDrive', 'WebDAV', 'S3', 'SFTP', 'Nextcloud', 
-                    'Box', 'MEGA', 'Azure Blob', 'Google Cloud Storage', 'Backblaze B2', 'pCloud', 'IPFS'
+                    'Box', 'MEGA', 'Azure Blob', 'Google Cloud Storage', 'Backblaze B2', 'pCloud', 'IPFS',
+                    'FTP', 'FTPS', 'HTTP', 'SMB'
                 ];
+                const displayProviders = Array.from(new Set([...allProviders, ...(data.active_backends || [])]));
                 let simulatedCount = 0;
                 let simulatedNames = [];
 
-                allProviders.forEach(prov => {
-                    const isActive = data.active_backends && data.active_backends.includes(prov);
+                displayProviders.forEach(prov => {
+                    const isActive = data.active_backends && data.active_backends.some(b => b.toLowerCase() === prov.toLowerCase());
                     if (!isActive) return;
                     
                     const isFailed = data.failed_backends && data.failed_backends.includes(prov);
@@ -2417,7 +2421,7 @@
 
             PROVIDER_DEFS.forEach(prov => {
                 const creds = loadedConfig ? loadedConfig[prov.id] : null;
-                const isEnabled = creds && (creds.common ? (creds.common.enabled !== false) : true);
+                const isEnabled = !!(creds && (creds.enabled !== false) && (creds.common ? creds.common.enabled !== false : true));
                 if (isEnabled) enabledCount++;
 
                 html += `
@@ -2501,7 +2505,16 @@
                     document.getElementById('cfg-watch-dir').value = cfg.watch_directory || "";
                     document.getElementById('cfg-state-dir').value = cfg.state_directory || "sync_state";
                     document.getElementById('cfg-exclusions').value = (cfg.exclude || []).join(', ');
-                    document.getElementById('cfg-conflict-policy').value = cfg.conflict_policy || "RenameLocal";
+                    const cpVal = (cfg.conflict_policy || "rename-local").toLowerCase().replace(/_/g, '-');
+                    const cpSelect = document.getElementById('cfg-conflict-policy');
+                    if (cpSelect) {
+                        if (cpVal === 'overwritelocal' || cpVal === 'keep-remote') cpSelect.value = 'keep-remote';
+                        else if (cpVal === 'overwriteremote' || cpVal === 'keep-local') cpSelect.value = 'keep-local';
+                        else if (cpVal === 'renameremote' || cpVal === 'rename-remote') cpSelect.value = 'rename-remote';
+                        else if (cpVal === 'keepnewer' || cpVal === 'keep-newer') cpSelect.value = 'keep-newer';
+                        else if (cpVal === 'manual') cpSelect.value = 'manual';
+                        else cpSelect.value = 'rename-local';
+                    }
                     document.getElementById('cfg-pull-interval').value = cfg.pull_interval_secs || 30;
                     document.getElementById('cfg-max-concurrency').value = cfg.max_concurrency || 4;
                     document.getElementById('cfg-dry-run').checked = !!cfg.dry_run;
@@ -2525,9 +2538,12 @@
             btn.setAttribute('disabled', 'true');
 
             try {
+                if (!loadedConfig && window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+                    try { loadedConfig = await window.__TAURI_INTERNALS__.invoke('get_config'); } catch (_) {}
+                }
                 // Build updated config payload
                 const watchDir = document.getElementById('cfg-watch-dir').value.trim();
-                const conflictPolicy = document.getElementById('cfg-conflict-policy').value;
+                const conflictPolicy = document.getElementById('cfg-conflict-policy')?.value || "rename-local";
                 const pullInterval = parseInt(document.getElementById('cfg-pull-interval').value, 10) || 30;
                 const maxConcurrency = parseInt(document.getElementById('cfg-max-concurrency').value, 10) || 4;
                 const dryRun = document.getElementById('cfg-dry-run').checked;
@@ -2547,26 +2563,26 @@
                 // Extract credentials
                 PROVIDER_DEFS.forEach(prov => {
                     const isEnabled = document.getElementById(`toggle-${prov.id}`)?.checked;
-                    let obj = newConfig[prov.id] || {};
+                    let obj = newConfig[prov.id] ? JSON.parse(JSON.stringify(newConfig[prov.id])) : {};
+                    if (obj.common && typeof obj.common === 'object') {
+                        Object.assign(obj, obj.common);
+                        delete obj.common;
+                    }
                     let hasValue = false;
 
                     prov.fields.forEach(f => {
                         const input = document.getElementById(`field-${prov.id}-${f.key}`);
                         if (input) {
                             const val = input.value.trim();
-                            if (val) hasValue = true;
-                            if (f.common) {
-                                obj.common = obj.common || {};
-                                obj.common[f.key] = val;
-                            } else {
+                            if (val) {
+                                hasValue = true;
                                 obj[f.key] = f.type === 'number' ? (parseInt(val, 10) || 0) : val;
                             }
                         }
                     });
 
                     if (isEnabled || hasValue) {
-                        obj.common = obj.common || {};
-                        obj.common.enabled = isEnabled;
+                        obj.enabled = !!isEnabled;
                         newConfig[prov.id] = obj;
                     } else {
                         newConfig[prov.id] = null;

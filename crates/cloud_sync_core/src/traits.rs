@@ -663,11 +663,31 @@ impl SyncPolicy {
 #[serde(rename_all = "kebab-case")]
 pub enum ConflictPolicy {
     #[default]
+    #[serde(alias = "", alias = "RenameLocal", alias = "rename_local", alias = "rename-local")]
     RenameLocal,
+    #[serde(alias = "RenameRemote", alias = "rename_remote", alias = "rename-remote")]
     RenameRemote,
+    #[serde(alias = "KeepNewer", alias = "keep_newer", alias = "keep-newer")]
     KeepNewer,
+    #[serde(
+        alias = "KeepLocal",
+        alias = "keep_local",
+        alias = "keep-local",
+        alias = "OverwriteRemote",
+        alias = "overwrite_remote",
+        alias = "overwrite-remote"
+    )]
     KeepLocal,
+    #[serde(
+        alias = "KeepRemote",
+        alias = "keep_remote",
+        alias = "keep-remote",
+        alias = "OverwriteLocal",
+        alias = "overwrite_local",
+        alias = "overwrite-local"
+    )]
     KeepRemote,
+    #[serde(alias = "Manual", alias = "manual")]
     Manual,
 }
 

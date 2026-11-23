@@ -12,7 +12,6 @@ pub async fn status(
 ) -> Result<serde_json::Value, String> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        let _ = &state;
         use cloud_sync_ui::client::DaemonClientPort;
         let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
         if let Ok(raw) = client.send_command("status").await {
@@ -20,67 +19,58 @@ pub async fn status(
             val["daemon_running"] = serde_json::Value::Bool(true);
             return Ok(val);
         }
-
-        // Daemon is not running or stopped
-        Ok(serde_json::json!({
-            "paused": false,
-            "watch_directory": "-",
-            "config_file": "-",
-            "active_backends": [],
-            "failed_backends": [],
-            "simulated_backends": [],
-            "backend_details": [],
-            "syncing": false,
-            "daemon_running": false,
-            "web_ui_address": "-",
-            "log_file": "daemon.log",
-        }))
     }
 
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let lock = state.lock().await;
+    let lock = state.lock().await;
 
-        let active_backends: Vec<String> = lock
-            .backends
-            .iter()
-            .map(|b| b.backend.name().to_string())
-            .collect();
+    let active_backends: Vec<String> = lock
+        .backends
+        .iter()
+        .map(|b| b.backend.name().to_string())
+        .collect();
 
-        let mut simulated_backends = Vec::new();
-        let mut failed_backends = Vec::new();
+    let mut simulated_backends = Vec::new();
+    let mut failed_backends = Vec::new();
 
-        for b in &lock.backends {
-            let name = b.backend.name().to_string();
-            if let Some(err) = lock.connection_errors.get(&name) {
-                if err.contains("Simulated") || err.contains("Fallback") {
-                    simulated_backends.push(name);
-                } else {
-                    failed_backends.push(name);
-                }
+    for b in &lock.backends {
+        let name = b.backend.name().to_string();
+        if let Some(err) = lock.connection_errors.get(&name) {
+            if err.contains("Simulated") || err.contains("Fallback") {
+                simulated_backends.push(name);
+            } else {
+                failed_backends.push(name);
             }
         }
-
-        Ok(serde_json::json!({
-            "daemon_running": !lock.paused,
-            "paused": lock.paused,
-            "syncing": lock.syncing,
-            "watch_directory": lock.watch_dir.to_string_lossy(),
-            "watched_directory": lock.watch_dir.to_string_lossy(),
-            "config_file": lock.config_file,
-            "web_ui_address": lock.ui_addr.as_deref().unwrap_or("Tauri Direct IPC"),
-            "active_backends": active_backends,
-            "simulated_backends": simulated_backends,
-            "failed_backends": failed_backends,
-            "log_file": lock.log_file,
-            "dry_run": lock.dry_run,
-            "conflict_policy": format!("{:?}", lock.conflict_policy),
-        }))
     }
+
+    Ok(serde_json::json!({
+        "daemon_running": !lock.paused && !lock.backends.is_empty(),
+        "paused": lock.paused,
+        "syncing": lock.syncing,
+        "watch_directory": lock.watch_dir.to_string_lossy(),
+        "watched_directory": lock.watch_dir.to_string_lossy(),
+        "config_file": lock.config_file,
+        "web_ui_address": lock.ui_addr.as_deref().unwrap_or("Tauri Direct IPC"),
+        "active_backends": active_backends,
+        "simulated_backends": simulated_backends,
+        "failed_backends": failed_backends,
+        "log_file": lock.log_file,
+        "dry_run": lock.dry_run,
+        "conflict_policy": format!("{:?}", lock.conflict_policy),
+    }))
 }
 
 #[tauri::command]
 pub async fn sync(state: tauri::State<'_, SharedDaemonState>) -> Result<serde_json::Value, String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use cloud_sync_ui::client::DaemonClientPort;
+        let client = cloud_sync_ui::TcpDaemonClient::new(cloud_sync_ui::get_daemon_control_addr());
+        if let Ok(raw) = client.send_command("sync").await {
+            return Ok(serde_json::json!({ "status": raw.trim() }));
+        }
+    }
+
     let state_clone = state.inner().clone();
 
     // Mark syncing
@@ -357,41 +347,171 @@ pub async fn get_config(
     serde_json::to_value(&config).map_err(|e| e.to_string())
 }
 
+fn sanitize_app_config_value(
+    mut val: serde_json::Value,
+) -> Result<cloud_sync_daemon::config::AppConfig, String> {
+    if let serde_json::Value::Object(ref mut map) = val {
+        // Merge defaults for missing fields
+        if let Ok(default_val) =
+            serde_json::to_value(cloud_sync_daemon::config::AppConfig::default())
+        {
+            if let serde_json::Value::Object(def_map) = default_val {
+                for (k, v) in def_map {
+                    map.entry(k).or_insert(v);
+                }
+            }
+        }
+
+        // 1. Normalize conflict_policy if present or empty string
+        if let Some(cp) = map.get_mut("conflict_policy") {
+            let normalized = match cp.as_str() {
+                Some(s) => match s.trim().to_lowercase().replace('_', "-").as_str() {
+                    "" | "renamelocal" | "rename-local" => "rename-local",
+                    "renameremote" | "rename-remote" => "rename-remote",
+                    "keepnewer" | "keep-newer" => "keep-newer",
+                    "keeplocal" | "keep-local" | "overwriteremote" | "overwrite-remote" => {
+                        "keep-local"
+                    }
+                    "keepremote" | "keep-remote" | "overwritelocal" | "overwrite-local" => {
+                        "keep-remote"
+                    }
+                    "manual" => "manual",
+                    _ => "rename-local",
+                },
+                None => "rename-local",
+            };
+            *cp = serde_json::Value::String(normalized.to_string());
+        }
+
+        // 2. Normalize provider credentials
+        const PROVIDER_KEYS: &[&str] = &[
+            "google_credentials",
+            "dropbox_credentials",
+            "onedrive_credentials",
+            "webdav_credentials",
+            "s3_credentials",
+            "sftp_credentials",
+            "nextcloud_credentials",
+            "box_credentials",
+            "mega_credentials",
+            "azure_blob_credentials",
+            "gcs_credentials",
+            "b2_credentials",
+            "pcloud_credentials",
+            "ipfs_credentials",
+            "ftp_credentials",
+            "http_credentials",
+            "smb_credentials",
+        ];
+
+        for &key in PROVIDER_KEYS {
+            if let Some(prov_val) = map.get_mut(key) {
+                if let serde_json::Value::Object(ref mut pmap) = prov_val {
+                    // Flatten nested "common" object if the frontend sent it
+                    if let Some(serde_json::Value::Object(common_map)) = pmap.remove("common") {
+                        for (ck, cv) in common_map {
+                            if !cv.is_null() && !pmap.contains_key(&ck) {
+                                pmap.insert(ck, cv);
+                            }
+                        }
+                    }
+
+                    // Check if credentials actually have non-empty payload
+                    let has_valid_creds = pmap.iter().any(|(k, v)| {
+                        k != "enabled"
+                            && k != "destination_folder"
+                            && match v {
+                                serde_json::Value::String(s) => !s.trim().is_empty(),
+                                serde_json::Value::Number(_) => true,
+                                _ => false,
+                            }
+                    });
+
+                    if !has_valid_creds {
+                        // If no credentials filled in, treat as None/null
+                        *prov_val = serde_json::Value::Null;
+                    }
+                }
+            }
+        }
+    }
+
+    serde_json::from_value(val).map_err(|e| format!("Failed to parse configuration: {}", e))
+}
+
 #[tauri::command]
 pub async fn save_config(
     state: tauri::State<'_, SharedDaemonState>,
-    config: cloud_sync_daemon::config::AppConfig,
+    config: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let mut lock = state.lock().await;
-    let config_file = lock.config_file.clone();
+    let mut config_file = lock.config_file.clone();
 
-    // Ensure watch directory exists
-    let _ = tokio::fs::create_dir_all(&config.watch_directory).await;
-    lock.watch_dir = config.watch_directory.clone();
+    let mut parsed_config = sanitize_app_config_value(config)?;
 
-    if let Some(cp) = config.conflict_policy {
+    // Ensure watch directory exists and fallback if empty
+    let effective_watch = if parsed_config.watch_directory.as_os_str().is_empty() {
+        let home_dir = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir());
+        home_dir.join("CloudSync")
+    } else {
+        parsed_config.watch_directory.clone()
+    };
+    let _ = tokio::fs::create_dir_all(&effective_watch).await;
+    lock.watch_dir = effective_watch.clone();
+    parsed_config.watch_directory = effective_watch;
+
+    if let Some(cp) = parsed_config.conflict_policy {
         lock.conflict_policy = cp;
     }
-    if let Some(dr) = config.dry_run {
+    if let Some(dr) = parsed_config.dry_run {
         lock.dry_run = dr;
     }
-    if let Some(mc) = config.max_concurrency {
+    if let Some(mc) = parsed_config.max_concurrency {
         lock.max_concurrency = mc;
     }
 
     // Rebuild active backends
     lock.backends = cloud_sync_daemon::build_backends(
-        &config,
+        &parsed_config,
         lock.upload_limiter.clone(),
         lock.download_limiter.clone(),
     );
 
     // Save TOML
-    let toml_str = toml::to_string_pretty(&config)
+    let toml_str = toml::to_string_pretty(&parsed_config)
         .map_err(|e| format!("Failed to serialize TOML configuration: {}", e))?;
-    tokio::fs::write(&config_file, toml_str)
-        .await
-        .map_err(|e| format!("Failed to save config file: {}", e))?;
+
+    // Ensure parent directory exists
+    if let Some(parent) = std::path::Path::new(&config_file).parent() {
+        let _ = tokio::fs::create_dir_all(parent).await;
+    }
+
+    // Write file with fallback to user AppData if current path is read-only
+    if let Err(e) = tokio::fs::write(&config_file, &toml_str).await {
+        let mut fallback_success = false;
+        let fallback_dir = std::env::var("APPDATA")
+            .map(std::path::PathBuf::from)
+            .or_else(|_| {
+                std::env::var("USERPROFILE").map(|p| std::path::PathBuf::from(p).join(".config"))
+            })
+            .unwrap_or_else(|_| std::env::temp_dir())
+            .join("com.cloudsync.app");
+
+        let _ = tokio::fs::create_dir_all(&fallback_dir).await;
+        let fallback_path = fallback_dir.join("config.toml");
+        if tokio::fs::write(&fallback_path, &toml_str).await.is_ok() {
+            config_file = fallback_path.to_string_lossy().to_string();
+            lock.config_file = config_file.clone();
+            fallback_success = true;
+        }
+
+        if !fallback_success {
+            return Err(format!("Failed to save config file ({}): {}", config_file, e));
+        }
+    }
 
     let _ = lock.event_tx.send(
         serde_json::json!({
@@ -403,6 +523,7 @@ pub async fn save_config(
 
     Ok(serde_json::json!({
         "status": "saved",
+        "config_file": config_file,
         "watch_directory": lock.watch_dir.to_string_lossy(),
         "active_backends_count": lock.backends.len()
     }))

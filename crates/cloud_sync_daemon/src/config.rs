@@ -27,6 +27,7 @@ pub const DEFAULT_SMB_ROOT: &str = "./cloud_simulation/smb";
 
 /// Global configuration parsed from the configuration TOML file.
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct AppConfig {
     pub watch_directory: PathBuf,
     pub google_drive_root: PathBuf,
