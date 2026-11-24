@@ -10,7 +10,16 @@ All providers implement the `StorageBackend` trait defined in [`traits.rs`](../c
 
 ```rust
 #[async_trait]
-pub trait StorageBackend: Send + Sync {
+pub trait StorageBackend:
+    StorageInspector
+    + StorageReader
+    + StorageWriter
+    + StorageDeleter
+    + DirectoryLister
+    + FolderOps
+    + Send
+    + Sync
+{
     fn name(&self) -> &str;
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError>;
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError>;

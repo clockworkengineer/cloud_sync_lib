@@ -74,12 +74,18 @@ impl MemoryStorageBackend {
 #[async_trait]
 impl StorageReader for MemoryStorageBackend {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let norm = NormalizedPath::new(remote_path).map_err(|e| StorageError::InvalidPath(e.into()))?;
-        let files = self.files.read().map_err(|_| StorageError::Provider {
-            message: "Lock poisoned".into(),
+        let norm = NormalizedPath::new(remote_path).map_err(|e| StorageError::Provider {
+            message: e.to_string(),
             status: None,
         })?;
-        if let Some(bytes) = files.get(norm.as_str()) {
+        let maybe_bytes = {
+            let files = self.files.read().map_err(|_| StorageError::Provider {
+                message: "Lock poisoned".into(),
+                status: None,
+            })?;
+            files.get(norm.as_str()).cloned()
+        };
+        if let Some(bytes) = maybe_bytes {
             tokio::fs::write(local_path, bytes).await.map_err(StorageError::Io)?;
             Ok(())
         } else {
@@ -166,14 +172,19 @@ use std::sync::Arc;
 struct MemoryFactory;
 
 impl BackendFactory for MemoryFactory {
+    fn provider_name(&self) -> &'static str {
+        "memory"
+    }
+
     fn create(&self, config: &JsonValue, _sim_root: PathBuf) -> Result<Arc<dyn StorageBackend>, StorageError> {
+        let name = config["name"].as_str().unwrap_or("memory");
         Ok(Arc::new(MemoryStorageBackend::new()))
     }
 }
 
 fn register_custom() {
-    let mut registry = DynamicBackendRegistry::with_defaults();
-    registry.register("memory", Arc::new(MemoryFactory));
+    let registry = DynamicBackendRegistry::global();
+    registry.register(Box::new(MemoryFactory));
 }
 ```
 
