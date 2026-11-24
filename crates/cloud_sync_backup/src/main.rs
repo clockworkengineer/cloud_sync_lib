@@ -259,15 +259,19 @@ async fn scan_backend_files<B: StorageBackend + ?Sized>(
     backend: &B,
 ) -> Result<HashMap<String, StorageItem>, Box<dyn std::error::Error>> {
     let mut files = HashMap::new();
-    let mut queue = vec!["".to_string()];
+    let mut queue = vec![("".to_string(), 0usize)];
+    let mut visited = std::collections::HashSet::new();
 
-    while let Some(current) = queue.pop() {
+    while let Some((current, depth)) = queue.pop() {
+        if depth > 64 || !visited.insert(current.clone()) {
+            continue;
+        }
         match backend.list(&current).await {
             Ok(items) => {
                 for item in items {
                     let path_str = item.path.to_string_lossy().to_string().replace('\\', "/");
                     if item.is_dir {
-                        queue.push(path_str.clone());
+                        queue.push((path_str.clone(), depth + 1));
                     }
                     files.insert(path_str, item);
                 }
@@ -353,21 +357,13 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
             } else {
                 println!("[Backup] Syncing file: {}", rel_path);
 
-                // Use a hashed local temp filename rather than joining raw remote paths onto the temp directory.
-                // This prevents Windows path safety violations (os error 123) for filenames containing illegal
-                // characters (e.g. pipe '|' or colon ':') which are allowed on remote cloud backends.
-                use std::hash::{Hash, Hasher};
-                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                rel_path.hash(&mut hasher);
-                let local_temp = temp_dir.join(format!("{:x}.tmp", hasher.finish()));
-
-                source.download(&rel_path, &local_temp).await?;
+                // Use RAII-guarded temporary staging file to guarantee cleanup even if download or upload fails
+                let temp_guard = cloud_sync_lib::providers::utils::TempFileGuard::new("backup_transfer");
+                source.download(&rel_path, temp_guard.path()).await?;
                 let ft = filetime::FileTime::from_system_time(source_item.modified);
-                let _ = filetime::set_file_mtime(&local_temp, ft);
+                let _ = filetime::set_file_mtime(temp_guard.path(), ft);
 
-                destination.upload(&local_temp, &rel_path).await?;
-
-                let _ = tokio::fs::remove_file(&local_temp).await;
+                destination.upload(temp_guard.path(), &rel_path).await?;
                 sync_count += 1;
 
                 synced_history.insert(

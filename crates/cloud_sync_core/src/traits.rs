@@ -32,6 +32,8 @@ pub enum StorageError {
     AuthenticationExpired(String),
     Conflict(String),
     ConnectionFailed(String),
+    InvalidPath(String),
+    InvalidData(String),
 }
 
 #[cfg(feature = "std")]
@@ -70,6 +72,8 @@ impl core::fmt::Display for StorageError {
             StorageError::AuthenticationExpired(s) => write!(f, "Authentication expired: {}", s),
             StorageError::Conflict(s) => write!(f, "Conflict: {}", s),
             StorageError::ConnectionFailed(s) => write!(f, "Connection failed: {}", s),
+            StorageError::InvalidPath(s) => write!(f, "Invalid path: {}", s),
+            StorageError::InvalidData(s) => write!(f, "Invalid data: {}", s),
         }
     }
 }

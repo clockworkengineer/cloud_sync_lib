@@ -19,6 +19,7 @@ use std::sync::Arc;
 const MAGIC_HEADER: &[u8; 4] = b"CLZ1";
 const MODE_RAW: u8 = 0;
 const MODE_LZ: u8 = 1;
+const MAX_DECOMPRESSED_SIZE: usize = 512 * 1024 * 1024; // 512 MB safety limit
 
 /// Middleware layer that applies transparent lossless compression to uploaded files.
 #[derive(Debug, Clone, Default)]
@@ -133,6 +134,15 @@ impl CompressedBackend {
         let mut len_bytes = [0u8; 8];
         len_bytes.copy_from_slice(&input[5..13]);
         let orig_len = u64::from_le_bytes(len_bytes) as usize;
+        if orig_len > MAX_DECOMPRESSED_SIZE {
+            return Err(StorageError::Provider {
+                message: format!(
+                    "CLZ1 decompressed size {} exceeds safety threshold of {} bytes",
+                    orig_len, MAX_DECOMPRESSED_SIZE
+                ),
+                status: None,
+            });
+        }
         let payload = &input[13..];
 
         match mode {
@@ -230,7 +240,18 @@ fn lz_compress(input: &[u8]) -> Vec<u8> {
 }
 
 fn lz_decompress(payload: &[u8], expected_len: usize) -> Result<Vec<u8>, StorageError> {
-    let mut out = Vec::with_capacity(expected_len);
+    // Guard against compression bomb ratio
+    if expected_len > payload.len().saturating_mul(1000).saturating_add(65536) {
+        return Err(StorageError::Provider {
+            message: format!(
+                "CLZ1 suspicious compression expansion ratio: payload {} bytes -> expected {} bytes",
+                payload.len(), expected_len
+            ),
+            status: None,
+        });
+    }
+
+    let mut out = Vec::with_capacity(expected_len.min(4 * 1024 * 1024));
     let mut i = 0;
 
     while i < payload.len() {
@@ -480,5 +501,25 @@ mod tests {
 
         // Default constructor
         let _ = CompressionLayer::default();
+    }
+
+    #[test]
+    fn test_compression_decompression_bomb_defense() {
+        // Construct a fraudulent CLZ1 frame claiming orig_len = 100 GB (100 * 1024 * 1024 * 1024)
+        let mut bomb_frame = Vec::new();
+        bomb_frame.extend_from_slice(MAGIC_HEADER);
+        bomb_frame.push(MODE_LZ);
+        let fake_len = 100u64 * 1024 * 1024 * 1024;
+        bomb_frame.extend_from_slice(&fake_len.to_le_bytes());
+        bomb_frame.extend_from_slice(&[0x00, 0x41]); // 2 bytes payload
+
+        let res = CompressedBackend::decompress_bytes(&bomb_frame);
+        assert!(res.is_err(), "Decompression bomb exceeding safety limit must be rejected");
+        let err_msg = res.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("exceeds safety threshold"),
+            "Error must mention safety threshold, got: {}",
+            err_msg
+        );
     }
 }

@@ -448,7 +448,8 @@ pub async fn get_upload_body(
     Ok((body, size))
 }
 
-/// Downloads a response body stream, limiting its rate, and writes it to a file.
+/// Downloads a response body stream, limiting its rate, and writes it to a file atomically
+/// using a staging file so partial transfers do not corrupt destination files.
 pub async fn download_rate_limited(
     res: reqwest::Response,
     local_path: &std::path::Path,
@@ -457,17 +458,21 @@ pub async fn download_rate_limited(
     if let Some(parent) = local_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    let mut file = tokio::fs::File::create(local_path).await?;
-    let byte_stream = res.bytes_stream();
-    let mut rate_limited_stream = RateLimitedStream::new(byte_stream, limiter);
-    use futures_util::stream::StreamExt;
-    use tokio::io::AsyncWriteExt;
+    let temp_guard = TempFileGuard::new("dl_stage_tmp");
+    {
+        let mut file = tokio::fs::File::create(temp_guard.path()).await?;
+        let byte_stream = res.bytes_stream();
+        let mut rate_limited_stream = RateLimitedStream::new(byte_stream, limiter);
+        use futures_util::stream::StreamExt;
+        use tokio::io::AsyncWriteExt;
 
-    while let Some(chunk_result) = rate_limited_stream.next().await {
-        let chunk = chunk_result.map_err(StorageError::Reqwest)?;
-        file.write_all(&chunk).await?;
+        while let Some(chunk_result) = rate_limited_stream.next().await {
+            let chunk = chunk_result.map_err(StorageError::Reqwest)?;
+            file.write_all(&chunk).await?;
+        }
+        file.flush().await?;
     }
-    file.flush().await?;
+    tokio::fs::copy(temp_guard.path(), local_path).await?;
     Ok(())
 }
 
@@ -911,19 +916,27 @@ impl Drop for TempFileGuard {
 }
 
 /// Recursively traverses a remote [`crate::traits::StorageBackend`] starting at `prefix` and collects all items.
+/// Employs a visited set and a max depth of 64 to prevent infinite cycles or symlink loops.
 pub async fn walk_remote_tree(
     backend: &(dyn crate::traits::StorageBackend + Send + Sync),
     prefix: &str,
 ) -> Result<Vec<crate::traits::StorageItem>, StorageError> {
     let mut results = Vec::new();
-    let mut queue = vec![prefix.trim_matches('/').to_string()];
+    let mut queue = vec![(prefix.trim_matches('/').to_string(), 0usize)];
+    let mut visited = std::collections::HashSet::new();
 
-    while let Some(current) = queue.pop() {
+    while let Some((current, depth)) = queue.pop() {
+        if depth > 64 || !visited.insert(current.clone()) {
+            continue;
+        }
         let items = backend.list(&current).await?;
         for item in items {
             if item.is_dir {
                 let sub = item.path.to_string_lossy().replace('\\', "/");
-                queue.push(sub);
+                let clean_sub = sub.trim_matches('/').to_string();
+                if !visited.contains(&clean_sub) {
+                    queue.push((clean_sub, depth + 1));
+                }
             }
             results.push(item);
         }

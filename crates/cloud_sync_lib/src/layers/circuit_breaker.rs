@@ -88,7 +88,7 @@ pub struct CircuitBreakerBackend {
 impl CircuitBreakerBackend {
     /// Checks whether the circuit permits an operation to execute.
     fn before_call(&self) -> Result<(), StorageError> {
-        let mut guard = self.internal.lock().unwrap();
+        let mut guard = self.internal.lock().unwrap_or_else(|p| p.into_inner());
         match guard.state {
             State::Closed => Ok(()),
             State::Open(opened_at) => {
@@ -118,7 +118,7 @@ impl CircuitBreakerBackend {
 
     /// Records outcome of an operation to update circuit breaker state.
     fn after_call<T>(&self, result: &Result<T, StorageError>) {
-        let mut guard = self.internal.lock().unwrap();
+        let mut guard = self.internal.lock().unwrap_or_else(|p| p.into_inner());
         match result {
             Ok(_) => match guard.state {
                 State::HalfOpen => {

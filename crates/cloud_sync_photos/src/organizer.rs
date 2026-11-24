@@ -41,12 +41,21 @@ pub fn generate_remote_path(item: &MediaItem, strategy: OrganizeStrategy) -> Str
     let month = item.date_taken.month();
     let day = item.date_taken.day();
 
+    // Sanitize item.file_name against path traversal, leading slashes, and illegal chars
+    let raw_name = std::path::Path::new(&item.file_name)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| "image.jpg".to_string());
+    let norm = cloud_sync_core::NormalizedPath::new(&raw_name)
+        .unwrap_or_else(|_| cloud_sync_core::NormalizedPath::empty().join(&raw_name));
+    let clean_name = if norm.is_empty() { "image.jpg" } else { norm.as_str() };
+
     match strategy {
         OrganizeStrategy::YearMonth => {
-            format!("{:04}/{:02}/{}", year, month, item.file_name)
+            format!("{:04}/{:02}/{}", year, month, clean_name)
         }
         OrganizeStrategy::YearMonthDay => {
-            format!("{:04}/{:02}/{:02}/{}", year, month, day, item.file_name)
+            format!("{:04}/{:02}/{:02}/{}", year, month, day, clean_name)
         }
         OrganizeStrategy::ChronologicalHash => {
             let short_hash = if item.sha256_hash.len() >= 8 {
@@ -54,9 +63,9 @@ pub fn generate_remote_path(item: &MediaItem, strategy: OrganizeStrategy) -> Str
             } else {
                 &item.sha256_hash
             };
-            format!("{:04}/{:02}/{}_{}", year, month, short_hash, item.file_name)
+            format!("{:04}/{:02}/{}_{}", year, month, short_hash, clean_name)
         }
-        OrganizeStrategy::Flat => item.file_name.clone(),
+        OrganizeStrategy::Flat => clean_name.to_string(),
     }
 }
 

@@ -71,14 +71,34 @@ impl PlanExecutor {
         let capabilities = backend.capabilities();
 
         if concurrency > 1 && !dry_run && plan.actions.len() > 1 {
-            let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
-            let mut futures = Vec::with_capacity(plan.actions.len());
+            // Partition actions into topological phases:
+            // Phase 1: Transfers, moves, and creations (concurrently bounded)
+            // Phase 2: Deletions (executed in reverse order so children are deleted before parent directories)
+            let mut transfers = Vec::new();
+            let mut deletions = Vec::new();
 
             for action in &plan.actions {
+                match action {
+                    SyncAction::DeleteLocal { .. } | SyncAction::DeleteRemote { .. } => {
+                        deletions.push(action);
+                    }
+                    _ => {
+                        transfers.push(action);
+                    }
+                }
+            }
+
+            let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
+            let mut futures = Vec::with_capacity(transfers.len());
+
+            for action in transfers {
                 let sem = semaphore.clone();
                 let backend_ref = backend.clone();
                 futures.push(async move {
-                    let _permit = sem.acquire().await;
+                    let _permit = match sem.acquire().await {
+                        Ok(p) => Some(p),
+                        Err(_) => None,
+                    };
                     Self::execute_single_action(
                         backend_ref,
                         capabilities,
@@ -105,6 +125,24 @@ impl PlanExecutor {
                 total.bytes_uploaded += r.bytes_uploaded;
                 total.bytes_downloaded += r.bytes_downloaded;
             }
+
+            // Phase 2: Execute deletions in reverse depth order
+            deletions.reverse();
+            for del in deletions {
+                let r = Self::execute_single_action(
+                    backend.clone(),
+                    capabilities,
+                    del,
+                    watch_dir,
+                    trash_mgr,
+                    interceptor,
+                    dry_run,
+                )
+                .await;
+                total.executed_actions += r.executed_actions;
+                total.failed_actions += r.failed_actions;
+            }
+
             return Ok(total);
         }
 
@@ -343,12 +381,23 @@ impl PlanExecutor {
                     if let Some(tm) = trash_mgr {
                         let _ = tm.archive_file(local_path).await;
                     }
-                    if local_path.is_dir() {
-                        let _ = tokio::fs::remove_dir_all(local_path).await;
+                    let res = if local_path.is_dir() {
+                        tokio::fs::remove_dir_all(local_path).await
                     } else {
-                        let _ = tokio::fs::remove_file(local_path).await;
+                        tokio::fs::remove_file(local_path).await
+                    };
+                    match res {
+                        Ok(()) => executed_actions += 1,
+                        Err(e) => {
+                            error!(
+                                "[{}] Delete local failed for '{}': {}",
+                                backend.name(),
+                                local_path.display(),
+                                e
+                            );
+                            failed_actions += 1;
+                        }
                     }
-                    executed_actions += 1;
                 }
 
                 SyncAction::DeleteRemote { remote_path } => {

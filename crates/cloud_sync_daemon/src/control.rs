@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::config::load_or_create_config;
 use crate::DaemonState;
@@ -805,14 +805,20 @@ impl DaemonControlServer {
             tokio::select! {
                 res = listener.accept() => {
                     match res {
-                        Ok((socket, _addr)) => {
+                        Ok((socket, addr)) => {
+                            if !addr.ip().is_loopback() {
+                                warn!("Rejected non-loopback TCP control connection from {}", addr);
+                                continue;
+                            }
                             let state_clone = state.clone();
                             let shutdown_tx_clone = shutdown_tx.clone();
                             tokio::spawn(async move {
+                                use tokio::io::AsyncReadExt;
                                 let (reader, mut writer) = socket.into_split();
-                                let mut buf_reader = BufReader::new(reader);
+                                // Bounded line reader: at most 16 KiB per command to prevent memory exhaustion DOS
+                                let mut limited_reader = BufReader::new(reader.take(16 * 1024));
                                 let mut line = String::new();
-                                if buf_reader.read_line(&mut line).await.is_ok() {
+                                if limited_reader.read_line(&mut line).await.is_ok() {
                                     let response = handle_control_command(line.trim(), &state_clone, &shutdown_tx_clone).await;
                                     let _ = writer.write_all(response.as_bytes()).await;
                                 }

@@ -154,7 +154,20 @@ impl StateStore for PostcardStateStore {
             let _ = tokio::fs::copy(path, &bak_path).await;
         }
 
-        tokio::fs::rename(&temp_path, path).await?;
+        let mut rename_result = tokio::fs::rename(&temp_path, path).await;
+        if rename_result.is_err() {
+            for _ in 0..3 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
+                rename_result = tokio::fs::rename(&temp_path, path).await;
+                if rename_result.is_ok() {
+                    break;
+                }
+            }
+        }
+        if let Err(e) = rename_result {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(StorageError::Io(e));
+        }
         Ok(())
     }
 }
@@ -234,7 +247,20 @@ impl StateStore for JsonStateStore {
             let _ = tokio::fs::copy(path, &bak_path).await;
         }
 
-        tokio::fs::rename(&temp_path, path).await?;
+        let mut rename_result = tokio::fs::rename(&temp_path, path).await;
+        if rename_result.is_err() {
+            for _ in 0..3 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
+                rename_result = tokio::fs::rename(&temp_path, path).await;
+                if rename_result.is_ok() {
+                    break;
+                }
+            }
+        }
+        if let Err(e) = rename_result {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(StorageError::Io(e));
+        }
         Ok(())
     }
 }

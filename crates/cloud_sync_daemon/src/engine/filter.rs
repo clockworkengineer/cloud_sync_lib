@@ -41,9 +41,12 @@ impl<'a> FileFilter<'a> {
         true
     }
 
-    /// Checks whether a remote or local path contains unsafe path traversal characters.
+    /// Checks whether a remote or local path contains unsafe path traversal characters,
+    /// leading absolute slashes, Alternate Data Streams, null bytes, or DOS device names.
     pub fn is_unsafe_path(path: &str) -> bool {
-        path.contains("..") || path.contains("./") || path.starts_with('/')
+        path.starts_with('/')
+            || path.starts_with('\\')
+            || cloud_sync_lib::NormalizedPath::new(path).is_err()
     }
 
     /// Checks whether a path is an internal metadata state file.
@@ -109,7 +112,13 @@ mod tests {
         assert!(FileFilter::is_unsafe_path("foo/../bar"));
         assert!(FileFilter::is_unsafe_path("./file.txt"));
         assert!(FileFilter::is_unsafe_path("/absolute/path"));
+        assert!(FileFilter::is_unsafe_path("\\windows\\system32"));
+        assert!(FileFilter::is_unsafe_path("file.txt:hidden_ads"));
+        assert!(FileFilter::is_unsafe_path("nul"));
+        assert!(FileFilter::is_unsafe_path("con.txt"));
+        assert!(FileFilter::is_unsafe_path("file\0.txt"));
         assert!(!FileFilter::is_unsafe_path("normal/path/file.txt"));
+        assert!(!FileFilter::is_unsafe_path("backup..v2.txt"));
     }
 
     #[test]

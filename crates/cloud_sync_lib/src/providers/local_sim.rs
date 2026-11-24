@@ -2,6 +2,7 @@
 //!
 //! Provides an implementation of storage simulation on the local filesystem.
 
+use cloud_sync_core::NormalizedPath;
 use crate::rate_limit::{copy_rate_limited, TokenBucket};
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
@@ -95,28 +96,35 @@ impl LocalSimulation {
         self
     }
 
-    /// Maps a remote path to the local directory simulation structure.
-    ///
-    /// # Arguments
-    /// * `remote_path` - The remote path to resolve.
-    ///
-    /// # Returns
-    /// The resolved absolute/relative `PathBuf` under `root_dir`.
+    /// Safely resolves a remote path against `root_dir`, verifying against path traversal
+    /// attacks and ensuring the target resides strictly within the simulation root.
+    pub fn try_resolve(&self, remote_path: &str) -> Result<PathBuf, StorageError> {
+        let norm = NormalizedPath::new(remote_path).map_err(|e| {
+            StorageError::InvalidPath(format!("Path traversal or illegal name rejected in {}: {}", self.provider_name, e))
+        })?;
+        let resolved = if norm.is_empty() {
+            self.root_dir.clone()
+        } else {
+            self.root_dir.join(norm.as_str())
+        };
+        Ok(resolved)
+    }
+
+    /// Maps a remote path to the local directory simulation structure with sanitization fallback.
     pub fn resolve(&self, remote_path: &str) -> PathBuf {
-        let normalized = remote_path.trim_start_matches('/');
-        self.root_dir.join(normalized)
+        self.try_resolve(remote_path).unwrap_or_else(|_| {
+            let sanitized = NormalizedPath::empty().join(remote_path);
+            if sanitized.is_empty() {
+                self.root_dir.clone()
+            } else {
+                self.root_dir.join(sanitized.as_str())
+            }
+        })
     }
 
     /// Simulates uploading a file by copying it to the local simulation folder.
-    ///
-    /// # Arguments
-    /// * `local_path` - The path to the file on the local machine.
-    /// * `remote_path` - The simulated destination path.
-    ///
-    /// # Returns
-    /// An empty `Result`, or a `StorageError` if copying fails.
     pub async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let destination = self.resolve(remote_path);
+        let destination = self.try_resolve(remote_path)?;
         info!(
             "[{}] (Simulated) Uploading local file {:?} to remote path '{}'",
             self.provider_name, local_path, remote_path
@@ -137,15 +145,8 @@ impl LocalSimulation {
     }
 
     /// Simulates downloading a file by copying it from the local simulation folder.
-    ///
-    /// # Arguments
-    /// * `remote_path` - The simulated source path to download from.
-    /// * `local_path` - The destination path on the local machine.
-    ///
-    /// # Returns
-    /// An empty `Result`, or a `StorageError` if the file doesn't exist or copying fails.
     pub async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let source = self.resolve(remote_path);
+        let source = self.try_resolve(remote_path)?;
         info!(
             "[{}] (Simulated) Downloading remote path '{}' to local file {:?}",
             self.provider_name, remote_path, local_path
@@ -164,14 +165,8 @@ impl LocalSimulation {
     }
 
     /// Simulates deleting a file or directory from the local simulation folder.
-    ///
-    /// # Arguments
-    /// * `remote_path` - The simulated path to delete.
-    ///
-    /// # Returns
-    /// An empty `Result`, or a `StorageError` if the file doesn't exist or deletion fails.
     pub async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let target = self.resolve(remote_path);
+        let target = self.try_resolve(remote_path)?;
         info!(
             "[{}] (Simulated) Deleting remote path '{}'",
             self.provider_name, remote_path
@@ -190,7 +185,7 @@ impl LocalSimulation {
 
     /// Simulates creating a folder/directory in the local simulation folder.
     pub async fn create_folder(&self, remote_path: &str) -> Result<(), StorageError> {
-        let target = self.resolve(remote_path);
+        let target = self.try_resolve(remote_path)?;
         info!(
             "[{}] (Simulated) Creating remote directory '{}'",
             self.provider_name, remote_path
@@ -201,8 +196,8 @@ impl LocalSimulation {
 
     /// Simulates copying a file or folder in the local simulation folder.
     pub async fn copy(&self, from: &str, to: &str) -> Result<(), StorageError> {
-        let source = self.resolve(from);
-        let dest = self.resolve(to);
+        let source = self.try_resolve(from)?;
+        let dest = self.try_resolve(to)?;
         info!(
             "[{}] (Simulated) Copying remote path '{}' to '{}'",
             self.provider_name, from, to
@@ -220,8 +215,8 @@ impl LocalSimulation {
 
     /// Simulates renaming a file or folder in the local simulation folder.
     pub async fn rename(&self, from: &str, to: &str) -> Result<(), StorageError> {
-        let source = self.resolve(from);
-        let dest = self.resolve(to);
+        let source = self.try_resolve(from)?;
+        let dest = self.try_resolve(to)?;
         info!(
             "[{}] (Simulated) Renaming remote path '{}' to '{}'",
             self.provider_name, from, to
@@ -239,14 +234,8 @@ impl LocalSimulation {
     }
 
     /// Simulates listing contents of the local simulation folder.
-    ///
-    /// # Arguments
-    /// * `remote_path` - The simulated directory path to list.
-    ///
-    /// # Returns
-    /// A vector of `StorageItem` containing metadata for files/folders in the directory, or a `StorageError`.
     pub async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
-        let target = self.resolve(remote_path);
+        let target = self.try_resolve(remote_path)?;
         info!(
             "[{}] (Simulated) Listing contents of remote path '{}'",
             self.provider_name, remote_path
@@ -535,5 +524,25 @@ mod tests {
         let items3 = sim.list("").await.unwrap();
         let hash3 = items3[0].checksum.clone().unwrap();
         assert_ne!(hash1, hash3);
+    }
+
+    #[tokio::test]
+    async fn test_local_sim_path_traversal_defense() {
+        let dir = tempdir().unwrap();
+        let sim_root = dir.path().join("sim_root");
+        let sim = LocalSimulation::new(sim_root.clone(), "traversal_test".to_string());
+
+        let local_src = dir.path().join("test.txt");
+        tokio::fs::write(&local_src, b"danger").await.unwrap();
+
+        // Path traversal attempts must be rejected with InvalidPath
+        assert!(sim.upload(&local_src, "../../escaped.txt").await.is_err());
+        assert!(sim.upload(&local_src, "foo/../../escaped.txt").await.is_err());
+        assert!(sim.upload(&local_src, "nul").await.is_err());
+        assert!(sim.upload(&local_src, "file.txt:stream").await.is_err());
+
+        let dest = dir.path().join("out.txt");
+        assert!(sim.download("../../secret.txt", &dest).await.is_err());
+        assert!(sim.delete("../../secret.txt").await.is_err());
     }
 }

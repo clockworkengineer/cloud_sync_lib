@@ -182,8 +182,14 @@ impl TrashManager {
         }
 
         let (_, orig_name) = Self::parse_archive_name(&clean_id);
-        let rel = custom_rel_path.unwrap_or(&orig_name);
-        let dest_path = target_dir.join(rel);
+        let raw_rel = custom_rel_path.unwrap_or(&orig_name);
+        let norm_rel = cloud_sync_lib::NormalizedPath::new(raw_rel).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid or traversal custom_rel_path '{}': {}", raw_rel, e),
+            )
+        })?;
+        let dest_path = target_dir.join(norm_rel.as_str());
 
         if let Some(parent) = dest_path.parent() {
             tokio::fs::create_dir_all(parent).await?;

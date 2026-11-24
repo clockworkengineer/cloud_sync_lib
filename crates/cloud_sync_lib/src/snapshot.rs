@@ -7,6 +7,7 @@
 //! - Supports incremental snapshot creation, listing, SHA-256-verified restoration, and
 //!   retention pruning with unreferenced blob garbage collection (`prune_snapshots`).
 
+use cloud_sync_core::NormalizedPath;
 use crate::providers::utils::TempFileGuard;
 use crate::traits::{StorageBackend, StorageError};
 use serde::{Deserialize, Serialize};
@@ -245,13 +246,26 @@ pub async fn restore_snapshot(
     let mut bytes_restored = 0u64;
 
     for entry in &manifest.files {
-        let blob_remote = format!("{}/{}", BLOBS_DIR, entry.sha256);
-        let dest_path = target_dir.join(&entry.relative_path);
-        if let Some(parent) = dest_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+        // Enforce path traversal defense on relative_path
+        let norm_path = NormalizedPath::new(&entry.relative_path).map_err(|e| {
+            StorageError::InvalidPath(format!("Malicious or invalid snapshot relative path '{}': {}", entry.relative_path, e))
+        })?;
+
+        // Enforce valid SHA-256 hexadecimal hash formatting
+        if entry.sha256.len() != 64 || !entry.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(StorageError::InvalidData(format!(
+                "Invalid SHA-256 digest in snapshot manifest for '{}': {}",
+                entry.relative_path, entry.sha256
+            )));
         }
-        backend.download(&blob_remote, &dest_path).await?;
-        let actual_sha = crate::checksum::compute_sha256(&dest_path).await?;
+
+        let blob_remote = format!("{}/{}", BLOBS_DIR, entry.sha256);
+        let dest_path = target_dir.join(norm_path.as_str());
+
+        // Stage download into temporary file and verify SHA-256 BEFORE writing to destination
+        let temp_blob = TempFileGuard::new("snap_blob_dl");
+        backend.download(&blob_remote, temp_blob.path()).await?;
+        let actual_sha = crate::checksum::compute_sha256(temp_blob.path()).await?;
         if actual_sha != entry.sha256 {
             return Err(StorageError::Provider {
                 message: format!(
@@ -261,6 +275,11 @@ pub async fn restore_snapshot(
                 status: None,
             });
         }
+
+        if let Some(parent) = dest_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        tokio::fs::copy(temp_blob.path(), &dest_path).await?;
         bytes_restored += entry.size;
     }
 
@@ -383,5 +402,45 @@ mod tests {
         let prune_rep = prune_snapshots(&backend, 1).await.unwrap();
         assert_eq!(prune_rep.snapshots_deleted, 1);
         assert_eq!(list_snapshots(&backend).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_path_traversal_defense() {
+        let temp_dir = tempdir().unwrap();
+        let restore_dir = tempdir().unwrap();
+        let backend = LocalSimulation::new(temp_dir.path().to_path_buf(), "SnapCloud".into());
+
+        // Construct a fraudulent manifest containing a directory traversal path
+        let bad_manifest = SnapshotManifest {
+            id: "fake_snap_01".to_string(),
+            label: "malicious".to_string(),
+            created_at_secs: 1000,
+            total_files: 1,
+            total_bytes: 10,
+            new_blobs_uploaded: 1,
+            deduped_blobs_reused: 0,
+            bytes_uploaded: 10,
+            bytes_saved_by_dedup: 0,
+            files: vec![SnapshotFileEntry {
+                relative_path: "../../evil.sh".to_string(),
+                size: 10,
+                modified_secs: 1000,
+                sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            }],
+        };
+
+        let mf_bytes = serde_json::to_vec_pretty(&bad_manifest).unwrap();
+        let mf_path = temp_dir.path().join("_snapshots/manifests/fake_snap_01.json");
+        tokio::fs::create_dir_all(mf_path.parent().unwrap()).await.unwrap();
+        tokio::fs::write(&mf_path, mf_bytes).await.unwrap();
+
+        let res = restore_snapshot(&backend, "fake_snap_01", restore_dir.path()).await;
+        assert!(res.is_err(), "Restoring manifest with path traversal must be rejected");
+        let err_msg = res.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Invalid path") || err_msg.contains("traversal"),
+            "Error must specify path traversal rejection, got: {}",
+            err_msg
+        );
     }
 }

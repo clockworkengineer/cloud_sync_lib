@@ -143,20 +143,21 @@ impl TokenBucket {
 
     /// Returns the configured rate in bytes per second.
     pub fn rate(&self) -> u64 {
-        self.state.lock().unwrap().rate
+        self.state.lock().unwrap_or_else(|p| p.into_inner()).rate
     }
 
     /// Sets the configured rate dynamically in bytes per second.
     pub fn set_rate(&self, new_rate: u64) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         state.rate = new_rate;
         state.capacity = new_rate;
         state.tokens = state.tokens.min(new_rate as f64);
     }
 
     /// Synchronously consumes `amount` tokens. Returns the duration to sleep if not enough tokens are available.
+    /// Deducts deficits into negative token balance to prevent concurrent thundering herd bursts.
     pub fn consume(&self, amount: u64) -> Option<Duration> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         let rate = state.rate;
         if rate == 0 {
             return None;
@@ -166,7 +167,7 @@ impl TokenBucket {
         let elapsed = now.duration_since(state.last_update).as_secs_f64();
         state.last_update = now;
 
-        // Replenish tokens
+        // Replenish tokens up to capacity
         state.tokens = (state.tokens + elapsed * rate as f64).min(state.capacity as f64);
 
         if state.tokens >= amount as f64 {
@@ -174,6 +175,8 @@ impl TokenBucket {
             None
         } else {
             let missing = amount as f64 - state.tokens;
+            // Book the deficit so subsequent concurrent callers queue behind this request
+            state.tokens -= amount as f64;
             let sleep_secs = missing / rate as f64;
             Some(Duration::from_secs_f64(sleep_secs))
         }

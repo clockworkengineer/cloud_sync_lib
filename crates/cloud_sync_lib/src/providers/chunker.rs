@@ -109,6 +109,13 @@ impl ServerSideOperations for ChunkerBackend {
         if let Some(mut manifest) = self.fetch_manifest(from).await? {
             let mut new_chunks = Vec::with_capacity(manifest.chunks.len());
             for part in manifest.chunks {
+                let expected_part_remote = Self::part_path(from, part.part_index);
+                if part.remote_path != expected_part_remote {
+                    return Err(StorageError::InvalidData(format!(
+                        "Corrupted or malicious chunk manifest for '{}': part {} path '{}' mismatch with expected '{}'",
+                        from, part.part_index, part.remote_path, expected_part_remote
+                    )));
+                }
                 let new_part_remote = Self::part_path(to, part.part_index);
                 self.inner
                     .rename(&part.remote_path, &new_part_remote)
@@ -277,6 +284,13 @@ impl StorageBackend for ChunkerBackend {
             {
                 let mut out_file = tokio::fs::File::create(temp_out.path()).await?;
                 for part in &manifest.chunks {
+                    let expected_part = Self::part_path(remote_path, part.part_index);
+                    if part.remote_path != expected_part {
+                        return Err(StorageError::InvalidData(format!(
+                            "Corrupted or malicious chunk manifest for '{}': part {} path '{}' does not match expected '{}'",
+                            remote_path, part.part_index, part.remote_path, expected_part
+                        )));
+                    }
                     let temp_part = TempFileGuard::new("cschunk_dl_part");
                     self.inner
                         .download(&part.remote_path, temp_part.path())
@@ -308,7 +322,10 @@ impl StorageBackend for ChunkerBackend {
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
         if let Some(manifest) = self.fetch_manifest(remote_path).await? {
             for part in &manifest.chunks {
-                let _ = self.inner.delete(&part.remote_path).await;
+                let expected = Self::part_path(remote_path, part.part_index);
+                if part.remote_path == expected {
+                    let _ = self.inner.delete(&part.remote_path).await;
+                }
             }
             return self.inner.delete(&Self::manifest_path(remote_path)).await;
         }

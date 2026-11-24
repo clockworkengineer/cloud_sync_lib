@@ -48,18 +48,28 @@ impl VerificationReport {
     }
 }
 
+const MAX_VERIFY_DEPTH: usize = 64;
+
 /// Recursively collects all local files and their sizes starting from `root`.
+/// Uses `symlink_metadata` to avoid following symlink cycles and enforces a maximum depth.
 async fn collect_local_files(
     root: &Path,
     current_dir: &Path,
     results: &mut HashMap<String, u64>,
+    depth: usize,
 ) -> Result<(), StorageError> {
+    if depth > MAX_VERIFY_DEPTH {
+        return Ok(());
+    }
     let mut entries = tokio::fs::read_dir(current_dir).await?;
     while let Some(entry) = entries.next_entry().await? {
-        let meta = entry.metadata().await?;
+        let meta = tokio::fs::symlink_metadata(entry.path()).await?;
+        if meta.is_symlink() {
+            continue;
+        }
         let path = entry.path();
         if meta.is_dir() {
-            Box::pin(collect_local_files(root, &path, results)).await?;
+            Box::pin(collect_local_files(root, &path, results, depth + 1)).await?;
         } else if meta.is_file() {
             if let Ok(rel) = path.strip_prefix(root) {
                 let rel_str = rel.to_string_lossy().replace('\\', "/");
@@ -103,7 +113,7 @@ pub async fn verify_integrity(
     let start_time = Instant::now();
     let mut local_files = HashMap::new();
     if local_root.exists() {
-        collect_local_files(local_root, local_root, &mut local_files).await?;
+        collect_local_files(local_root, local_root, &mut local_files, 0).await?;
     }
 
     let mut remote_files = HashMap::new();

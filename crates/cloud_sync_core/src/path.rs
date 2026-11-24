@@ -8,9 +8,19 @@ use alloc::string::ToString;
 /// - No leading slashes
 /// - Traversal segments (`..`, `./`) stripped or rejected
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize,
 )]
 pub struct NormalizedPath(String);
+
+impl<'de> serde::Deserialize<'de> for NormalizedPath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        NormalizedPath::new(&s).map_err(serde::de::Error::custom)
+    }
+}
 
 fn is_reserved_dos_name(name: &str) -> bool {
     let stem = match name.split_once('.') {
@@ -79,14 +89,46 @@ impl NormalizedPath {
         self.0.is_empty()
     }
 
-    pub fn join(&self, child: &str) -> Self {
-        if self.0.is_empty() {
-            Self::new_unchecked(child)
+    /// Tries to join a child path onto `self`, validating that `child` contains no path traversal
+    /// sequences, Alternate Data Streams, null bytes, or DOS reserved device names.
+    pub fn try_join(&self, child: &str) -> Result<Self, &'static str> {
+        let child_norm = Self::new(child)?;
+        let child_trimmed = child_norm.as_str().trim_matches('/');
+        let base_trimmed = self.0.trim_matches('/');
+        if base_trimmed.is_empty() {
+            Ok(Self(child_trimmed.to_string()))
+        } else if child_trimmed.is_empty() {
+            Ok(self.clone())
         } else {
+            Ok(Self(format!("{}/{}", base_trimmed, child_trimmed)))
+        }
+    }
+
+    /// Joins `child` onto `self`, sanitizing out any directory traversal segments (`..`, `.`),
+    /// Alternate Data Streams, or DOS device names in the child.
+    pub fn join(&self, child: &str) -> Self {
+        self.try_join(child).unwrap_or_else(|_| {
             let child_clean = child.replace('\\', "/");
             let child_trimmed = child_clean.trim_matches('/');
-            Self(format!("{}/{}", self.0, child_trimmed))
-        }
+            let segments: alloc::vec::Vec<&str> = child_trimmed
+                .split('/')
+                .filter(|&seg| {
+                    !seg.is_empty()
+                        && seg != "."
+                        && seg != ".."
+                        && !seg.contains(':')
+                        && !is_reserved_dos_name(seg)
+                })
+                .collect();
+            let base_trimmed = self.0.trim_matches('/');
+            if base_trimmed.is_empty() {
+                Self(segments.join("/"))
+            } else if segments.is_empty() {
+                self.clone()
+            } else {
+                Self(format!("{}/{}", base_trimmed, segments.join("/")))
+            }
+        })
     }
 }
 
@@ -110,15 +152,19 @@ impl core::fmt::Display for NormalizedPath {
     }
 }
 
-impl From<&str> for NormalizedPath {
-    fn from(s: &str) -> Self {
-        Self::new_unchecked(s)
+impl TryFrom<&str> for NormalizedPath {
+    type Error = &'static str;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::new(s)
     }
 }
 
-impl From<String> for NormalizedPath {
-    fn from(s: String) -> Self {
-        Self::new_unchecked(&s)
+impl TryFrom<String> for NormalizedPath {
+    type Error = &'static str;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Self::new(&s)
     }
 }
 
@@ -300,11 +346,15 @@ mod tests {
         assert_eq!(format!("{}", p1), "foo/bar/baz");
         assert!(!p1.is_empty());
 
-        let from_str: NormalizedPath = "abc/def".into();
+        let from_str: NormalizedPath = "abc/def".try_into().unwrap();
         assert_eq!(from_str.as_str(), "abc/def");
 
-        let from_string: NormalizedPath = String::from("xyz/123").into();
+        let from_string: NormalizedPath = String::from("xyz/123").try_into().unwrap();
         assert_eq!(from_string.as_str(), "xyz/123");
+
+        // Traversal via try_into must fail
+        assert!(<NormalizedPath as TryFrom<&str>>::try_from("../traversal").is_err());
+        assert!(<NormalizedPath as TryFrom<String>>::try_from(String::from("nul")).is_err());
 
         // Test join
         let joined_empty = empty_path.join("child/file.txt");
@@ -312,6 +362,11 @@ mod tests {
 
         let joined = p1.join("\\subfolder/item.txt/");
         assert_eq!(joined.as_str(), "foo/bar/baz/subfolder/item.txt");
+
+        // Test try_join vs safe join with traversal attempts
+        assert!(p1.try_join("../traversal/escape.txt").is_err());
+        let sanitized_join = p1.join("../traversal/escape.txt");
+        assert_eq!(sanitized_join.as_str(), "foo/bar/baz/traversal/escape.txt");
     }
 
     #[test]
@@ -342,6 +397,14 @@ mod tests {
 
         // Null bytes must be rejected
         assert!(NormalizedPath::new("file\0.txt").is_err());
+
+        // Serde deserialization security: invalid traversal in JSON must be rejected
+        let json_bad = "\"../../etc/passwd\"";
+        assert!(serde_json::from_str::<NormalizedPath>(json_bad).is_err());
+
+        let json_good = "\"documents/report.pdf\"";
+        let parsed: NormalizedPath = serde_json::from_str(json_good).unwrap();
+        assert_eq!(parsed.as_str(), "documents/report.pdf");
     }
 
     #[test]

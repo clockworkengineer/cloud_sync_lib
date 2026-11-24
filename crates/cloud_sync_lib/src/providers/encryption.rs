@@ -247,12 +247,11 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
                 let file_key = self.derive_file_key(&salt);
                 let cipher = Aes256Gcm::new(&file_key);
 
-                if let Some(parent) = local_path.parent() {
-                    fs::create_dir_all(parent).await?;
-                }
-                let mut dest_file = fs::File::create(local_path).await?;
+                let temp_dec = TempFileGuard::new("dec_stage_tmp");
+                let mut dest_file = fs::File::create(temp_dec.path()).await?;
 
                 let mut chunk_index: u32 = 0;
+                let mut processed_last = false;
                 loop {
                     let chunk_len = match enc_file.read_u32().await {
                         Ok(len) => len as usize,
@@ -262,9 +261,39 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
                         }
                     };
 
-                    let is_last = enc_file.read_u8().await?;
+                    // Guard against memory allocation bombs (max 64 KiB chunk + AEAD tag & padding)
+                    if chunk_len > CHUNK_SIZE + 256 {
+                        return Err(StorageError::Provider {
+                            message: format!(
+                                "Corrupted encrypted file: chunk length {} exceeds maximum allowed limit {}",
+                                chunk_len,
+                                CHUNK_SIZE + 256
+                            ),
+                            status: None,
+                        });
+                    }
+
+                    let is_last = enc_file.read_u8().await.map_err(|e| {
+                        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                            StorageError::Provider {
+                                message: "Truncated encrypted file: unexpected EOF reading chunk header".to_string(),
+                                status: None,
+                            }
+                        } else {
+                            StorageError::Io(e)
+                        }
+                    })?;
                     let mut cipher_buf = vec![0u8; chunk_len];
-                    enc_file.read_exact(&mut cipher_buf).await?;
+                    enc_file.read_exact(&mut cipher_buf).await.map_err(|e| {
+                        if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                            StorageError::Provider {
+                                message: "Truncated encrypted file: unexpected EOF reading chunk payload".to_string(),
+                                status: None,
+                            }
+                        } else {
+                            StorageError::Io(e)
+                        }
+                    })?;
 
                     let mut nonce_bytes = [0u8; 12];
                     nonce_bytes[..8].copy_from_slice(&base_nonce);
@@ -293,10 +322,25 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
 
                     chunk_index = chunk_index.saturating_add(1);
                     if is_last == 1 {
+                        processed_last = true;
                         break;
                     }
                 }
                 dest_file.flush().await?;
+                drop(dest_file);
+
+                // Enforce that final authenticated chunk was encountered
+                if !processed_last {
+                    return Err(StorageError::Provider {
+                        message: "Truncated encrypted file: stream terminated unexpectedly before final chunk".to_string(),
+                        status: None,
+                    });
+                }
+
+                if let Some(parent) = local_path.parent() {
+                    fs::create_dir_all(parent).await?;
+                }
+                tokio::fs::copy(temp_dec.path(), local_path).await?;
                 return Ok(());
             } else {
                 enc_file.seek(std::io::SeekFrom::Start(0)).await?;
@@ -615,5 +659,42 @@ mod tests {
         cloud_sync_core::testing::verify_backend_compliance(&enc_backend, &local_root)
             .await
             .expect("EncryptedBackend must satisfy LSP specification compliance");
+    }
+
+    #[tokio::test]
+    async fn test_encrypted_backend_truncation_defense() {
+        let temp_dir = tempdir().unwrap();
+        let local_root = temp_dir.path().join("local");
+        let remote_root = temp_dir.path().join("remote");
+        fs::create_dir_all(&local_root).await.unwrap();
+        fs::create_dir_all(&remote_root).await.unwrap();
+
+        let local_sim = LocalSimulation::new(remote_root.clone(), "MockRemote".to_string());
+        let enc_backend = EncryptedBackend::new(local_sim, "password123");
+
+        // Create 2 chunks (128 KiB)
+        let multi_chunk_data = vec![0x42u8; 128 * 1024];
+        let file = local_root.join("trunc_test.bin");
+        fs::write(&file, &multi_chunk_data).await.unwrap();
+
+        enc_backend.upload(&file, "trunc_remote.bin").await.unwrap();
+
+        // Truncate the file so only chunk 1 is present (missing final authenticated chunk)
+        let remote_file = remote_root.join("trunc_remote.bin");
+        let full_enc = fs::read(&remote_file).await.unwrap();
+        // Cut off the second chunk
+        let truncated = full_enc[..70 * 1024].to_vec();
+        fs::write(&remote_file, truncated).await.unwrap();
+
+        let dest = local_root.join("trunc_dest.bin");
+        let res = enc_backend.download("trunc_remote.bin", &dest).await;
+        assert!(res.is_err(), "Truncated file download must fail");
+        let err_msg = res.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Truncated") || err_msg.contains("unexpectedly"),
+            "Error must indicate truncated stream, got: {}",
+            err_msg
+        );
+        assert!(!dest.exists(), "Destination file must not be created on truncation failure");
     }
 }
