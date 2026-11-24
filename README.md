@@ -91,9 +91,13 @@ For Android mobile architecture, permissions, and deployment workflows, see the 
 
 | Guide | Description |
 | :--- | :--- |
-| 📖 **[User Guide](docs/USER_GUIDE.md)** | Step-by-step instructions for running the daemon, Web UI, Egui app, and CLI commands. |
-| 🏗️ **[Architecture Guide](docs/ARCHITECTURE.md)** | Comprehensive 8-crate topology, layered middleware pipeline, state flow, and component interactions. |
+| 📖 **[User Guide](docs/USER_GUIDE.md)** | Step-by-step instructions for running the daemon, Web UI, Egui app, Photos CLI, and CLI commands. |
+| 🏗️ **[Architecture Guide](docs/ARCHITECTURE.md)** | Comprehensive 9-crate topology, layered middleware pipeline, state flow, and component interactions. |
+| 📸 **[Photos Hub Guide](docs/PHOTOS_HUB.md)** | Google Photos equivalence engine, EXIF parsing, timeline organization, albums, and Android sync. |
+| 🔀 **[Virtual Backends & Layers](docs/VIRTUAL_BACKENDS_AND_LAYERS.md)** | `UnionBackend`, `ChunkerBackend`, `CompressionLayer` (`CLZ1`), `CacheLayer`, and middleware onion pipeline. |
+| 🧰 **[Operational Tools & Disaster Recovery](docs/OPERATIONAL_TOOLS.md)** | Direct cloud-to-cloud transfer, content-addressable snapshots, deduplication, analytics, and file versioning. |
 | 📘 **[Client API Guide](docs/CLIENT_API.md)** | `CloudSyncClient`, `CloudSyncBuilder`, middleware configuration, buffer pools, and code examples. |
+| 📱 **[Android Client Guide](docs/ANDROID_CLIENT.md)** | Android mobile architecture, permissions, in-process engine, and deployment workflows. |
 | 🔒 **[Security & Reliability Guide](docs/SECURITY_AND_RELIABILITY.md)** | Client-side AEAD encryption, memory zeroization, `NormalizedPath` defenses, full jitter backoff, and circuit breakers. |
 | 🗄️ **[State Catalog & Storage Guide](docs/STATE_AND_STORAGE.md)** | 3-way synchronization algorithm, catalog isolation in `sync_state/`, `PostcardStateStore` CSTX v1 format, and atomic crash recovery. |
 | 📊 **[Logging & Diagnostics Guide](docs/LOGGING_AND_DIAGNOSTICS.md)** | Tracing spans, non-blocking file sinks, TCP/HTTP log endpoints, and diagnostic checklist. |

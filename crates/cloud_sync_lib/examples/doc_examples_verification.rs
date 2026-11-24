@@ -15,9 +15,14 @@ use cloud_sync_core::{
     StorageItem, StorageReader, StorageWriter,
 };
 use cloud_sync_lib::layers::{
-    CircuitBreakerConfig, CircuitBreakerLayer, LayeredBackendExt, RetryConfig, RetryLayer,
-    StorageLayer,
+    CacheLayer, CircuitBreakerConfig, CircuitBreakerLayer, CompressionLayer, LayeredBackendExt,
+    RetryConfig, RetryLayer, StorageLayer,
 };
+use cloud_sync_lib::providers::chunker::ChunkerBackend;
+use cloud_sync_lib::providers::union::{UnionBackend, UnionPolicy};
+use cloud_sync_lib::snapshot::list_snapshots;
+use cloud_sync_lib::cloud_transfer::{transfer_between_backends, CloudTransferOptions};
+use cloud_sync_lib::analytics::compute_storage_analytics;
 use cloud_sync_lib::{
     BackendFactory, BufferPool, CloudSyncClient, DynamicBackendRegistry,
 };
@@ -306,8 +311,48 @@ async fn main() -> Result<(), StorageError> {
     let audited = AuditLayer {
         audit_tag: "DOC_TEST".to_string(),
     }
-    .layer(layered);
+    .layer(layered.clone());
     assert_eq!(audited.name(), "in_memory");
+
+    // 6. Verify UnionBackend snippet
+    let b1 = Arc::new(MemoryStorageBackend::new());
+    let b2 = Arc::new(MemoryStorageBackend::new());
+    let union_backend = Arc::new(UnionBackend::new("UnionRAID1", vec![b1.clone(), b2.clone()], UnionPolicy::MirrorAll));
+    assert_eq!(union_backend.name(), "UnionRAID1");
+
+    // 7. Verify ChunkerBackend snippet
+    let chunker = Arc::new(ChunkerBackend::new(b1.clone(), 1024 * 1024));
+    assert_eq!(chunker.name(), "in_memory");
+
+    // 8. Verify CompressionLayer & CacheLayer
+    let compressed_and_cached = b1
+        .clone()
+        .with_layer(CompressionLayer::new())
+        .with_layer(CacheLayer::new(Duration::from_secs(10)));
+    assert_eq!(compressed_and_cached.name(), "in_memory");
+
+    // 9. Verify transfer_between_backends snippet
+    let transfer_options = CloudTransferOptions {
+        delete_extraneous: false,
+        skip_matching: true,
+        dry_run: true,
+    };
+    let transfer_report = transfer_between_backends(
+        b1.as_ref(),
+        b2.as_ref(),
+        "source",
+        "dest",
+        transfer_options,
+    ).await?;
+    assert_eq!(transfer_report.source_backend, "in_memory");
+
+    // 10. Verify snapshot functions
+    let snapshots = list_snapshots(b1.as_ref()).await?;
+    assert!(snapshots.is_empty());
+
+    // 11. Verify compute_storage_analytics snippet
+    let analytics = compute_storage_analytics(b1.as_ref(), "").await?;
+    assert_eq!(analytics.total_files, 0);
 
     println!("All documentation code examples compiled and verified successfully!");
     Ok(())

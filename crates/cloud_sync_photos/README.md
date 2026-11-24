@@ -18,6 +18,29 @@
 
 ---
 
+## Standalone CLI Commands
+
+```bash
+# Ingest and backup camera roll / folder
+cargo run --bin cloud_sync_photos -- sync --source "D:\DCIM\Camera"
+
+# Chronological timeline feed grouped by Year and Month
+cargo run --bin cloud_sync_photos -- timeline
+
+# List indexed photos & videos
+cargo run --bin cloud_sync_photos -- list --media-type photo --favorites
+
+# Multi-criteria search (camera, date range, Haversine GPS radius)
+cargo run --bin cloud_sync_photos -- search --camera "Sony" --near-lat 37.7749 --near-lon -122.4194 --radius-km 50.0
+
+# Virtual album management
+cargo run --bin cloud_sync_photos -- albums create "Vacation 2026"
+```
+
+For detailed architecture, EXIF tags, and Android mobile setup, see the **[Photos Hub Guide](../../docs/PHOTOS_HUB.md)**.
+
+---
+
 ## Rust API Example
 
 ```rust,no_run

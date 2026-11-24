@@ -129,3 +129,45 @@ jwt_token = ""
 destination_folder = "MySyncFolder" # Optional
 enabled = false
 sync_mode = "one-way"
+
+[ftp_credentials]
+host = "127.0.0.1"
+port = 21
+username = "PLACEHOLDER_USERNAME"
+password = "PLACEHOLDER_PASSWORD"
+destination_folder = "MySyncFolder"
+secure = false # Set true for FTPS (RFC 4217)
+enabled = false
+sync_mode = "one-way"
+
+[http_credentials]
+base_url = "http://127.0.0.1:8080/files/"
+username = "PLACEHOLDER_USERNAME"
+password = "PLACEHOLDER_PASSWORD"
+destination_folder = "MySyncFolder"
+enabled = false
+sync_mode = "one-way"
+
+[smb_credentials]
+server = "127.0.0.1"
+share = "SharedFolder"
+username = "PLACEHOLDER_USERNAME"
+password = "PLACEHOLDER_PASSWORD"
+destination_folder = "MySyncFolder"
+enabled = false
+sync_mode = "one-way"
+
+# Staggered local file versioning and trash retention
+[versioning]
+enabled = false
+trash_dir = "sync_state/trash"
+retention_days = 30
+max_versions_per_file = 5
+
+# Optional time-of-day bandwidth scheduler
+# [[bandwidth_schedule]]
+# start_time = "09:00"
+# end_time = "17:00"
+# max_upload_rate = 1048576       # 1 MB/s
+# max_download_rate = 2097152     # 2 MB/s
+

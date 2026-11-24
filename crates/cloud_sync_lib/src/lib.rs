@@ -1,10 +1,11 @@
 //! # cloud_sync_lib
 //!
-//! A library providing abstractions and client implementations for syncing files
-//! with popular cloud storage backends, including Google Drive, Dropbox, and OneDrive.
+//! A modular library providing abstractions and client implementations for syncing files
+//! across 17 cloud storage backends, virtual composite backends (Union, Chunker), and layered
+//! OpenDAL-style middleware (Compression, Cache, Rate Limiting, Retry, Circuit Breaker).
 //!
-//! It supports both actual API clients (using OAuth2 refresh tokens) and a local
-//! folder fallback simulation for offline development and testing.
+//! For architectural specifications, see `docs/ARCHITECTURE.md`, `docs/VIRTUAL_BACKENDS_AND_LAYERS.md`,
+//! and `docs/OPERATIONAL_TOOLS.md`.
 
 pub mod analytics;
 pub mod auth;

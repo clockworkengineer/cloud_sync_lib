@@ -8,7 +8,7 @@ The `cloud_sync_lib` crate provides an ergonomic, high-level client facade (`Clo
 
 Instead of directly instantiating low-level provider structs or wrestling with manual token refresh logic, consumers interact with the `CloudSyncClient`:
 
-- **Unified Interface**: Standard operations (`upload`, `download`, `delete`, `list`, `create_folder`, `rename`, `copy`) work identically across all 13 cloud storage providers and local simulations.
+- **Unified Interface**: Standard operations (`upload`, `download`, `delete`, `list`, `create_folder`, `rename`, `copy`) work identically across all 17 cloud storage providers, virtual backends, and local simulations.
 - **Layered Onion Middleware**: Composable decorators (`RetryLayer`, `CircuitBreakerLayer`, `RateLimitLayer`, `LoggingLayer`, `MetricsLayer`) wrap the storage backend without modifying provider code.
 - **Dynamic Provider Registry**: Dynamically instantiate providers by string identifier (`"google_drive"`, `"dropbox"`, `"mega"`, `"s3"`, etc.) and JSON configuration.
 - **Zero-Copy Buffer Pool**: Low-overhead byte buffer reuse via `BufferPool` to eliminate heap fragmentation during large file transfers.
@@ -119,12 +119,93 @@ fn wrap_backend(backend: Arc<dyn StorageBackend>) -> Arc<dyn StorageBackend> {
 | `CircuitBreakerLayer` | `CircuitBreakerConfig { failure_threshold, recovery_timeout, probe_success_threshold }` | Fails fast during sustained cloud provider outages, preventing request pileups and retry storms. Transitions across `Closed`, `Open`, and `HalfOpen` states. |
 | `RetryLayer` | `RetryConfig { max_attempts, base_delay, max_delay }` | Automatically retries transient errors (`is_transient()`) such as HTTP 429, 500, 502, 503, 504 using full-jitter exponential backoff. Non-transient errors (e.g. 401 Unauthorized, 404 Not Found) fail immediately. |
 | `RateLimitLayer` | `TokenBucket` for upload & download | Regulates maximum bandwidth consumption (bytes per second) to prevent network saturation. |
+| `CompressionLayer` | `CompressionLayer::new()` | Pure-Rust lossless `CLZ1` compression. Transparently compresses files before upload and decompresses on download. |
+| `CacheLayer` | `CacheLayer::new(ttl)` | In-memory directory listing cache with write-through invalidation on mutating operations. |
 | `MetricsLayer` | `MetricsCollector` | Thread-safe collection of total bytes transferred, request counts, error counts, and latency percentiles. |
 | `LoggingLayer` | OpenTelemetry span integration | Emits structured tracing events (`storage.upload`, `storage.download`, `storage.delete`, `storage.list`) capturing paths, byte sizes, and duration. |
 
 ---
 
-## 4. Zero-Copy Buffer Pool
+## 4. Virtual Composite Backends
+
+`cloud_sync_lib` provides virtual backends that wrap underlying storage backends:
+
+### 4.1 Multi-Cloud Union (`UnionBackend`)
+Combines multiple storage providers into a single virtual namespace:
+```rust,no_run
+use cloud_sync_lib::providers::union::{UnionBackend, UnionPolicy};
+use cloud_sync_core::StorageBackend;
+use std::sync::Arc;
+
+fn build_union(p1: Arc<dyn StorageBackend>, p2: Arc<dyn StorageBackend>) -> Arc<dyn StorageBackend> {
+    Arc::new(UnionBackend::new("UnionRAID1", vec![p1, p2], UnionPolicy::MirrorAll))
+}
+```
+
+### 4.2 Large-File Chunker (`ChunkerBackend`)
+Transparently splits files larger than a specified chunk size:
+```rust,no_run
+use cloud_sync_lib::providers::chunker::ChunkerBackend;
+use cloud_sync_core::StorageBackend;
+use std::sync::Arc;
+
+fn build_chunker(backend: Arc<dyn StorageBackend>) -> Arc<dyn StorageBackend> {
+    Arc::new(ChunkerBackend::new(backend, 50 * 1024 * 1024)) // 50MB chunks
+}
+```
+
+For comprehensive details on policies and custom routing, see the [Virtual Backends & Layers Guide](VIRTUAL_BACKENDS_AND_LAYERS.md).
+
+---
+
+## 5. Operational Toolkit APIs
+
+### 5.1 Content-Addressable Snapshots
+```rust,no_run
+use cloud_sync_lib::snapshot::{create_snapshot, list_snapshots};
+use cloud_sync_core::StorageBackend;
+use std::path::Path;
+use std::sync::Arc;
+
+async fn backup(backend: Arc<dyn StorageBackend>) -> Result<(), cloud_sync_core::StorageError> {
+    let manifest = create_snapshot(backend.as_ref(), Path::new("./data"), "Snapshot Label").await?;
+    println!("Created snapshot: {}", manifest.id);
+    let all = list_snapshots(backend.as_ref()).await?;
+    println!("Total snapshots: {}", all.len());
+    Ok(())
+}
+```
+
+Or directly via `CloudSyncClient`:
+```rust,no_run
+use cloud_sync_lib::CloudSyncClient;
+use std::path::Path;
+
+async fn client_backup(client: &CloudSyncClient) -> Result<(), cloud_sync_core::StorageError> {
+    let manifest = client.create_snapshot(Path::new("./data"), "Snapshot Label").await?;
+    println!("Created snapshot: {}", manifest.id);
+    Ok(())
+}
+```
+
+### 5.2 Direct Cloud-to-Cloud Transfer (`transfer_between_backends`)
+```rust,no_run
+use cloud_sync_lib::cloud_transfer::{transfer_between_backends, CloudTransferOptions};
+use cloud_sync_core::StorageBackend;
+use std::sync::Arc;
+
+async fn transfer(src: Arc<dyn StorageBackend>, dst: Arc<dyn StorageBackend>) -> Result<(), cloud_sync_core::StorageError> {
+    let report = transfer_between_backends(src.as_ref(), dst.as_ref(), "src", "dst", CloudTransferOptions::default()).await?;
+    println!("Transferred {} files", report.files_transferred);
+    Ok(())
+}
+```
+
+For complete deduplication, storage analytics, and versioning restore details, see the [Operational Tools Guide](OPERATIONAL_TOOLS.md).
+
+---
+
+## 6. Zero-Copy Buffer Pool
 
 High-throughput transfers utilize the `BufferPool` to recycle memory buffers and minimize allocation overhead:
 
@@ -143,7 +224,7 @@ drop(buffer);
 
 ---
 
-## 5. Walkthrough of Runnable Examples
+## 7. Walkthrough of Runnable Examples
 
 The `crates/cloud_sync_lib/examples/` directory contains complete, standalone examples demonstrating real-world usage patterns:
 
@@ -162,14 +243,19 @@ The `crates/cloud_sync_lib/examples/` directory contains complete, standalone ex
 - **Command**: `cargo run --example custom_provider -p cloud_sync_lib`
 - **Demonstrates**: Implementing the `StorageBackend` trait for a custom in-memory store, defining a `BackendFactory`, registering it into `DynamicBackendRegistry`, and creating the provider dynamically by name.
 
-### 4. Resumable Upload & Rate Limiting (`resumable_upload.rs`)
-- **Path**: `crates/cloud_sync_lib/examples/resumable_upload.rs`
-- **Command**: `cargo run --example resumable_upload -p cloud_sync_lib`
-- **Demonstrates**: Creating multi-megabyte payloads, applying bandwidth rate limits (e.g. 5 MB/s), and verifying transferred byte counts.
+### 4. Advanced Layers & Content-Addressable Snapshots (`advanced_layers_and_snapshots.rs`)
+- **Path**: `crates/cloud_sync_lib/examples/advanced_layers_and_snapshots.rs`
+- **Command**: `cargo run --example advanced_layers_and_snapshots -p cloud_sync_lib`
+- **Demonstrates**: Combining `UnionBackend`, `ChunkerBackend`, `CompressionLayer`, `CacheLayer`, and creating point-in-time deduplicated backups with `SnapshotEngine`.
+
+### 5. Documentation Examples Verification (`doc_examples_verification.rs`)
+- **Path**: `crates/cloud_sync_lib/examples/doc_examples_verification.rs`
+- **Command**: `cargo run --example doc_examples_verification -p cloud_sync_lib`
+- **Demonstrates**: Continuous automated compilation and execution of all code snippets published in the documentation guides.
 
 ---
 
-## 6. Error Handling Best Practices
+## 8. Error Handling Best Practices
 
 All client methods return `Result<T, StorageError>`. Inspect semantic predicates to drive recovery logic:
 

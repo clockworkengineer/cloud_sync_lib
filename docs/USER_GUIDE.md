@@ -6,14 +6,15 @@ This guide describes how to configure, run, and interact with the various compon
 
 ## Workspace Executable Overview
 
-The CloudSync suite contains 5 primary executable programs and convenient Windows launch scripts:
+The CloudSync suite contains 6 primary executable programs and convenient Windows launch scripts:
 
 | Component | Description | Build / Run Command | Convenience Launcher |
 | :--- | :--- | :--- | :--- |
 | **`cloud_sync_daemon`** | Background sync engine with TCP socket interface | `cargo run --bin cloud_sync_daemon` | — |
+| **`cloud_sync_photos`** | Google Photos equivalence media hub & timeline CLI | `cargo run --bin cloud_sync_photos` | — |
 | **`cloud_sync_ui`** | Axum Web UI server (port 8082) with SSE dashboard | `cargo run --bin cloud_sync_ui` | `scripts/launch_web_ui.{cmd,sh}` |
 | **`cloud_sync_egui`** | Native immediate-mode Egui desktop client | `cargo run --bin cloud_sync_egui` | `scripts/launch_egui.{cmd,sh}` |
-| **`cloud_sync_tauri`** | Cross-platform Tauri desktop wrapper shell | `cargo run -p cloud_sync_tauri` | `cargo tauri dev` |
+| **`cloud_sync_tauri`** | Cross-platform Tauri desktop & mobile shell | `cargo run -p cloud_sync_tauri` | `scripts/launch_tauri.{cmd,sh}` |
 | **`cloud_sync_backup`** | Command-line client for one-off CLI backups | `cargo run --bin cloud_sync_backup` | — |
 
 ---
@@ -135,7 +136,33 @@ cargo tauri dev
 
 ---
 
-## 6. Configuration Guide (`config.toml` / `private_config.toml`)
+## 6. `cloud_sync_photos` (Photo & Media Management CLI)
+
+A specialized CLI tool for ingesting photos and videos, extracting pure-Rust EXIF metadata, deduplicating via SHA-256 digests, and backing them up to any cloud backend organized by capture date.
+
+### Command Line Interface
+```bash
+# Ingest and synchronize photos from a local camera roll / DCIM folder
+cargo run --bin cloud_sync_photos -- sync --source "D:\DCIM\Camera"
+
+# Display terminal chronological photo timeline grouped by Year and Month
+cargo run --bin cloud_sync_photos -- timeline
+
+# List indexed media items
+cargo run --bin cloud_sync_photos -- list --media-type photo --favorites
+
+# Multi-criteria metadata and GPS radius search
+cargo run --bin cloud_sync_photos -- search --camera "Sony" --near-lat 37.7749 --near-lon -122.4194 --radius-km 50.0
+
+# Manage virtual albums
+cargo run --bin cloud_sync_photos -- albums create "Vacation 2026"
+```
+
+For full details on organization strategies and Android camera roll sync, see the [Photos Hub Guide](PHOTOS_HUB.md).
+
+---
+
+## 7. Configuration Guide (`config.toml` / `private_config.toml`)
 
 Configure global synchronization options under the `[sync]` table:
 
@@ -150,6 +177,45 @@ log_file = "daemon.log"
 
 # Dedicated directory for state catalogs (isolated from watch_directory)
 state_directory = "sync_state"
+```
+
+### File Versioning & Trash Can Retention
+Protect against accidental overwrites or deletions by enabling local file versioning:
+```toml
+[versioning]
+enabled = true
+trash_dir = "sync_state/trash"
+retention_days = 30
+max_versions_per_file = 5
+```
+
+### Network Shares & New Storage Providers
+```toml
+# FTP / FTPS
+[ftp_credentials]
+host = "192.168.1.100"
+port = 21
+username = "my_user"
+password = "my_password"
+destination_folder = "sync_dir"
+secure = true # FTPS
+enabled = true
+
+# HTTP / Web Directory Server
+[http_credentials]
+base_url = "https://files.example.com/share/"
+username = "my_user"
+password = "my_password"
+enabled = true
+
+# SMB / CIFS Network Share
+[smb_credentials]
+server = "nas.local"
+share = "Backups"
+username = "nas_user"
+password = "nas_password"
+destination_folder = "CloudSync"
+enabled = true
 ```
 
 ### Selective Synchronization
@@ -182,8 +248,13 @@ max_download_rate = 0
 
 ---
 
-## 7. Additional Technical Documentation
+## 8. Additional Technical Documentation
 
+- 📸 [Google Photos Equivalence Hub Guide](PHOTOS_HUB.md)
+- 🔀 [Virtual Backends & Middleware Layers Guide](VIRTUAL_BACKENDS_AND_LAYERS.md)
+- 🧰 [Operational Tools & Disaster Recovery Guide](OPERATIONAL_TOOLS.md)
+- 📘 [Client Library API Reference](CLIENT_API.md)
+- 📱 [Android Client Guide](ANDROID_CLIENT.md)
 - 📘 [Logging, Observability & Diagnostics Guide](LOGGING_AND_DIAGNOSTICS.md)
 - 🗄️ [State Catalog & Storage Architecture Guide](STATE_AND_STORAGE.md)
 - 🛠️ [Troubleshooting & Operations Playbook](TROUBLESHOOTING.md)

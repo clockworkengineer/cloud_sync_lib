@@ -206,3 +206,27 @@ If state becomes desynchronized due to offline edits on multiple unsynced machin
    Remove-Item sync_state\.sync_state_Google_Drive.*
    ```
 3. Restart the daemon. On startup, the engine will perform a full scan of both local and remote storage, reconciling changes based on the active `conflict_policy`.
+
+---
+
+## 8. Heuristic Rename & Move Detection (`RenameDetector`)
+
+When files are renamed or moved between local or remote subfolders, naive sync engines execute a destructive deletion followed by a fresh upload of the entire file.
+
+The `RenameDetector` in `cloud_sync_daemon` eliminates this overhead:
+1. It gathers all candidate deletions and additions within the current sync cycle.
+2. Pairs candidates using exact checksum matching or identical file size and original filename heuristics.
+3. Issues server-side rename operations (`ServerSideOperations::rename`) where supported by the provider, avoiding multi-megabyte transfers over the wire.
+
+---
+
+## 9. Staggered File Versioning & Trash Retention (`TrashManager`)
+
+To protect against accidental deletions, ransomware, or conflicting overwrites, `cloud_sync_daemon` provides local staggered file versioning:
+
+- **Archive Directory**: Modifying or deleting a file automatically archives the prior version in `sync_state/trash/`.
+- **Naming Syntax**: `YYYYMMDD_HHMMSS_<filename>` (e.g. `20261124_140000_report.docx`).
+- **Retention Bounds**: Old copies beyond `retention_days` (default: 30) or exceeding `max_versions_per_file` (default: 5) are automatically pruned.
+- **Point-in-Time Restore**: Archived copies can be inspected and restored back to the active directory using `TrashManager::restore_version`.
+
+For complete operational restore details, see the [Operational Tools Guide](OPERATIONAL_TOOLS.md).

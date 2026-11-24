@@ -103,3 +103,23 @@ The compliance harness verifies:
 - Idempotent folder creation.
 - Checksum integrity after roundtrip uploads.
 
+---
+
+## 6. Continuous Documentation Verification Runner (`doc_examples_verification`)
+
+To prevent code documentation drift across releases, `crates/cloud_sync_lib/examples/doc_examples_verification.rs` acts as an automated compiler test that verifies all code examples in the markdown documentation guides:
+
+```bash
+cargo run --example doc_examples_verification -p cloud_sync_lib
+```
+
+This runner tests:
+1. Custom provider implementations and factory registrations (`MemoryStorageBackend`, `MemoryFactory`).
+2. Custom middleware layer definitions (`AuditLayer`).
+3. Layer composition (`CircuitBreakerLayer`, `RetryLayer`).
+4. `CloudSyncClient` builder configurations with local simulations.
+5. Buffer pool acquisition and zeroization (`BufferPool`).
+6. Composite backends (`UnionBackend`, `ChunkerBackend`).
+7. Content-addressable snapshots (`SnapshotEngine`).
+8. Direct cloud-to-cloud migration (`transfer_between_backends`).
+

@@ -8,6 +8,8 @@
 //! - In-memory and persistent catalog indexing with timeline views and multi-criteria search.
 //! - Virtual albums and favorites management without duplicating cloud files.
 //! - Remote catalog sync (`.photos_catalog.json`) across any cloud provider.
+//!
+//! See the full user and architecture documentation in `docs/PHOTOS_HUB.md`.
 
 pub mod catalog;
 pub mod cli;

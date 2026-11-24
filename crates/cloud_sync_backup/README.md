@@ -40,7 +40,7 @@ refresh_token = "your_dropbox_refresh_token"
 
 ### Supported Providers
 - **`local`**: Requires setting `source_path` or `destination_path` to a local directory path (e.g., `./watched_folder`).
-- **Cloud Providers**: `"google_drive"`, `"dropbox"`, `"onedrive"`, `"webdav"`, `"s3"`, `"sftp"`, `"nextcloud"`, `"mega"`.
+- **Cloud Providers (17 Supported Protocols)**: `"google_drive"`, `"dropbox"`, `"onedrive"`, `"webdav"`, `"s3"`, `"sftp"`, `"nextcloud"`, `"mega"`, `"box"`, `"azure_blob"`, `"gcs"`, `"b2"`, `"pcloud"`, `"ipfs"`, `"ftp"`, `"http"`, `"smb"`.
 
 ---
 
