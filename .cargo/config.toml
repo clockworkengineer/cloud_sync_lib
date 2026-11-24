@@ -1,0 +1,6 @@
+# Cargo build and linker optimization configuration
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+
+[build]
+incremental = true
