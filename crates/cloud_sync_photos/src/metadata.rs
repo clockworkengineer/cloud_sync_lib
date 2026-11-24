@@ -382,3 +382,210 @@ fn parse_exif_tiff(data: &[u8]) -> ExifMetadata {
 
     meta
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_detect_media_format() {
+        let cases = [
+            ("img.jpg", MediaType::Photo, "image/jpeg"),
+            ("img.jpeg", MediaType::Photo, "image/jpeg"),
+            ("pic.png", MediaType::Photo, "image/png"),
+            ("pic.webp", MediaType::Photo, "image/webp"),
+            ("pic.heic", MediaType::Photo, "image/heic"),
+            ("pic.heif", MediaType::Photo, "image/heic"),
+            ("anim.gif", MediaType::Photo, "image/gif"),
+            ("doc.tif", MediaType::Photo, "image/tiff"),
+            ("doc.tiff", MediaType::Photo, "image/tiff"),
+            ("raw.cr2", MediaType::Photo, "image/x-raw"),
+            ("raw.nef", MediaType::Photo, "image/x-raw"),
+            ("raw.arw", MediaType::Photo, "image/x-raw"),
+            ("raw.dng", MediaType::Photo, "image/x-raw"),
+            ("raw.raw", MediaType::Photo, "image/x-raw"),
+            ("vid.mp4", MediaType::Video, "video/mp4"),
+            ("vid.mov", MediaType::Video, "video/quicktime"),
+            ("vid.mkv", MediaType::Video, "video/x-matroska"),
+            ("vid.webm", MediaType::Video, "video/webm"),
+            ("vid.avi", MediaType::Video, "video/x-msvideo"),
+            ("file.bin", MediaType::Unknown, "application/octet-stream"),
+            ("no_ext", MediaType::Unknown, "application/octet-stream"),
+        ];
+
+        for (filename, expected_media, expected_mime) in cases {
+            let (media, mime) = detect_media_format(Path::new(filename));
+            assert_eq!(media, expected_media, "Media type mismatch for {}", filename);
+            assert_eq!(mime, expected_mime, "MIME mismatch for {}", filename);
+        }
+    }
+
+    #[test]
+    fn test_parse_exif_datetime() {
+        assert!(parse_exif_datetime("").is_none());
+        assert!(parse_exif_datetime("short").is_none());
+        assert!(parse_exif_datetime("invalid date string here!").is_none());
+
+        let dt1 = parse_exif_datetime("2024:11:24 14:30:00").expect("colon format");
+        assert_eq!(dt1.to_rfc3339(), "2024-11-24T14:30:00+00:00");
+
+        let dt2 = parse_exif_datetime("2024-11-24 14:30:00\0").expect("dash format with null");
+        assert_eq!(dt2.to_rfc3339(), "2024-11-24T14:30:00+00:00");
+    }
+
+    #[test]
+    fn test_inspect_media_file_non_jpeg() {
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(b"Hello World not a JPEG").unwrap();
+        tmp.flush().unwrap();
+
+        let item = inspect_media_file(tmp.path()).unwrap();
+        assert_eq!(item.media_type, MediaType::Unknown);
+        assert_eq!(item.size_bytes, 22);
+        assert!(!item.sha256_hash.is_empty());
+    }
+
+    #[test]
+    fn test_extract_jpeg_exif_and_tiff_parsing() {
+        // Construct a synthetic JPEG with Exif APP1 segment
+        // Little-endian TIFF structure:
+        // offset 0: "II" (0x49, 0x49)
+        // offset 2: 0x002A (42)
+        // offset 4: offset to IFD0 = 8
+        // IFD0 at offset 8:
+        // count = 2 entries
+        // entry 0: Tag 0x010F (Make), ASCII, count 6, offset 34 -> "Canon\0"
+        // entry 1: Tag 0x0110 (Model), ASCII, count 4, inline -> "R5\0\0"
+        let mut tiff = Vec::new();
+        // Header (8 bytes)
+        tiff.extend_from_slice(b"II");
+        tiff.extend_from_slice(&42u16.to_le_bytes());
+        tiff.extend_from_slice(&8u32.to_le_bytes()); // offset to IFD0
+
+        // IFD0: 2 entries (2 bytes)
+        tiff.extend_from_slice(&2u16.to_le_bytes());
+
+        // Entry 0: 0x010F (Make), type 2 (ASCII), count 6, offset 38
+        tiff.extend_from_slice(&0x010Fu16.to_le_bytes());
+        tiff.extend_from_slice(&2u16.to_le_bytes());
+        tiff.extend_from_slice(&6u32.to_le_bytes());
+        tiff.extend_from_slice(&38u32.to_le_bytes());
+
+        // Entry 1: 0x0110 (Model), type 2 (ASCII), count 4, inline "R5\0\0"
+        tiff.extend_from_slice(&0x0110u16.to_le_bytes());
+        tiff.extend_from_slice(&2u16.to_le_bytes());
+        tiff.extend_from_slice(&4u32.to_le_bytes());
+        tiff.extend_from_slice(b"R5\0\0");
+
+        // Next IFD offset = 0
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+
+        // Offset 38: "Canon\0"
+        tiff.extend_from_slice(b"Canon\0");
+
+        // Test direct TIFF parser
+        let meta = parse_exif_tiff(&tiff);
+        assert_eq!(meta.make.as_deref(), Some("Canon"));
+        assert_eq!(meta.model.as_deref(), Some("R5"));
+
+        // Now test via JPEG container
+        let mut jpeg = Vec::new();
+        // SOI marker
+        jpeg.extend_from_slice(&[0xFF, 0xD8]);
+        // APP1 marker
+        jpeg.extend_from_slice(&[0xFF, 0xE1]);
+        let app1_len = (2 + 6 + tiff.len()) as u16;
+        jpeg.extend_from_slice(&app1_len.to_be_bytes());
+        jpeg.extend_from_slice(b"Exif\0\0");
+        jpeg.extend_from_slice(&tiff);
+        // EOI marker
+        jpeg.extend_from_slice(&[0xFF, 0xD9]);
+
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(&jpeg).unwrap();
+        tmp.flush().unwrap();
+
+        let (exif, dt) = extract_metadata(tmp.path());
+        assert_eq!(exif.make.as_deref(), Some("Canon"));
+        assert_eq!(exif.model.as_deref(), Some("R5"));
+        assert!(dt.is_none());
+    }
+
+    #[test]
+    fn test_parse_exif_tiff_big_endian_and_gps() {
+        // Big-endian TIFF with GPS subIFD
+        let mut tiff = Vec::new();
+        // Header
+        tiff.extend_from_slice(b"MM");
+        tiff.extend_from_slice(&42u16.to_be_bytes());
+        tiff.extend_from_slice(&8u32.to_be_bytes()); // IFD0 at 8
+
+        // IFD0: 1 entry pointing to GPS SubIFD (0x8825)
+        tiff.extend_from_slice(&1u16.to_be_bytes());
+        tiff.extend_from_slice(&0x8825u16.to_be_bytes());
+        tiff.extend_from_slice(&4u16.to_be_bytes()); // LONG
+        tiff.extend_from_slice(&1u32.to_be_bytes());
+        tiff.extend_from_slice(&26u32.to_be_bytes()); // offset to GPS IFD = 26
+        tiff.extend_from_slice(&0u32.to_be_bytes()); // next IFD = 0
+
+        // GPS IFD at offset 26
+        // 4 entries: LatRef (0x0001), Lat (0x0002), LonRef (0x0003), Lon (0x0004)
+        tiff.extend_from_slice(&4u16.to_be_bytes());
+
+        // Entry 0: LatRef 'S' (value in-place)
+        tiff.extend_from_slice(&0x0001u16.to_be_bytes());
+        tiff.extend_from_slice(&2u16.to_be_bytes());
+        tiff.extend_from_slice(&2u32.to_be_bytes());
+        tiff.extend_from_slice(b"S\0\0\0");
+
+        // Entry 1: Lat (3 rationals), offset 80
+        tiff.extend_from_slice(&0x0002u16.to_be_bytes());
+        tiff.extend_from_slice(&5u16.to_be_bytes());
+        tiff.extend_from_slice(&3u32.to_be_bytes());
+        tiff.extend_from_slice(&80u32.to_be_bytes());
+
+        // Entry 2: LonRef 'W'
+        tiff.extend_from_slice(&0x0003u16.to_be_bytes());
+        tiff.extend_from_slice(&2u16.to_be_bytes());
+        tiff.extend_from_slice(&2u32.to_be_bytes());
+        tiff.extend_from_slice(b"W\0\0\0");
+
+        // Entry 3: Lon (3 rationals), offset 104
+        tiff.extend_from_slice(&0x0004u16.to_be_bytes());
+        tiff.extend_from_slice(&5u16.to_be_bytes());
+        tiff.extend_from_slice(&3u32.to_be_bytes());
+        tiff.extend_from_slice(&104u32.to_be_bytes());
+
+        // Next IFD = 0
+        tiff.extend_from_slice(&0u32.to_be_bytes());
+
+        // Offset 80: Latitude = 33 deg, 51 min, 0 sec (33.85 S)
+        // 33/1
+        tiff.extend_from_slice(&33u32.to_be_bytes());
+        tiff.extend_from_slice(&1u32.to_be_bytes());
+        // 51/1
+        tiff.extend_from_slice(&51u32.to_be_bytes());
+        tiff.extend_from_slice(&1u32.to_be_bytes());
+        // 0/1
+        tiff.extend_from_slice(&0u32.to_be_bytes());
+        tiff.extend_from_slice(&1u32.to_be_bytes());
+
+        // Offset 104: Longitude = 151 deg, 12 min, 0 sec (151.20 W)
+        // 151/1
+        tiff.extend_from_slice(&151u32.to_be_bytes());
+        tiff.extend_from_slice(&1u32.to_be_bytes());
+        // 12/1
+        tiff.extend_from_slice(&12u32.to_be_bytes());
+        tiff.extend_from_slice(&1u32.to_be_bytes());
+        // 0/1
+        tiff.extend_from_slice(&0u32.to_be_bytes());
+        tiff.extend_from_slice(&1u32.to_be_bytes());
+
+        let meta = parse_exif_tiff(&tiff);
+        let loc = meta.location.expect("parsed location");
+        assert!((loc.latitude - (-33.85)).abs() < 0.001);
+        assert!((loc.longitude - (-151.20)).abs() < 0.001);
+    }
+}

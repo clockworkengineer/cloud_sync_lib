@@ -212,3 +212,49 @@ pub struct LibraryStats {
     pub albums_count: usize,
     pub favorites_count: usize,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_photos_error_display_and_conversions() {
+        let io_err = PhotosError::from(std::io::Error::other("disk error"));
+        assert!(io_err.to_string().contains("Photos I/O error"));
+
+        let storage_err = PhotosError::from(cloud_sync_core::StorageError::NotFound("lost".to_string()));
+        assert!(storage_err.to_string().contains("Photos cloud storage error"));
+
+        let config_err = PhotosError::from("config syntax".to_string());
+        assert!(config_err.to_string().contains("Photos configuration error"));
+
+        let path_err = PhotosError::InvalidPath("bad/path".to_string());
+        assert!(path_err.to_string().contains("Invalid media path"));
+
+        let not_found_err = PhotosError::NotFound("img123".to_string());
+        assert!(not_found_err.to_string().contains("Media item not found"));
+
+        let str_conv: String = not_found_err.into();
+        assert!(str_conv.contains("img123"));
+    }
+
+    #[test]
+    fn test_geolocation_and_enums_serde() {
+        let loc1 = GeoLocation::new(48.8566, 2.3522); // Paris
+        let loc2 = GeoLocation::new(51.5074, -0.1278); // London
+        let dist = loc1.haversine_distance_km(&loc2);
+        assert!(dist > 300.0 && dist < 400.0);
+
+        let photo_type = MediaType::Photo;
+        let json = serde_json::to_string(&photo_type).unwrap();
+        assert_eq!(serde_json::from_str::<MediaType>(&json).unwrap(), MediaType::Photo);
+
+        let img_fmt = ImageFormat::Heic;
+        let json_fmt = serde_json::to_string(&img_fmt).unwrap();
+        assert_eq!(serde_json::from_str::<ImageFormat>(&json_fmt).unwrap(), ImageFormat::Heic);
+
+        let vid_fmt = VideoFormat::Mp4;
+        let json_vid = serde_json::to_string(&vid_fmt).unwrap();
+        assert_eq!(serde_json::from_str::<VideoFormat>(&json_vid).unwrap(), VideoFormat::Mp4);
+    }
+}

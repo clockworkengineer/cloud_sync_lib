@@ -239,5 +239,23 @@ mod tests {
         cloud_sync_core::testing::verify_backend_compliance(&cached, local_dir.path())
             .await
             .unwrap();
+
+        // Test additional operations: folder, delete, rename, copy, layer wrapper
+        assert!(cloud_sync_core::StorageBackend::create_folder(&cached, "cache_folder").await.is_ok());
+        assert!(cloud_sync_core::StorageBackend::rename(&cached, "cache_folder", "renamed_folder").await.is_ok());
+        assert!(cloud_sync_core::StorageBackend::copy(&cached, "f1.txt", "copied_f1.txt").await.is_ok());
+        assert!(cloud_sync_core::StorageBackend::delete(&cached, "copied_f1.txt").await.is_ok());
+
+        assert_eq!(cached.name(), "CachedSim");
+        assert!(cached.capabilities().contains(StorageCapabilities::NONE));
+        assert!(!cached.is_simulated());
+        assert_eq!(cached.simulation_reason(), None);
+        assert!(cached.as_server_side_ops().is_some());
+        assert!(cached.as_change_feed().is_none());
+        assert!(cached.as_resumable_uploader().is_some());
+
+        let layer = CacheLayer::new(Duration::from_secs(10));
+        let wrapped = layer.layer(sim);
+        assert_eq!(wrapped.name(), "CachedSim");
     }
 }

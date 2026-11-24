@@ -153,3 +153,137 @@ impl DirectoryScanner {
         Ok(files)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cloud_sync_lib::{StorageCapabilities, StorageItem};
+    use tempfile::tempdir;
+
+    struct MockScannerBackend {
+        items: Vec<StorageItem>,
+        fail_not_found: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl StorageBackend for MockScannerBackend {
+        fn name(&self) -> &str {
+            "mock-scanner"
+        }
+        fn capabilities(&self) -> StorageCapabilities {
+            StorageCapabilities::NONE
+        }
+        async fn upload(&self, _local: &Path, _remote: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn download(&self, _remote: &str, _local: &Path) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn delete(&self, _remote: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn list(&self, remote_path: &str) -> Result<Vec<StorageItem>, StorageError> {
+            if self.fail_not_found {
+                return Err(StorageError::NotFound("not found".to_string()));
+            }
+            if remote_path.is_empty() {
+                Ok(self.items.clone())
+            } else {
+                Ok(vec![])
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_scan_local_and_filters() {
+        let temp_dir = tempdir().unwrap();
+        let watch_dir = temp_dir.path().join("watch");
+
+        let gitignore = cloud_sync_lib::SyncIgnore::new(&watch_dir, &[]);
+        let filter = FileFilter::new(&gitignore, None);
+
+        // 1. Non-existent watch dir returns empty map
+        let empty = DirectoryScanner::scan_local(&watch_dir, &filter).await.unwrap();
+        assert!(empty.is_empty());
+
+        // 2. Create watch directory structure
+        tokio::fs::create_dir_all(&watch_dir).await.unwrap();
+        let sub_dir = watch_dir.join("subfolder");
+        tokio::fs::create_dir_all(&sub_dir).await.unwrap();
+
+        let file1 = watch_dir.join("file1.txt");
+        let file2 = sub_dir.join("file2.txt");
+        let state_file = watch_dir.join(".sync_state_test.bin");
+        tokio::fs::write(&file1, b"hello").await.unwrap();
+        tokio::fs::write(&file2, b"world!").await.unwrap();
+        tokio::fs::write(&state_file, b"state").await.unwrap();
+
+        let scanned = DirectoryScanner::scan_local(&watch_dir, &filter).await.unwrap();
+        assert!(scanned.contains_key("subfolder"));
+        assert!(scanned.contains_key("file1.txt"));
+        assert!(scanned.contains_key("subfolder/file2.txt"));
+        assert!(!scanned.contains_key(".sync_state_test.bin")); // filtered out
+
+        assert!(scanned.get("subfolder").unwrap().is_dir);
+        assert!(!scanned.get("file1.txt").unwrap().is_dir);
+        assert_eq!(scanned.get("file1.txt").unwrap().size, 5);
+    }
+
+    #[tokio::test]
+    async fn test_scan_remote_and_filters() {
+        let temp_dir = tempdir().unwrap();
+        let gitignore = cloud_sync_lib::SyncIgnore::new(temp_dir.path(), &[]);
+        let filter = FileFilter::new(&gitignore, None);
+
+        // 1. Remote list returning NotFound
+        let not_found_backend = MockScannerBackend {
+            items: vec![],
+            fail_not_found: true,
+        };
+        let res = DirectoryScanner::scan_remote(&not_found_backend, &filter).await.unwrap();
+        assert!(res.is_empty());
+
+        // 2. Remote list returning folder and file
+        let items = vec![
+            StorageItem {
+                path: std::path::PathBuf::from("docs"),
+                size: 0,
+                modified: SystemTime::now(),
+                is_dir: true,
+                checksum: None,
+                permissions: None,
+            },
+            StorageItem {
+                path: std::path::PathBuf::from("report.pdf"),
+                size: 1024,
+                modified: SystemTime::now(),
+                is_dir: false,
+                checksum: Some("chk123".to_string()),
+                permissions: Some(0o644),
+            },
+            StorageItem {
+                path: std::path::PathBuf::from(".sync_state_remote.bin"),
+                size: 50,
+                modified: SystemTime::now(),
+                is_dir: false,
+                checksum: None,
+                permissions: None,
+            },
+        ];
+
+        let backend = MockScannerBackend {
+            items,
+            fail_not_found: false,
+        };
+
+        let remote_scanned = DirectoryScanner::scan_remote(&backend, &filter).await.unwrap();
+        assert!(remote_scanned.contains_key("docs"));
+        assert!(remote_scanned.contains_key("report.pdf"));
+        assert!(!remote_scanned.contains_key(".sync_state_remote.bin"));
+        assert_eq!(remote_scanned.get("report.pdf").unwrap().size, 1024);
+        assert_eq!(
+            remote_scanned.get("report.pdf").unwrap().checksum.as_deref(),
+            Some("chk123")
+        );
+    }
+}

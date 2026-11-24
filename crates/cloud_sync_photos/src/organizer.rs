@@ -59,3 +59,60 @@ pub fn generate_remote_path(item: &MediaItem, strategy: OrganizeStrategy) -> Str
         OrganizeStrategy::Flat => item.file_name.clone(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{ExifMetadata, MediaType};
+    use chrono::{TimeZone, Utc};
+
+    fn make_item(name: &str, hash: &str, year: i32, month: u32, day: u32) -> MediaItem {
+        let dt = Utc.with_ymd_and_hms(year, month, day, 12, 0, 0).unwrap();
+        MediaItem {
+            id: hash.to_string(),
+            file_name: name.to_string(),
+            local_path: format!("/tmp/{}", name),
+            remote_path: None,
+            size_bytes: 1024,
+            sha256_hash: hash.to_string(),
+            media_type: MediaType::Photo,
+            mime_type: "image/jpeg".to_string(),
+            date_taken: dt,
+            modified_at: dt,
+            exif: ExifMetadata::default(),
+            album_ids: Vec::new(),
+            is_favorite: false,
+            tags: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_organize_strategies() {
+        let item = make_item("photo.jpg", "abcdef0123456789", 2026, 11, 24);
+
+        assert_eq!(
+            OrganizeStrategy::YearMonth.organize_path(&item),
+            "2026/11/photo.jpg"
+        );
+        assert_eq!(
+            OrganizeStrategy::YearMonthDay.organize_path(&item),
+            "2026/11/24/photo.jpg"
+        );
+        assert_eq!(
+            OrganizeStrategy::ChronologicalHash.organize_path(&item),
+            "2026/11/abcdef01_photo.jpg"
+        );
+        assert_eq!(
+            OrganizeStrategy::Flat.organize_path(&item),
+            "photo.jpg"
+        );
+        assert_eq!(OrganizeStrategy::default(), OrganizeStrategy::YearMonth);
+
+        // Short hash fallback
+        let short_hash_item = make_item("pic.png", "abc", 2025, 5, 1);
+        assert_eq!(
+            OrganizeStrategy::ChronologicalHash.organize_path(&short_hash_item),
+            "2025/05/abc_pic.png"
+        );
+    }
+}

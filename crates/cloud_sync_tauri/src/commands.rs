@@ -1203,4 +1203,51 @@ mod tests {
         assert!(!listing.current.is_empty());
         assert!(!listing.presets.is_empty());
     }
+
+    #[test]
+    fn test_sanitize_app_config_value_conflict_policy() {
+        let test_cases = vec![
+            ("", "rename-local"),
+            ("rename-local", "rename-local"),
+            ("renamelocal", "rename-local"),
+            ("rename-remote", "rename-remote"),
+            ("renameremote", "rename-remote"),
+            ("keep-newer", "keep-newer"),
+            ("keepnewer", "keep-newer"),
+            ("keep-local", "keep-local"),
+            ("keeplocal", "keep-local"),
+            ("overwrite-remote", "keep-local"),
+            ("keep-remote", "keep-remote"),
+            ("overwrite-local", "keep-remote"),
+            ("manual", "manual"),
+            ("invalid_policy_fallback", "rename-local"),
+        ];
+
+        for (input_policy, expected) in test_cases {
+            let val = serde_json::json!({
+                "conflict_policy": input_policy,
+                "watch_directory": "/tmp/test",
+            });
+            let sanitized = sanitize_app_config_value(val).expect("sanitization ok");
+            let serialized = serde_json::to_string(&sanitized.conflict_policy).unwrap();
+            let expected_quoted = format!("\"{}\"", expected);
+            assert_eq!(serialized, expected_quoted, "Failed for input: {}", input_policy);
+        }
+    }
+
+    #[test]
+    fn test_sanitize_app_config_value_clean_empty_credentials() {
+        let val = serde_json::json!({
+            "watch_directory": "/tmp/test",
+            "google_credentials": {},
+            "dropbox_credentials": { "refresh_token": "" },
+            "s3_credentials": { "bucket": "", "region": "" },
+            "conflict_policy": "keep-newer",
+        });
+
+        let sanitized = sanitize_app_config_value(val).expect("sanitization ok");
+        assert!(sanitized.google_credentials.is_none());
+        assert!(sanitized.dropbox_credentials.is_none());
+        assert!(sanitized.s3_credentials.is_none());
+    }
 }

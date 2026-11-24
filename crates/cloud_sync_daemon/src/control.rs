@@ -832,3 +832,276 @@ impl DaemonControlServer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cloud_sync_lib::{
+        ConflictPolicy, StorageBackend, StorageCapabilities, StorageError, StorageItem,
+        SyncIgnore, SyncPolicy,
+    };
+    use crate::ActiveBackend;
+    use std::collections::HashMap;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    struct MockControlBackend {
+        name: String,
+        simulated: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl StorageBackend for MockControlBackend {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn capabilities(&self) -> StorageCapabilities {
+            StorageCapabilities::NONE
+        }
+        fn is_simulated(&self) -> bool {
+            self.simulated
+        }
+        fn simulation_reason(&self) -> Option<String> {
+            if self.simulated {
+                Some("Test simulation".to_string())
+            } else {
+                None
+            }
+        }
+        async fn upload(&self, _local: &Path, _remote: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn download(&self, _remote: &str, local: &Path) -> Result<(), StorageError> {
+            if let Some(p) = local.parent() {
+                let _ = tokio::fs::create_dir_all(p).await;
+            }
+            tokio::fs::write(local, b"mock content")
+                .await
+                .map_err(StorageError::Io)?;
+            Ok(())
+        }
+        async fn delete(&self, _remote: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+        async fn list(&self, _remote: &str) -> Result<Vec<StorageItem>, StorageError> {
+            Ok(vec![])
+        }
+    }
+
+    fn create_test_state(temp_path: &Path) -> (Arc<Mutex<DaemonState>>, mpsc::Sender<()>, mpsc::Receiver<()>) {
+        let (event_tx, _) = tokio::sync::broadcast::channel(16);
+        let (shutdown_tx, shutdown_rx) = mpsc::channel(2);
+
+        let watch_dir = temp_path.join("watch");
+        let state_dir = temp_path.join("state");
+        let log_file = temp_path.join("daemon.log");
+        let config_file = temp_path.join("config.toml");
+
+        let backend1 = Arc::new(MockControlBackend {
+            name: "MockCloud".to_string(),
+            simulated: false,
+        });
+        let backend2 = Arc::new(MockControlBackend {
+            name: "MockSim".to_string(),
+            simulated: true,
+        });
+
+        let mut connection_errors = HashMap::new();
+        connection_errors.insert("FailedCloud".to_string(), "Auth failed".to_string());
+
+        let state = Arc::new(Mutex::new(DaemonState {
+            paused: false,
+            backends: vec![
+                ActiveBackend {
+                    backend: backend1,
+                    policy: SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+                    selective_sync: None,
+                },
+                ActiveBackend {
+                    backend: backend2,
+                    policy: SyncPolicy::new(cloud_sync_lib::SyncMode::TwoWay),
+                    selective_sync: None,
+                },
+            ],
+            watch_dir: watch_dir.clone(),
+            config_file: config_file.to_string_lossy().to_string(),
+            syncing: false,
+            ui_addr: Some("127.0.0.1:8080".to_string()),
+            gitignore: SyncIgnore::new(&watch_dir, &[]),
+            exclude: None,
+            upload_limiter: None,
+            download_limiter: None,
+            max_concurrency: 4,
+            connection_errors,
+            conflict_policy: ConflictPolicy::RenameLocal,
+            dry_run: false,
+            event_tx,
+            conflict_manager: crate::engine::conflict::ConflictManager::new(),
+            log_file: log_file.to_string_lossy().to_string(),
+            state_dir,
+        }));
+
+        (state, shutdown_tx, shutdown_rx)
+    }
+
+    #[tokio::test]
+    async fn test_empty_and_unknown_commands() {
+        let temp = tempdir().unwrap();
+        let (state, shutdown_tx, _) = create_test_state(temp.path());
+
+        let resp_empty = handle_control_command("", &state, &shutdown_tx).await;
+        assert!(resp_empty.contains("Error: Empty command"));
+
+        let resp_unknown = handle_control_command("invalid_command_xyz", &state, &shutdown_tx).await;
+        assert!(resp_unknown.contains("Error: Unknown command"));
+    }
+
+    #[tokio::test]
+    async fn test_lifecycle_commands() {
+        let temp = tempdir().unwrap();
+        let (state, shutdown_tx, mut shutdown_rx) = create_test_state(temp.path());
+
+        // 1. Status command
+        let resp_status = handle_control_command("status", &state, &shutdown_tx).await;
+        assert!(resp_status.contains("Status: OK"));
+        assert!(resp_status.contains("Active Backends: [\"MockCloud\", \"MockSim\"]"));
+        assert!(resp_status.contains("Simulated Backends: [\"MockSim\"]"));
+        assert!(resp_status.contains("Failed Backends: [\"FailedCloud\"]"));
+
+        // 2. Pause and resume
+        let resp_pause = handle_control_command("pause", &state, &shutdown_tx).await;
+        assert!(resp_pause.contains("Status: Paused"));
+        assert!(state.lock().await.paused);
+
+        let resp_resume = handle_control_command("resume", &state, &shutdown_tx).await;
+        assert!(resp_resume.contains("Status: Resumed"));
+        assert!(!state.lock().await.paused);
+
+        // 3. Log commands
+        let resp_log_missing = handle_control_command("get_log", &state, &shutdown_tx).await;
+        assert!(resp_log_missing.contains("Status: Error"));
+
+        let log_file_path = state.lock().await.log_file.clone();
+        tokio::fs::write(&log_file_path, "Log line 1\nLog line 2").await.unwrap();
+        let resp_log = handle_control_command("log", &state, &shutdown_tx).await;
+        assert!(resp_log.contains("Status: OK"));
+        assert!(resp_log.contains("Log line 1"));
+
+        // 4. Sync command
+        let resp_sync = handle_control_command("sync", &state, &shutdown_tx).await;
+        assert!(resp_sync.contains("Status: Sync triggered"));
+
+        // 5. Clear command
+        let resp_clear_missing = handle_control_command("clear", &state, &shutdown_tx).await;
+        assert!(resp_clear_missing.contains("Error: clear command requires a provider name"));
+
+        let resp_clear_unknown = handle_control_command("clear UnknownProvider", &state, &shutdown_tx).await;
+        assert!(resp_clear_unknown.contains("Error: No enabled provider found"));
+
+        let resp_clear_ok = handle_control_command("clear MockCloud", &state, &shutdown_tx).await;
+        assert!(resp_clear_ok.contains("Status: Successfully cleared remote provider"));
+
+        // 6. Stop command
+        let resp_stop = handle_control_command("stop", &state, &shutdown_tx).await;
+        assert!(resp_stop.contains("Status: Stopping daemon"));
+        assert!(shutdown_rx.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_conflict_and_plan_commands() {
+        let temp = tempdir().unwrap();
+        let (state, shutdown_tx, _) = create_test_state(temp.path());
+
+        // 1. Conflicts empty
+        let resp_conflicts = handle_control_command("conflicts", &state, &shutdown_tx).await;
+        assert_eq!(resp_conflicts.trim(), "[]");
+
+        // 2. Resolve conflict with missing args
+        let resp_res_missing = handle_control_command("resolve_conflict", &state, &shutdown_tx).await;
+        assert!(resp_res_missing.contains("Error: resolve_conflict requires <path> and <resolution>"));
+
+        let resp_res_bad_res = handle_control_command("resolve_conflict test.txt bad_mode", &state, &shutdown_tx).await;
+        assert!(resp_res_bad_res.contains("Error: Unknown resolution"));
+
+        // 3. Resolutions: skip, use_local, use_remote, keep_both
+        let resp_skip = handle_control_command("resolve_conflict file.txt skip", &state, &shutdown_tx).await;
+        assert!(resp_skip.contains("Status: Conflict dismissed"));
+
+        let watch_dir = state.lock().await.watch_dir.clone();
+        tokio::fs::create_dir_all(&watch_dir).await.unwrap();
+        let local_file = watch_dir.join("doc.txt");
+        tokio::fs::write(&local_file, b"local data").await.unwrap();
+
+        let resp_use_local = handle_control_command("resolve_conflict doc.txt use_local", &state, &shutdown_tx).await;
+        assert!(resp_use_local.contains("Status: Conflict resolved (use_local)"));
+
+        let resp_use_remote = handle_control_command("resolve_conflict doc.txt use_remote", &state, &shutdown_tx).await;
+        assert!(resp_use_remote.contains("Status: Conflict resolved (use_remote)"));
+
+        let resp_keep_both = handle_control_command("resolve_conflict doc.txt keep_both", &state, &shutdown_tx).await;
+        assert!(resp_keep_both.contains("Status: Conflict resolved (keep_both)"));
+
+        // 4. Plan commands
+        let resp_plan = handle_control_command("plan", &state, &shutdown_tx).await;
+        assert!(resp_plan.starts_with('['));
+    }
+
+    #[tokio::test]
+    async fn test_diagnostics_and_storage_ops() {
+        let temp = tempdir().unwrap();
+        let (state, shutdown_tx, _) = create_test_state(temp.path());
+
+        // 1. Verify / check
+        let resp_verify = handle_control_command("verify --checksum", &state, &shutdown_tx).await;
+        assert!(resp_verify.starts_with('['));
+
+        // 2. Dedupe
+        let resp_dedupe = handle_control_command("dedupe", &state, &shutdown_tx).await;
+        assert!(resp_dedupe.starts_with('['));
+
+        // 3. Stats / size
+        let resp_stats = handle_control_command("stats", &state, &shutdown_tx).await;
+        assert!(resp_stats.starts_with('['));
+
+        // 4. Tree
+        let resp_tree = handle_control_command("tree 2", &state, &shutdown_tx).await;
+        assert!(resp_tree.starts_with('['));
+
+        // 5. Trash commands
+        let resp_trash = handle_control_command("trash", &state, &shutdown_tx).await;
+        assert!(resp_trash.starts_with('['));
+
+        let resp_trash_restore_missing = handle_control_command("trash_restore", &state, &shutdown_tx).await;
+        assert!(resp_trash_restore_missing.contains("Error: trash_restore requires <archive_id>"));
+
+        let resp_trash_restore_fail = handle_control_command("trash_restore bogus_id", &state, &shutdown_tx).await;
+        assert!(resp_trash_restore_fail.contains("Error: Failed to restore version"));
+
+        // 6. Transfer command
+        let resp_transfer_missing = handle_control_command("transfer", &state, &shutdown_tx).await;
+        assert!(resp_transfer_missing.contains("Error: transfer requires <source_backend> <dest_backend>"));
+
+        let resp_transfer_missing_backend = handle_control_command("transfer non_existent1 non_existent2", &state, &shutdown_tx).await;
+        assert!(resp_transfer_missing_backend.contains("Error: Could not find active source"));
+
+        let resp_transfer_ok = handle_control_command("transfer mockcloud mocksim", &state, &shutdown_tx).await;
+        assert!(resp_transfer_ok.contains('{'));
+
+        // 7. Snapshots
+        let resp_snap = handle_control_command("snapshot manual_test", &state, &shutdown_tx).await;
+        assert!(resp_snap.starts_with('['));
+
+        let resp_snap_list = handle_control_command("snapshots", &state, &shutdown_tx).await;
+        assert!(resp_snap_list.starts_with('['));
+
+        let resp_snap_restore_missing = handle_control_command("snapshot_restore", &state, &shutdown_tx).await;
+        assert!(resp_snap_restore_missing.contains("Error: snapshot_restore requires <snapshot_id>"));
+
+        let resp_snap_restore_not_found = handle_control_command("snapshot_restore non_existent_snap", &state, &shutdown_tx).await;
+        assert!(resp_snap_restore_not_found.contains("Error: Snapshot 'non_existent_snap' not found"));
+
+        // 8. Server constructor
+        let server = DaemonControlServer::new("127.0.0.1:9099");
+        assert_eq!(server.bind_addr(), "127.0.0.1:9099");
+    }
+}

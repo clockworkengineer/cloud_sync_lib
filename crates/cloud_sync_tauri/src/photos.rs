@@ -179,3 +179,17 @@ pub async fn photos_get_stats() -> Result<LibraryStats, String> {
     let library = get_or_init_photo_library(&config).await?;
     Ok(library.get_stats().await)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_paths_default() {
+        let p_cfg = get_photos_config_path();
+        assert!(p_cfg.to_string_lossy().contains("photos_config.toml"));
+
+        let p_cat = get_photos_catalog_path();
+        assert!(p_cat.to_string_lossy().contains("photos_catalog.json"));
+    }
+}

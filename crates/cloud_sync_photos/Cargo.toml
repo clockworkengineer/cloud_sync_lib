@@ -16,7 +16,7 @@ workspace = true
 cloud_sync_core = { path = "../cloud_sync_core", version = "0.3.0" }
 cloud_sync_std = { path = "../cloud_sync_std", version = "0.3.0" }
 cloud_sync_lib = { path = "../cloud_sync_lib", version = "0.3.0", default-features = false }
-tokio = { workspace = true, features = ["fs", "rt", "sync", "time", "macros"] }
+tokio = { workspace = true, features = ["fs", "rt", "rt-multi-thread", "sync", "time", "macros"] }
 async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

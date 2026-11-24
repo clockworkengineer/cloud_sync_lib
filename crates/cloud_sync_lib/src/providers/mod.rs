@@ -646,7 +646,7 @@ impl BackendCredentials {
     }
 
     /// Returns `true` if the primary credential secret/token still holds an unconfigured placeholder string (SRP & OCP).
-    #[allow(unreachable_patterns)]
+    #[allow(unreachable_patterns, unused_variables)]
     pub fn has_placeholder_secret(&self) -> bool {
         let is_placeholder = |val: &str| -> bool {
             val.is_empty()
@@ -950,5 +950,86 @@ impl BackendRegistry {
         sim_root: std::path::PathBuf,
     ) -> Arc<dyn StorageBackend> {
         Self::build_wrapped(creds, sim_root, None, None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[allow(unused_imports)]
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_sync_mode_methods() {
+        use cloud_sync_core::SyncPolicy;
+        assert!(SyncPolicy::new(SyncMode::TwoWay).sync_deletions());
+        assert!(SyncPolicy::new(SyncMode::TwoWay).sync_both());
+
+        assert!(SyncPolicy::new(SyncMode::OneWay).sync_deletions());
+        assert!(!SyncPolicy::new(SyncMode::OneWay).sync_both());
+
+        assert!(!SyncPolicy::new(SyncMode::OneWayNoDeletions).sync_deletions());
+        assert!(!SyncPolicy::new(SyncMode::OneWayNoDeletions).sync_both());
+    }
+
+    #[test]
+    fn test_backend_credentials_placeholder_and_helpers() {
+        #[cfg(feature = "google_drive")]
+        {
+            let ph = BackendCredentials::GoogleDrive(OAuthCredentials {
+                client_id: String::new(),
+                client_secret: String::new(),
+                refresh_token: "PLACEHOLDER_TOKEN".to_string(),
+                common: CommonProviderSettings::default(),
+            });
+            assert!(ph.has_placeholder_secret());
+
+            let real = BackendCredentials::GoogleDrive(OAuthCredentials {
+                client_id: String::new(),
+                client_secret: String::new(),
+                refresh_token: "actual_real_token_12345".to_string(),
+                common: CommonProviderSettings::default(),
+            });
+            assert!(!real.has_placeholder_secret());
+        }
+
+        #[cfg(feature = "s3")]
+        {
+            let ph = BackendCredentials::S3(S3Credentials {
+                bucket: "my-bucket".to_string(),
+                region: "us-east-1".to_string(),
+                endpoint: None,
+                access_key_id: "KEY".to_string(),
+                secret_access_key: "PLACEHOLDER_KEY".to_string(),
+                common: CommonProviderSettings::default(),
+            });
+            assert!(ph.has_placeholder_secret());
+        }
+    }
+
+    #[test]
+    fn test_backend_registry_build_wrapped_with_layers() {
+        #[cfg(feature = "google_drive")]
+        {
+            let mut creds = OAuthCredentials {
+                client_id: String::new(),
+                client_secret: String::new(),
+                refresh_token: "dummy".to_string(),
+                common: CommonProviderSettings::default(),
+            };
+            creds.common.encryption_password = Some("test_password".to_string());
+            creds.common.compress = Some(true);
+            creds.common.chunk_size_kb = Some(1024);
+            creds.common.cache_ttl_secs = Some(60);
+            creds.common.max_upload_rate = Some(500);
+            creds.common.max_download_rate = Some(500);
+
+            let backend = BackendRegistry::create_backend(
+                BackendCredentials::GoogleDrive(creds),
+                PathBuf::from("sim_dir"),
+            );
+            assert_eq!(backend.name(), "Encrypted(Google Drive)");
+            assert!(!backend.is_simulated());
+        }
     }
 }

@@ -738,6 +738,26 @@ mod tests {
         let policy_no_del = SyncPolicy::new(SyncMode::OneWayNoDeletions);
         assert!(!policy_no_del.sync_deletions());
         assert!(!policy_no_del.sync_both());
+
+        // Test ConflictPolicy defaults and variants
+        assert_eq!(ConflictPolicy::default(), ConflictPolicy::RenameLocal);
+        let cp_json = serde_json::to_string(&ConflictPolicy::KeepRemote).unwrap();
+        assert_eq!(cp_json, "\"keep-remote\"");
+        let cp_deser: ConflictPolicy = serde_json::from_str("\"\"").unwrap();
+        assert_eq!(cp_deser, ConflictPolicy::RenameLocal);
+
+        let cp_keep_local: ConflictPolicy = serde_json::from_str("\"keep-local\"").unwrap();
+        assert_eq!(cp_keep_local, ConflictPolicy::KeepLocal);
+        let cp_keep_newer: ConflictPolicy = serde_json::from_str("\"keep-newer\"").unwrap();
+        assert_eq!(cp_keep_newer, ConflictPolicy::KeepNewer);
+        let cp_rename_remote: ConflictPolicy = serde_json::from_str("\"rename-remote\"").unwrap();
+        assert_eq!(cp_rename_remote, ConflictPolicy::RenameRemote);
+        let cp_manual: ConflictPolicy = serde_json::from_str("\"manual\"").unwrap();
+        assert_eq!(cp_manual, ConflictPolicy::Manual);
+
+        // Test SyncMode clone and eq
+        let mode = SyncMode::TwoWay;
+        assert_eq!(mode.clone(), SyncMode::TwoWay);
     }
 
     #[tokio::test]
@@ -785,6 +805,19 @@ mod tests {
         assert!(arc.as_server_side_ops().is_none());
         assert!(arc.as_change_feed().is_none());
         assert!(arc.as_resumable_uploader().is_none());
+        assert_eq!(arc.get_latest_cursor().await.unwrap(), None);
+        assert_eq!(arc.fetch_changes("cursor").await.unwrap(), None);
+        assert!(!arc.is_simulated());
+        assert_eq!(arc.simulation_reason(), None);
+
+        // Also test boxed delegations
+        assert!(boxed.as_server_side_ops().is_none());
+        assert!(boxed.as_change_feed().is_none());
+        assert!(boxed.as_resumable_uploader().is_none());
+        assert_eq!(boxed.get_latest_cursor().await.unwrap(), None);
+        assert_eq!(boxed.fetch_changes("cursor").await.unwrap(), None);
+        assert!(!boxed.is_simulated());
+        assert_eq!(boxed.simulation_reason(), None);
     }
 
     struct AdvancedBackend;
@@ -876,6 +909,35 @@ mod tests {
         }
 
         let concrete = AdvancedBackend;
+        assert_eq!(concrete.name(), "advanced");
+        assert!(concrete.capabilities().contains(StorageCapabilities::SERVER_SIDE_MOVE));
+        assert!(concrete.delete("").await.is_ok());
+
+        let boxed_adv: Box<dyn StorageBackend> = Box::new(AdvancedBackend);
+        assert_eq!(boxed_adv.name(), "advanced");
+        assert!(boxed_adv.capabilities().contains(StorageCapabilities::SERVER_SIDE_MOVE));
+        assert!(boxed_adv.as_server_side_ops().is_some());
+        assert!(boxed_adv.as_change_feed().is_some());
+        assert!(boxed_adv.as_resumable_uploader().is_none());
+        assert_eq!(boxed_adv.get_latest_cursor().await.unwrap(), None);
+        assert_eq!(boxed_adv.as_change_feed().unwrap().get_latest_cursor().await.unwrap().as_deref(), Some("cursor_123"));
+        assert!(boxed_adv.fetch_changes("").await.unwrap().is_none());
+        assert!(!boxed_adv.is_simulated());
+        assert_eq!(boxed_adv.simulation_reason(), None);
+        assert!(boxed_adv.delete("").await.is_ok());
+
+        let arc_adv: Arc<dyn StorageBackend> = Arc::new(AdvancedBackend);
+        assert_eq!(arc_adv.name(), "advanced");
+        assert!(arc_adv.as_server_side_ops().is_some());
+        assert!(arc_adv.as_change_feed().is_some());
+        assert!(arc_adv.as_resumable_uploader().is_none());
+        assert_eq!(arc_adv.get_latest_cursor().await.unwrap(), None);
+        assert_eq!(arc_adv.as_change_feed().unwrap().get_latest_cursor().await.unwrap().as_deref(), Some("cursor_123"));
+        assert!(arc_adv.fetch_changes("").await.unwrap().is_none());
+        assert!(!arc_adv.is_simulated());
+        assert_eq!(arc_adv.simulation_reason(), None);
+        assert!(arc_adv.delete("").await.is_ok());
+
         let seg = SegregatedBackend::new(&concrete);
         assert!(list_only(&seg).await.is_ok());
         assert!(read_only(&seg).await.is_ok());
@@ -901,15 +963,42 @@ mod tests {
         let union_caps = caps.union(StorageCapabilities::SERVER_SIDE_COPY);
         assert!(union_caps.contains(StorageCapabilities::SERVER_SIDE_MOVE));
         assert!(union_caps.contains(StorageCapabilities::SERVER_SIDE_COPY));
+
+        // Test bitwise ops: &, &=, !
+        let and_caps = union_caps & StorageCapabilities::SERVER_SIDE_MOVE;
+        assert!(and_caps.contains(StorageCapabilities::SERVER_SIDE_MOVE));
+        assert!(!and_caps.contains(StorageCapabilities::SERVER_SIDE_COPY));
+
+        let mut assign_caps = union_caps;
+        assign_caps &= StorageCapabilities::SERVER_SIDE_MOVE;
+        assert_eq!(assign_caps, and_caps);
+
+        let not_caps = !StorageCapabilities::NONE;
+        assert!(not_caps.contains(StorageCapabilities::SERVER_SIDE_MOVE));
     }
 
     #[test]
     fn test_storage_error_display() {
         let err = StorageError::Authentication("failed".to_string());
         assert!(err.to_string().contains("Authentication failed"));
+        assert!(err.is_auth());
+        assert!(err.is_auth_expired());
+        assert!(!err.is_transient());
 
         let err = StorageError::NotFound("lost".to_string());
         assert!(err.to_string().contains("Resource not found"));
+        assert!(err.is_not_found());
+
+        let err_retry = StorageError::RateLimit {
+            message: "slow down".to_string(),
+            #[cfg(feature = "std")]
+            retry_after: Some(std::time::Duration::from_secs(60)),
+        };
+        assert!(err_retry.to_string().contains("Rate limit exceeded"));
+        assert!(err_retry.is_rate_limited());
+        assert!(err_retry.is_transient());
+        #[cfg(feature = "std")]
+        assert_eq!(err_retry.retry_after(), Some(std::time::Duration::from_secs(60)));
 
         let err = StorageError::RateLimit {
             message: "slow down".to_string(),
@@ -917,21 +1006,46 @@ mod tests {
             retry_after: None,
         };
         assert!(err.to_string().contains("Rate limit exceeded"));
+        #[cfg(feature = "std")]
+        assert_eq!(err.retry_after(), None);
 
         let err = StorageError::Provider {
             message: "fail".to_string(),
             status: Some(500),
         };
         assert!(err.to_string().contains("status: Some(500)"));
+        assert!(err.is_transient());
+
+        let err_429 = StorageError::Provider {
+            message: "too many requests".to_string(),
+            status: Some(429),
+        };
+        assert!(err_429.is_transient());
+
+        let err_400 = StorageError::Provider {
+            message: "bad request".to_string(),
+            status: Some(400),
+        };
+        assert!(!err_400.is_transient());
+
+        let err = StorageError::Provider {
+            message: "provider error without status".to_string(),
+            status: None,
+        };
+        assert!(err.to_string().contains("provider error without status"));
+        assert!(!err.is_transient());
 
         let err = StorageError::AuthenticationExpired("expired".to_string());
         assert!(err.to_string().contains("Authentication expired"));
+        assert!(err.is_auth());
 
         let err = StorageError::Conflict("conflict".to_string());
         assert!(err.to_string().contains("Conflict"));
+        assert!(err.is_conflict());
 
         let err = StorageError::ConnectionFailed("disconnect".to_string());
         assert!(err.to_string().contains("Connection failed"));
+        assert!(err.is_transient());
 
         #[cfg(feature = "std")]
         {

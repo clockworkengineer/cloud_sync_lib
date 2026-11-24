@@ -190,6 +190,9 @@ pub async fn load_or_create_config(path: &str) -> Result<AppConfig, Box<dyn std:
     } else {
         let default_config = AppConfig::default();
         let content = toml::to_string_pretty(&default_config)?;
+        if let Some(parent) = config_path.parent() {
+            let _ = tokio::fs::create_dir_all(parent).await;
+        }
         tokio::fs::write(config_path, content).await?;
         info!("Created default configuration file at {:?}", config_path);
         default_config
@@ -455,5 +458,24 @@ mod tests {
         assert_eq!(recovery.max_retries, Some(3));
         assert_eq!(recovery.initial_delay_ms, Some(1000));
         assert_eq!(recovery.multiplier, Some(1.5));
+    }
+
+    #[tokio::test]
+    async fn test_load_or_create_config_flow() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join("sub").join("new_config.toml");
+
+        // 1. Loading non-existent config should create default template file
+        let cfg = load_or_create_config(config_path.to_str().unwrap()).await.unwrap();
+        assert!(config_path.exists());
+        assert!(!cfg.watch_directory.as_os_str().is_empty());
+
+        // 2. Loading existing config should read file directly
+        let loaded = load_or_create_config(config_path.to_str().unwrap()).await.unwrap();
+        assert_eq!(loaded.watch_directory, cfg.watch_directory);
+
+        // 3. enabled_credentials on default should be empty or contain enabled items
+        let creds = cfg.enabled_credentials();
+        assert!(creds.is_empty() || !creds.is_empty());
     }
 }

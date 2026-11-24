@@ -562,4 +562,159 @@ mod tests {
         let remote_files = backend.list("batch").await.unwrap();
         assert_eq!(remote_files.len(), 8);
     }
+
+    #[tokio::test]
+    async fn test_plan_executor_all_actions_and_dry_run() {
+        let local_dir = tempdir().unwrap();
+        let remote_dir = tempdir().unwrap();
+
+        let backend: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(
+            remote_dir.path().to_path_buf(),
+            "actions_test".into(),
+        ));
+
+        // 1. Upload and Download
+        let test_file = local_dir.path().join("upload_me.txt");
+        tokio::fs::write(&test_file, b"test content").await.unwrap();
+
+        let download_dest = local_dir.path().join("downloaded.txt");
+        let plan_transfer = SyncPlan {
+            actions: vec![
+                SyncAction::Upload {
+                    local_path: test_file.clone(),
+                    remote_path: "uploaded.txt".to_string(),
+                    size: 12,
+                },
+            ],
+            ..Default::default()
+        };
+
+        let res_up = PlanExecutor::execute_with_watch_dir(
+            backend.clone(),
+            &plan_transfer,
+            Some(local_dir.path()),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_up.executed_actions, 1);
+        assert_eq!(res_up.bytes_uploaded, 12);
+
+        let plan_down = SyncPlan {
+            actions: vec![
+                SyncAction::Download {
+                    remote_path: "uploaded.txt".to_string(),
+                    local_path: download_dest.clone(),
+                    size: 12,
+                    checksum: None,
+                    permissions: None,
+                },
+            ],
+            ..Default::default()
+        };
+        let res_down = PlanExecutor::execute(backend.clone(), &plan_down, None, false)
+            .await
+            .unwrap();
+        assert_eq!(res_down.executed_actions, 1);
+        assert_eq!(res_down.bytes_downloaded, 12);
+        assert!(download_dest.exists());
+
+        // 2. ServerSideMove and ServerSideCopy
+        let plan_moves = SyncPlan {
+            actions: vec![
+                SyncAction::ServerSideCopy {
+                    from: "uploaded.txt".to_string(),
+                    to: "copied_remote.txt".to_string(),
+                },
+                SyncAction::ServerSideMove {
+                    from: "uploaded.txt".to_string(),
+                    to: "moved_remote.txt".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+        let res_moves = PlanExecutor::execute(backend.clone(), &plan_moves, None, false)
+            .await
+            .unwrap();
+        assert_eq!(res_moves.executed_actions, 2);
+
+        // 3. DeleteLocal and DeleteRemote
+        let plan_delete = SyncPlan {
+            actions: vec![
+                SyncAction::DeleteLocal {
+                    local_path: download_dest.clone(),
+                },
+                SyncAction::DeleteRemote {
+                    remote_path: "moved_remote.txt".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+        let res_del = PlanExecutor::execute(backend.clone(), &plan_delete, None, false)
+            .await
+            .unwrap();
+        assert_eq!(res_del.executed_actions, 2);
+        assert!(!download_dest.exists());
+
+        // 4. Conflicts handling
+        let conflict_file = local_dir.path().join("conflict.txt");
+        tokio::fs::write(&conflict_file, b"local conflict").await.unwrap();
+        backend.upload(&conflict_file, "conflict.txt").await.unwrap();
+
+        let plan_conflicts = SyncPlan {
+            actions: vec![
+                SyncAction::Conflict {
+                    rel_path: "conflict.txt".to_string(),
+                    action: ConflictResolutionAction::Skip,
+                },
+                SyncAction::Conflict {
+                    rel_path: "conflict.txt".to_string(),
+                    action: ConflictResolutionAction::RenameLocalAndDownloadRemote(
+                        "conflict.txt.local_copy".to_string(),
+                    ),
+                },
+                SyncAction::ConvergeState {
+                    rel_path: "conflict.txt".to_string(),
+                    state: cloud_sync_lib::FileState {
+                        size: 14,
+                        local_modified: std::time::SystemTime::now(),
+                        remote_modified: std::time::SystemTime::now(),
+                        is_dir: Some(false),
+                        checksum: None,
+                        permissions: None,
+                    },
+                },
+            ],
+            ..Default::default()
+        };
+        let res_conf = PlanExecutor::execute_with_watch_dir(
+            backend.clone(),
+            &plan_conflicts,
+            Some(local_dir.path()),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(res_conf.executed_actions, 3);
+        assert!(local_dir.path().join("conflict.txt.local_copy").exists());
+
+        // 5. Dry run execution
+        let dry_plan = SyncPlan {
+            actions: vec![
+                SyncAction::Upload {
+                    local_path: test_file.clone(),
+                    remote_path: "never_uploaded.txt".to_string(),
+                    size: 12,
+                },
+            ],
+            ..Default::default()
+        };
+        let res_dry = PlanExecutor::execute(backend.clone(), &dry_plan, None, true)
+            .await
+            .unwrap();
+        assert_eq!(res_dry.executed_actions, 1);
+        assert_eq!(res_dry.bytes_uploaded, 0); // No real bytes transferred during dry run
+    }
 }

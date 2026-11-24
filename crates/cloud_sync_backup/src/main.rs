@@ -302,7 +302,9 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
         let rel_path_lower = rel_path.to_lowercase();
         let should_copy = match dest_files_lower.get(&rel_path_lower) {
             Some(dest_item) => {
-                if let Some((last_size, last_modified, last_checksum)) =
+                if source_item.is_dir {
+                    false
+                } else if let Some((last_size, last_modified, last_checksum)) =
                     synced_history.get(&rel_path)
                 {
                     source_item.size != *last_size
@@ -538,4 +540,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_build_backend_local_and_error() {
+        let temp = tempdir().unwrap();
+        let cfg = BackupConfig {
+            backup: config::BackupSection {
+                source_provider: "local".into(),
+                source_path: Some(temp.path().to_string_lossy().to_string()),
+                destination_provider: "local".into(),
+                destination_path: Some(temp.path().to_string_lossy().to_string()),
+                backup_interval_secs: Some(30),
+            },
+            roots: Default::default(),
+            credentials: Default::default(),
+            exclude: None,
+            max_upload_rate: None,
+            max_download_rate: None,
+            max_concurrency: None,
+        };
+
+        // Local provider with valid path
+        let b1 = build_backend("local", Some(temp.path().to_str().unwrap()), &cfg);
+        assert!(b1.is_ok());
+
+        // Local provider without path
+        let b2 = build_backend("local", None, &cfg);
+        assert!(b2.is_err());
+
+        // Unknown provider
+        let b3 = build_backend("unsupported_cloud_xyz", None, &cfg);
+        assert!(b3.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_scan_and_perform_backup() {
+        let temp = tempdir().unwrap();
+        let src_dir = temp.path().join("source");
+        let dst_dir = temp.path().join("destination");
+
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::create_dir_all(&dst_dir).unwrap();
+
+        let sub = src_dir.join("subfolder");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("file1.txt"), b"backup test content 1").unwrap();
+        std::fs::write(src_dir.join("file2.txt"), b"backup test content 2").unwrap();
+
+        let source = LocalSimulation::new(src_dir, "Source".to_string());
+        let destination = LocalSimulation::new(dst_dir.clone(), "Destination".to_string());
+
+        let mut history = HashMap::new();
+
+        // Initial backup
+        let count = perform_backup(&source, &destination, &mut history)
+            .await
+            .expect("backup succeeded");
+        assert!(count >= 2);
+
+        // Files exist at destination
+        assert!(dst_dir.join("subfolder").join("file1.txt").exists());
+        assert!(dst_dir.join("file2.txt").exists());
+
+        // Second pass should copy 0 files
+        let count2 = perform_backup(&source, &destination, &mut history)
+            .await
+            .expect("backup rerun succeeded");
+        assert_eq!(count2, 0);
+    }
 }

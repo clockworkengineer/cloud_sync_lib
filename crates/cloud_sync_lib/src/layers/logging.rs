@@ -249,5 +249,20 @@ mod tests {
             .await
             .expect("delete should succeed");
         assert!(wrapped.list("logs").await.unwrap().is_empty());
+
+        // Test create_folder, rename, copy, capabilities, server_side_ops
+        assert!(wrapped.create_folder("new_folder").await.is_ok());
+        assert!(wrapped.rename("new_folder", "renamed_folder").await.is_ok());
+        wrapped.upload(&file_path, "logs/file_to_copy.txt").await.unwrap();
+        assert!(wrapped.copy("logs/file_to_copy.txt", "logs/test_copy.txt").await.is_ok());
+        assert!(wrapped.capabilities().contains(cloud_sync_core::StorageCapabilities::NONE));
+        assert!(wrapped.is_simulated());
+        assert!(wrapped.simulation_reason().is_some());
+        assert!(wrapped.compute_local_checksum(&file_path).await.is_ok());
+        assert!(wrapped.get_latest_cursor().await.is_ok());
+        assert!(wrapped.fetch_changes("cursor").await.is_ok());
+        assert!(wrapped.as_server_side_ops().is_some());
+        assert!(wrapped.as_change_feed().is_none());
+        assert!(wrapped.as_resumable_uploader().is_some());
     }
 }

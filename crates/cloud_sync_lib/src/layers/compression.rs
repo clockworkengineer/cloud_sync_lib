@@ -465,5 +465,20 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(tokio::fs::read(&dl_jpg).await.unwrap(), jpeg_payload);
+
+        // Test server side ops and delegations
+        assert_eq!(backend.name(), "TestSim");
+        assert!(backend.as_server_side_ops().is_some());
+        let sso = backend.as_server_side_ops().unwrap();
+        assert!(sso.copy("photos/photo.jpg", "photos/photo_copy.jpg").await.is_ok());
+        assert!(sso.rename("photos/photo_copy.jpg", "photos/photo_renamed.jpg").await.is_ok());
+        assert!(backend.delete("photos/photo_renamed.jpg").await.is_ok());
+
+        // Test decompress errors
+        assert!(lz_decompress(b"short", 100).is_err());
+        assert!(lz_decompress(&[0x81, 0xFF, 0xFF], 100).is_err());
+
+        // Default constructor
+        let _ = CompressionLayer::default();
     }
 }

@@ -279,6 +279,42 @@ mod tests {
     }
 
     #[test]
+    fn test_normalized_path_methods() {
+        let empty_path = NormalizedPath::empty();
+        assert!(empty_path.is_empty());
+        assert_eq!(empty_path.as_str(), "");
+        assert_eq!(&*empty_path, "");
+        assert_eq!(empty_path.as_ref(), "");
+        assert_eq!(format!("{}", empty_path), "");
+
+        let from_empty_str = NormalizedPath::new("").unwrap();
+        assert!(from_empty_str.is_empty());
+
+        let from_slash = NormalizedPath::new("/").unwrap();
+        assert!(from_slash.is_empty());
+
+        let p1 = NormalizedPath::new_unchecked("foo\\bar/baz");
+        assert_eq!(p1.as_str(), "foo/bar/baz");
+        assert_eq!(&*p1, "foo/bar/baz");
+        assert_eq!(p1.as_ref(), "foo/bar/baz");
+        assert_eq!(format!("{}", p1), "foo/bar/baz");
+        assert!(!p1.is_empty());
+
+        let from_str: NormalizedPath = "abc/def".into();
+        assert_eq!(from_str.as_str(), "abc/def");
+
+        let from_string: NormalizedPath = String::from("xyz/123").into();
+        assert_eq!(from_string.as_str(), "xyz/123");
+
+        // Test join
+        let joined_empty = empty_path.join("child/file.txt");
+        assert_eq!(joined_empty.as_str(), "child/file.txt");
+
+        let joined = p1.join("\\subfolder/item.txt/");
+        assert_eq!(joined.as_str(), "foo/bar/baz/subfolder/item.txt");
+    }
+
+    #[test]
     fn test_normalized_path_security() {
         // Valid paths with double dots in filename must be allowed
         assert!(NormalizedPath::new("backup..v1.tar").is_ok());
@@ -341,6 +377,9 @@ mod tests {
             Path::new("foo/bar.txt")
         );
         assert_eq!(strip_destination_prefix(p, None), p);
+        assert_eq!(strip_destination_prefix(p, Some("")), p);
+        assert_eq!(strip_destination_prefix(p, Some("/")), p);
+        assert_eq!(strip_destination_prefix(p, Some("other_dest")), p);
     }
 
     #[test]
@@ -353,6 +392,10 @@ mod tests {
         let (parent, filename) = get_parent_and_filename("baz.txt");
         assert_eq!(parent, "");
         assert_eq!(filename, "baz.txt");
+
+        let (parent, filename) = get_parent_and_filename("");
+        assert_eq!(parent, "");
+        assert_eq!(filename, "");
     }
 
     #[test]
@@ -374,9 +417,13 @@ mod tests {
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("perm.txt");
         std::fs::write(&file_path, "test").unwrap();
-        let metadata = std::fs::metadata(file_path).unwrap();
-        let perms = metadata.permissions();
+        let metadata = std::fs::metadata(&file_path).unwrap();
+        let mut perms = metadata.permissions();
         let mode = get_permissions(&perms);
         assert!(mode.is_some());
+
+        perms.set_readonly(true);
+        let ro_mode = get_permissions(&perms);
+        assert!(ro_mode.is_some());
     }
 }

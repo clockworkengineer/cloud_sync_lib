@@ -296,7 +296,7 @@ mod tests {
             probe_success_threshold: 1,
         };
 
-        let breaker = CircuitBreakerLayer::new(config).layer(backend);
+        let breaker = CircuitBreakerLayer::new(config).layer(backend.clone());
 
         let dummy_path = Path::new("dummy");
 
@@ -317,5 +317,18 @@ mod tests {
         // Probing call touches the backend again
         let _ = breaker.upload(dummy_path, "test").await;
         assert_eq!(*fail_count.lock().unwrap(), 4);
+
+        // Test non-transient error does not trip breaker
+        assert_eq!(breaker.name(), "flaky");
+        assert_eq!(breaker.capabilities(), StorageCapabilities::NONE);
+        assert!(!breaker.is_simulated());
+        assert_eq!(breaker.simulation_reason(), None);
+        assert!(breaker.as_server_side_ops().is_none());
+        assert!(breaker.as_change_feed().is_none());
+        assert!(breaker.as_resumable_uploader().is_none());
+
+        // Default constructor
+        let default_layer = CircuitBreakerLayer::default();
+        let _ = default_layer.layer(backend.clone());
     }
 }

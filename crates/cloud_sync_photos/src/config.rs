@@ -110,3 +110,35 @@ pub async fn instantiate_backend(
         .create_backend(provider, &json_val, sim_root)
         .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_photos_config_save_load_and_instantiate() {
+        let temp = tempdir().unwrap();
+        let config_file = temp.path().join("photos.toml");
+
+        let mut config = PhotosConfig::default();
+        config.source_folder = temp.path().join("Camera").to_string_lossy().to_string();
+        config.destination_provider = "local".to_string();
+        config.destination_folder = "Backup".to_string();
+
+        assert!(config.save_to_file(&config_file).is_ok());
+        assert!(config_file.exists());
+
+        let loaded = PhotosConfig::load_from_file(&config_file).unwrap();
+        assert_eq!(loaded.source_folder, config.source_folder);
+        assert_eq!(loaded.destination_provider, "local");
+        assert_eq!(loaded.destination_folder, "Backup");
+        assert!(loaded.auto_sync);
+        assert_eq!(loaded.sync_interval_mins, Some(60));
+
+        let mut settings = HashMap::new();
+        settings.insert("path".to_string(), temp.path().join("local_target").to_string_lossy().to_string());
+        let backend = instantiate_backend("local", &settings).await;
+        assert!(backend.is_ok());
+    }
+}

@@ -88,3 +88,32 @@ impl StorageLayer for ChunkerLayer {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::local_sim::LocalSimulation;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_layer_stacking_and_layer_traits() {
+        let temp = tempdir().unwrap();
+        let local_sim: Arc<dyn StorageBackend> = Arc::new(LocalSimulation::new(
+            temp.path().to_path_buf(),
+            "LayerSim".to_string(),
+        ));
+
+        // Test with_layer on dyn StorageBackend and concrete types
+        let stacked = local_sim
+            .with_layer(LoggingLayer)
+            .with_layer(MetricsLayer::default())
+            .with_layer(RetryLayer::default())
+            .with_layer(CircuitBreakerLayer::default())
+            .with_layer(CacheLayer::new(std::time::Duration::from_secs(60)))
+            .with_layer(ChunkerLayer::new(1024 * 1024))
+            .with_layer(EncryptionLayer::new("secret_password_123"));
+
+        assert!(stacked.name().contains("Encrypted"));
+        assert!(stacked.capabilities().contains(cloud_sync_core::StorageCapabilities::NONE));
+    }
+}

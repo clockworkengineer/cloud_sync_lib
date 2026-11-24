@@ -353,3 +353,134 @@ impl PhotoLibrary {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cloud_sync_lib::LocalSimulation;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_photo_library_sync_and_catalog() {
+        let temp = tempdir().unwrap();
+        let remote_dir = temp.path().join("remote");
+        let photos_dir = temp.path().join("photos");
+        let download_dir = temp.path().join("downloads");
+        let catalog_path = temp.path().join("catalog.json");
+
+        std::fs::create_dir_all(&remote_dir).unwrap();
+        std::fs::create_dir_all(&photos_dir).unwrap();
+        std::fs::create_dir_all(&download_dir).unwrap();
+
+        // Create sample photo files
+        let photo1 = photos_dir.join("photo1.jpg");
+        let mut f1 = File::create(&photo1).unwrap();
+        f1.write_all(b"fake jpeg content 1").unwrap();
+
+        let photo2 = photos_dir.join("photo2.png");
+        let mut f2 = File::create(&photo2).unwrap();
+        f2.write_all(b"fake png content 2").unwrap();
+
+        let non_media = photos_dir.join("notes.txt");
+        let mut f3 = File::create(&non_media).unwrap();
+        f3.write_all(b"text note").unwrap();
+
+        let backend = Arc::new(LocalSimulation::new(remote_dir, "test_photos".to_string()));
+        let lib = PhotoLibrary::new(
+            backend.clone(),
+            "photos_cloud",
+            catalog_path.clone(),
+            OrganizeStrategy::YearMonth,
+        )
+        .await
+        .expect("created library");
+
+        // Error when source folder doesn't exist
+        let err_res = lib.sync_folder(&temp.path().join("non_existent")).await;
+        assert!(err_res.is_err());
+
+        // First sync pass
+        let res = lib.sync_folder(&photos_dir).await.expect("sync success");
+        assert_eq!(res.files_scanned, 2); // photo1 and photo2 (ignoring notes.txt)
+        assert_eq!(res.files_imported, 2);
+        assert_eq!(res.files_skipped_duplicates, 0);
+        assert!(res.bytes_uploaded > 0);
+
+        // Stats
+        let stats = lib.get_stats().await;
+        assert_eq!(stats.total_items, 2);
+
+        // Timeline
+        let timeline = lib.get_timeline().await;
+        assert!(!timeline.is_empty());
+
+        // Search
+        let search_res = lib
+            .search(&SearchFilter {
+                query: Some("photo1".to_string()),
+                ..Default::default()
+            })
+            .await;
+        assert_eq!(search_res.len(), 1);
+        let item1_id = search_res[0].id.clone();
+
+        // Toggle favorite
+        let fav = lib.toggle_favorite(&item1_id).await;
+        assert_eq!(fav, Some(true));
+
+        // Create album & add
+        let album_id = lib
+            .create_album("Family".to_string(), Some("Summer album".to_string()))
+            .await;
+        let added = lib.add_to_album(&album_id, &[item1_id.clone()]).await;
+        assert!(added);
+
+        // Download item
+        let downloaded_file = download_dir.join("restored.jpg");
+        lib.download_item(&item1_id, &downloaded_file)
+            .await
+            .expect("download ok");
+        assert!(downloaded_file.exists());
+
+        // Download non-existent item error
+        assert!(lib
+            .download_item("no_such_id", &download_dir.join("fail.jpg"))
+            .await
+            .is_err());
+
+        // Second sync pass should skip duplicates
+        let res2 = lib.sync_folder(&photos_dir).await.expect("sync 2 success");
+        assert_eq!(res2.files_scanned, 2);
+        assert_eq!(res2.files_imported, 0);
+        assert_eq!(res2.files_skipped_duplicates, 2);
+
+        // Pull remote catalog
+        lib.pull_remote_catalog().await.expect("pull remote ok");
+    }
+
+    #[tokio::test]
+    async fn test_photo_library_custom_stores_and_organizers() {
+        let temp = tempdir().unwrap();
+        let remote_dir = temp.path().join("remote");
+        let catalog_path = temp.path().join("catalog.json");
+        std::fs::create_dir_all(&remote_dir).unwrap();
+
+        let backend = Arc::new(LocalSimulation::new(remote_dir, "test_photos".to_string()));
+        let store = Arc::new(crate::catalog::InMemoryPhotoCatalogStore::new());
+
+        let lib = PhotoLibrary::new(
+            backend,
+            "",
+            catalog_path,
+            OrganizeStrategy::Flat,
+        )
+        .await
+        .unwrap()
+        .with_catalog_store(store)
+        .with_custom_organizer(Arc::new(OrganizeStrategy::YearMonthDay));
+
+        assert!(lib.catalog().read().await.items.is_empty());
+    }
+}

@@ -164,3 +164,58 @@ impl DaemonClientPort for MockDaemonClient {
         (self.handler)(cmd)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_daemon_client_error_display() {
+        let e1 = DaemonClientError::ConnectionFailed("refused".into());
+        assert!(format!("{}", e1).contains("refused"));
+
+        let e2 = DaemonClientError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "not found"));
+        assert!(format!("{}", e2).contains("not found"));
+
+        let e3 = DaemonClientError::Serialization("bad json".into());
+        assert!(format!("{}", e3).contains("bad json"));
+
+        let e4 = DaemonClientError::CommandFailed("syntax error".into());
+        assert!(format!("{}", e4).contains("syntax error"));
+    }
+
+    #[tokio::test]
+    async fn test_mock_daemon_client_and_arc() {
+        let mock = MockDaemonClient::new(|cmd| match cmd {
+            "status" => Ok("Status: OK\nPaused: false\nWatch Directory: \"/tmp\"\n".into()),
+            "get_plan" => Ok(r#"{"actions":[]}"#.into()),
+            "sync" => Ok("Sync started".into()),
+            "pause" => Ok("Paused".into()),
+            "resume" => Ok("Resumed".into()),
+            c if c.starts_with("resolve_conflict") => Ok("Resolved".into()),
+            _ => Err(DaemonClientError::CommandFailed("unknown".into())),
+        });
+
+        let client: Arc<dyn DaemonClientPort> = Arc::new(mock);
+
+        let status = client.get_status().await.unwrap();
+        assert_eq!(status["paused"], false);
+
+        let plan = client.get_plan().await.unwrap();
+        assert_eq!(plan["actions"], serde_json::json!([]));
+
+        assert_eq!(client.trigger_sync().await.unwrap(), "Sync started");
+        assert_eq!(client.pause().await.unwrap(), "Paused");
+        assert_eq!(client.resume().await.unwrap(), "Resumed");
+        assert_eq!(
+            client.resolve_conflict("file.txt", "local").await.unwrap(),
+            "Resolved"
+        );
+    }
+
+    #[test]
+    fn test_tcp_daemon_client_addr() {
+        let client = TcpDaemonClient::new("127.0.0.1:8080");
+        assert_eq!(client.addr(), "127.0.0.1:8080");
+    }
+}

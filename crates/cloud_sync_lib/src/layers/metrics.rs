@@ -250,7 +250,7 @@ mod tests {
             Arc::new(LocalSimulation::new(sim_root, "local_sim".to_string()));
         let collector = MetricsCollector::new();
         let layer = MetricsLayer::new(collector.clone());
-        let wrapped = layer.layer(local_sim);
+        let wrapped = layer.layer(local_sim.clone());
 
         assert_eq!(wrapped.name(), "local_sim");
         assert_eq!(collector.total_upload_bytes(), 0);
@@ -299,5 +299,24 @@ mod tests {
         let missing_res = wrapped.download("telemetry/missing.bin", &dl_path).await;
         assert!(missing_res.is_err());
         assert_eq!(collector.metrics().error_count.load(Ordering::Relaxed), 1);
+
+        // Test create_folder, rename, copy, capabilities, and delegates
+        assert!(wrapped.create_folder("telemetry_folder").await.is_ok());
+        assert!(wrapped.rename("telemetry_folder", "telemetry_renamed").await.is_ok());
+        wrapped.upload(&file_path, "telemetry/file_to_copy.txt").await.unwrap();
+        assert!(wrapped.copy("telemetry/file_to_copy.txt", "telemetry/file_copy.txt").await.is_ok());
+        assert!(wrapped.capabilities().contains(cloud_sync_core::StorageCapabilities::NONE));
+        assert!(wrapped.is_simulated());
+        assert!(wrapped.simulation_reason().is_some());
+        assert!(wrapped.compute_local_checksum(&file_path).await.is_ok());
+        assert!(wrapped.get_latest_cursor().await.is_ok());
+        assert!(wrapped.fetch_changes("cursor").await.is_ok());
+        assert!(wrapped.as_server_side_ops().is_some());
+        assert!(wrapped.as_change_feed().is_none());
+        assert!(wrapped.as_resumable_uploader().is_some());
+
+        // Default constructor
+        let default_layer = MetricsLayer::default();
+        let _ = default_layer.layer(local_sim);
     }
 }

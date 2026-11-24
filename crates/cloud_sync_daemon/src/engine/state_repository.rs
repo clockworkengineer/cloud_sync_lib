@@ -157,4 +157,49 @@ mod tests {
         let recovered = repo.load(&state_path).await;
         assert_eq!(recovered, state);
     }
+
+    #[tokio::test]
+    async fn test_state_repository_resolve_and_migrate() {
+        let temp_dir = tempdir().unwrap();
+        let watch_dir = temp_dir.path().join("watch");
+        let state_dir = temp_dir.path().join("state");
+        tokio::fs::create_dir_all(&watch_dir).await.unwrap();
+        tokio::fs::create_dir_all(&state_dir).await.unwrap();
+
+        let repo = SyncStateRepository::default();
+
+        // 1. Create legacy state file and bak in watch_dir
+        let old_bin = watch_dir.join(".sync_state_dropbox.bin");
+        let old_bak = watch_dir.join(".sync_state_dropbox.bak");
+        tokio::fs::write(&old_bin, b"state").await.unwrap();
+        tokio::fs::write(&old_bak, b"bak").await.unwrap();
+
+        // Resolve should migrate old_bin and old_bak into state_dir
+        let resolved = repo.resolve_state_file_path(&state_dir, &watch_dir, "dropbox").await;
+        assert_eq!(resolved, state_dir.join(".sync_state_dropbox.bin"));
+        assert!(!old_bin.exists());
+        assert!(!old_bak.exists());
+        assert!(resolved.exists());
+        assert!(state_dir.join(".sync_state_dropbox.bak").exists());
+
+        // 2. Test when old file exists AND target already exists in state_dir (should delete old)
+        tokio::fs::write(&old_bin, b"duplicate").await.unwrap();
+        tokio::fs::write(&old_bak, b"duplicate_bak").await.unwrap();
+        let resolved2 = repo.resolve_state_file_path(&state_dir, &watch_dir, "dropbox").await;
+        assert_eq!(resolved2, resolved);
+        assert!(!old_bin.exists());
+        assert!(!old_bak.exists());
+
+        // 3. Test migrate_legacy_state_files
+        let legacy_file = watch_dir.join(".sync_state_google_drive.bin");
+        tokio::fs::write(&legacy_file, b"gdrive").await.unwrap();
+        repo.migrate_legacy_state_files(&watch_dir, &state_dir).await;
+        assert!(!legacy_file.exists());
+        assert!(state_dir.join(".sync_state_google_drive.bin").exists());
+
+        // Test migrate when target already exists
+        tokio::fs::write(&legacy_file, b"gdrive_dup").await.unwrap();
+        repo.migrate_legacy_state_files(&watch_dir, &state_dir).await;
+        assert!(!legacy_file.exists());
+    }
 }

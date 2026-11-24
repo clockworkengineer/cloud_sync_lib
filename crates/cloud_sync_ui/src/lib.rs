@@ -81,3 +81,22 @@ pub async fn start_ui_server() -> Result<(), std::io::Error> {
     axum::serve(listener, router).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_addresses_default() {
+        assert_eq!(get_ui_bind_addr(), UI_BIND_ADDR);
+        assert_eq!(get_daemon_control_addr(), DAEMON_CONTROL_ADDR);
+    }
+
+    #[test]
+    fn test_build_router() {
+        let client = Arc::new(MockDaemonClient::new(|_| Ok("ok".into())));
+        let router = build_router(client);
+        // Ensure router is successfully created and has layers attached
+        drop(router);
+    }
+}

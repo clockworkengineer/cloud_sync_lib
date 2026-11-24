@@ -387,3 +387,194 @@ impl PhotoCatalogStore for InMemoryPhotoCatalogStore {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{ExifMetadata, GeoLocation, MediaType, SearchFilter};
+    use chrono::{Duration, TimeZone, Utc};
+    use tempfile::NamedTempFile;
+
+    fn sample_item(id: &str, name: &str, hash: &str, days_ago: i64) -> MediaItem {
+        let dt = Utc::now() - Duration::days(days_ago);
+        MediaItem {
+            id: id.to_string(),
+            file_name: name.to_string(),
+            local_path: format!("/photos/{}", name),
+            remote_path: None,
+            size_bytes: 2048,
+            sha256_hash: hash.to_string(),
+            media_type: MediaType::Photo,
+            mime_type: "image/jpeg".to_string(),
+            date_taken: dt,
+            modified_at: dt,
+            exif: ExifMetadata {
+                make: Some("Sony".to_string()),
+                model: Some("A7IV".to_string()),
+                location: Some(GeoLocation::new(40.7128, -74.0060)), // NYC
+                ..Default::default()
+            },
+            album_ids: Vec::new(),
+            is_favorite: false,
+            tags: vec!["vacation".to_string(), "travel".to_string()],
+        }
+    }
+
+    #[test]
+    fn test_catalog_crud_and_indexing() {
+        let mut cat = PhotoCatalog::default();
+        assert_eq!(cat.version, CATALOG_VERSION);
+        assert!(cat.items.is_empty());
+
+        let item1 = sample_item("item-1", "sunset.jpg", "hash111", 5);
+        let item2 = sample_item("item-2", "beach.jpg", "hash222", 10);
+
+        cat.insert_item(item1);
+        cat.insert_item(item2);
+
+        assert!(cat.contains_hash("hash111"));
+        assert!(cat.contains_hash("hash222"));
+        assert!(!cat.contains_hash("hash333"));
+
+        assert_eq!(cat.get_by_hash("hash111").unwrap().file_name, "sunset.jpg");
+
+        // Toggle favorite
+        assert_eq!(cat.toggle_favorite("item-1"), Some(true));
+        assert!(cat.items.get("item-1").unwrap().is_favorite);
+        assert_eq!(cat.toggle_favorite("item-1"), Some(false));
+        assert!(!cat.items.get("item-1").unwrap().is_favorite);
+        assert_eq!(cat.toggle_favorite("non-existent"), None);
+
+        // Rebuild indices
+        cat.rebuild_indices();
+        assert_eq!(cat.hash_index.len(), 2);
+    }
+
+    #[test]
+    fn test_catalog_albums_and_stats() {
+        let mut cat = PhotoCatalog::default();
+        let item1 = sample_item("item-1", "pic1.jpg", "hash1", 100);
+        let mut item2 = sample_item("item-2", "vid1.mp4", "hash2", 50);
+        item2.media_type = MediaType::Video;
+        item2.is_favorite = true;
+
+        cat.insert_item(item1);
+        cat.insert_item(item2);
+
+        let album_id = cat.create_album("Holidays".to_string(), Some("Summer 2024".to_string()));
+        assert!(cat.albums.contains_key(&album_id));
+
+        let added = cat.add_to_album(&album_id, &["item-1".to_string()]);
+        assert!(added);
+        assert_eq!(cat.albums.get(&album_id).unwrap().cover_item_id, Some("item-1".to_string()));
+        assert!(cat.items.get("item-1").unwrap().album_ids.contains(&album_id));
+
+        // Non-existent album
+        assert!(!cat.add_to_album("fake_album", &["item-1".to_string()]));
+
+        // Stats
+        let stats = cat.compute_stats();
+        assert_eq!(stats.total_items, 2);
+        assert_eq!(stats.photo_count, 1);
+        assert_eq!(stats.video_count, 1);
+        assert_eq!(stats.favorites_count, 1);
+        assert_eq!(stats.albums_count, 1);
+        assert_eq!(stats.total_bytes, 4096);
+    }
+
+    #[test]
+    fn test_catalog_timeline_and_search() {
+        let mut cat = PhotoCatalog::default();
+        let dt1 = Utc.with_ymd_and_hms(2025, 6, 15, 10, 0, 0).unwrap();
+        let dt2 = Utc.with_ymd_and_hms(2025, 7, 20, 15, 0, 0).unwrap();
+
+        let mut item1 = sample_item("item-1", "june.jpg", "h1", 0);
+        item1.date_taken = dt1;
+        let mut item2 = sample_item("item-2", "july.jpg", "h2", 0);
+        item2.date_taken = dt2;
+        item2.is_favorite = true;
+
+        cat.insert_item(item1);
+        cat.insert_item(item2);
+
+        let timeline = cat.get_timeline();
+        assert_eq!(timeline.len(), 2);
+        assert_eq!(timeline[0].group_key, "2025-07");
+        assert_eq!(timeline[0].display_title, "July 2025");
+        assert_eq!(timeline[1].group_key, "2025-06");
+        assert_eq!(timeline[1].display_title, "June 2025");
+
+        // Filter search: favorite only
+        let filter_fav = SearchFilter {
+            favorite_only: true,
+            ..Default::default()
+        };
+        let res = cat.search(&filter_fav);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].id, "item-2");
+
+        // Filter search: date range
+        let filter_date = SearchFilter {
+            start_date: Some(Utc.with_ymd_and_hms(2025, 7, 1, 0, 0, 0).unwrap()),
+            ..Default::default()
+        };
+        let res_date = cat.search(&filter_date);
+        assert_eq!(res_date.len(), 1);
+        assert_eq!(res_date[0].id, "item-2");
+
+        // Filter search: geo proximity (NYC center, 10km radius)
+        let filter_geo = SearchFilter {
+            geo_center: Some(GeoLocation::new(40.7128, -74.0060)),
+            geo_radius_km: Some(10.0),
+            ..Default::default()
+        };
+        assert_eq!(cat.search(&filter_geo).len(), 2);
+
+        // Geo far away (Tokyo)
+        let filter_geo_far = SearchFilter {
+            geo_center: Some(GeoLocation::new(35.6762, 139.6503)),
+            geo_radius_km: Some(50.0),
+            ..Default::default()
+        };
+        assert!(cat.search(&filter_geo_far).is_empty());
+
+        // Text query search
+        let filter_query = SearchFilter {
+            query: Some("june".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(cat.search(&filter_query).len(), 1);
+    }
+
+    #[test]
+    fn test_catalog_merge_and_stores() {
+        let mut local = PhotoCatalog::default();
+        let item1 = sample_item("item-1", "first.jpg", "h1", 10);
+        local.insert_item(item1);
+
+        let mut remote = PhotoCatalog::default();
+        let mut item1_updated = sample_item("item-1", "first.jpg", "h1", 5);
+        item1_updated.is_favorite = true;
+        let item2 = sample_item("item-2", "second.jpg", "h2", 2);
+        remote.insert_item(item1_updated);
+        remote.insert_item(item2);
+
+        local.merge(remote);
+        assert_eq!(local.items.len(), 2);
+        assert!(local.items.get("item-1").unwrap().is_favorite);
+
+        // Disk roundtrip
+        let tmp = NamedTempFile::new().unwrap();
+        let json_store = JsonPhotoCatalogStore::default();
+        json_store.save(tmp.path(), &local).unwrap();
+
+        let loaded = json_store.load(tmp.path()).unwrap();
+        assert_eq!(loaded.items.len(), 2);
+
+        // In-memory store
+        let mem_store = InMemoryPhotoCatalogStore::new();
+        mem_store.save(Path::new("dummy"), &local).unwrap();
+        let mem_loaded = mem_store.load(Path::new("dummy")).unwrap();
+        assert_eq!(mem_loaded.items.len(), 2);
+    }
+}

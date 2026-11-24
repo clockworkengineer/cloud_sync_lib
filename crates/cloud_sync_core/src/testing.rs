@@ -110,3 +110,89 @@ pub async fn verify_backend_compliance<B: StorageBackend + ?Sized>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::StorageItem;
+    use alloc::boxed::Box;
+    use alloc::format;
+    use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::time::SystemTime;
+
+    struct InMemComplianceBackend {
+        files: Mutex<HashMap<String, Vec<u8>>>,
+    }
+
+    impl InMemComplianceBackend {
+        fn new() -> Self {
+            Self {
+                files: Mutex::new(HashMap::new()),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl StorageBackend for InMemComplianceBackend {
+        fn name(&self) -> &str {
+            "in-mem-compliance"
+        }
+
+        fn capabilities(&self) -> StorageCapabilities {
+            StorageCapabilities::NONE
+        }
+
+        async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
+            let data = tokio::fs::read(local_path).await.map_err(StorageError::Io)?;
+            self.files.lock().unwrap().insert(remote_path.to_string(), data);
+            Ok(())
+        }
+
+        async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
+            let data = {
+                let files = self.files.lock().unwrap();
+                files.get(remote_path).cloned()
+            };
+            match data {
+                Some(bytes) => {
+                    tokio::fs::write(local_path, bytes).await.map_err(StorageError::Io)?;
+                    Ok(())
+                }
+                None => Err(StorageError::NotFound(format!("File not found: {}", remote_path))),
+            }
+        }
+
+        async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
+            self.files.lock().unwrap().remove(remote_path);
+            Ok(())
+        }
+
+        async fn list(&self, prefix: &str) -> Result<Vec<StorageItem>, StorageError> {
+            let files = self.files.lock().unwrap();
+            let mut items = Vec::new();
+            for (k, v) in files.iter() {
+                if k.starts_with(prefix) {
+                    items.push(StorageItem {
+                        path: std::path::PathBuf::from(k),
+                        size: v.len() as u64,
+                        modified: SystemTime::now(),
+                        is_dir: false,
+                        checksum: None,
+                        permissions: None,
+                    });
+                }
+            }
+            Ok(items)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_harness_compliance_verification() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let backend = InMemComplianceBackend::new();
+        assert!(verify_backend_compliance(&backend, temp_dir.path()).await.is_ok());
+    }
+}
