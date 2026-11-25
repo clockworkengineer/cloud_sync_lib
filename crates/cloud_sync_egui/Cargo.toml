@@ -13,7 +13,7 @@ homepage.workspace = true
 workspace = true
 
 [dependencies]
-eframe = "0.27"
+eframe = "0.30"
 tokio = { workspace = true, features = ["full"] }
 serde_json = { workspace = true }
 chrono = { workspace = true }
