@@ -59,11 +59,23 @@ fn main() {
         bin_name.push_str(".exe");
     }
 
-    let src_bin_path = sidecar_target_dir.join(&profile).join(&bin_name);
+    let mut src_bin_path = sidecar_target_dir.join(&profile).join(&bin_name);
+    if !src_bin_path.exists() {
+        let alt_path = sidecar_target_dir.join(&target).join(&profile).join(&bin_name);
+        if alt_path.exists() {
+            src_bin_path = alt_path;
+        }
+    }
 
     // 5. Create binaries folder if it doesn't exist
     let dest_dir = manifest_dir.join("binaries");
     fs::create_dir_all(&dest_dir).unwrap();
+
+    // Clean up any stray directory with the binary's base name in binaries/
+    let stray_bin = dest_dir.join("cloud_sync_daemon");
+    if stray_bin.is_dir() {
+        let _ = fs::remove_dir_all(&stray_bin);
+    }
 
     // 6. Copy and rename the binary with the target triple
     let dest_bin_name = format!(
@@ -76,6 +88,10 @@ fn main() {
         }
     );
     let dest_bin_path = dest_dir.join(dest_bin_name);
+
+    if dest_bin_path.is_dir() {
+        let _ = fs::remove_dir_all(&dest_bin_path);
+    }
 
     if let Err(e) = fs::copy(&src_bin_path, &dest_bin_path) {
         if !dest_bin_path.exists() {
@@ -116,6 +132,27 @@ fn main() {
         }
         let file = std::fs::File::create(&icon_ico_path).expect("failed to create icon.ico");
         icon_dir.write(file).expect("failed to write icon.ico");
+    }
+
+    // 6.8 Pre-clean sidecar target destination in target_dir.
+    // In tauri-build, copy_binaries attempts to remove `target_dir.join("cloud_sync_daemon")`
+    // using `fs::remove_file(&dest).unwrap()`. If `dest` exists as a directory (which can happen
+    // in workspace builds on Linux where an intermediate directory or artifact was created),
+    // remove_file panics with Os { code: 21, kind: IsADirectory }.
+    // Cleaning up any conflicting directory beforehand prevents this panic.
+    let out_dir_raw = env::var("OUT_DIR").unwrap_or_default();
+    let out_dir_path = PathBuf::from(&out_dir_raw);
+    if let Some(target_dir) = out_dir_path
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+    {
+        for candidate in &["cloud_sync_daemon", "cloud_sync_daemon.exe"] {
+            let candidate_dest = target_dir.join(candidate);
+            if candidate_dest.is_dir() {
+                let _ = fs::remove_dir_all(&candidate_dest);
+            }
+        }
     }
 
     // 7. Invoke tauri_build
