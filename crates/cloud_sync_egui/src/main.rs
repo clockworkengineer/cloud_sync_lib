@@ -1153,6 +1153,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Cloud Sync Dashboard",
         native_options,
-        Box::new(|cc| Ok(Box::new(CloudSyncApp::new(cc)))),
+        Box::new(|cc| Box::new(CloudSyncApp::new(cc))),
     )
 }
