@@ -241,10 +241,26 @@ mod tests {
             .unwrap();
 
         // Test additional operations: folder, delete, rename, copy, layer wrapper
-        assert!(cloud_sync_core::StorageBackend::create_folder(&cached, "cache_folder").await.is_ok());
-        assert!(cloud_sync_core::StorageBackend::rename(&cached, "cache_folder", "renamed_folder").await.is_ok());
-        assert!(cloud_sync_core::StorageBackend::copy(&cached, "f1.txt", "copied_f1.txt").await.is_ok());
-        assert!(cloud_sync_core::StorageBackend::delete(&cached, "copied_f1.txt").await.is_ok());
+        assert!(
+            cloud_sync_core::StorageBackend::create_folder(&cached, "cache_folder")
+                .await
+                .is_ok()
+        );
+        assert!(
+            cloud_sync_core::StorageBackend::rename(&cached, "cache_folder", "renamed_folder")
+                .await
+                .is_ok()
+        );
+        assert!(
+            cloud_sync_core::StorageBackend::copy(&cached, "f1.txt", "copied_f1.txt")
+                .await
+                .is_ok()
+        );
+        assert!(
+            cloud_sync_core::StorageBackend::delete(&cached, "copied_f1.txt")
+                .await
+                .is_ok()
+        );
 
         assert_eq!(cached.name(), "CachedSim");
         assert!(cached.capabilities().contains(StorageCapabilities::NONE));

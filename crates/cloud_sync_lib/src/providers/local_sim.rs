@@ -2,10 +2,10 @@
 //!
 //! Provides an implementation of storage simulation on the local filesystem.
 
-use cloud_sync_core::NormalizedPath;
 use crate::rate_limit::{copy_rate_limited, TokenBucket};
 use crate::traits::{StorageBackend, StorageError, StorageItem};
 use async_trait::async_trait;
+use cloud_sync_core::NormalizedPath;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -100,7 +100,10 @@ impl LocalSimulation {
     /// attacks and ensuring the target resides strictly within the simulation root.
     pub fn try_resolve(&self, remote_path: &str) -> Result<PathBuf, StorageError> {
         let norm = NormalizedPath::new(remote_path).map_err(|e| {
-            StorageError::InvalidPath(format!("Path traversal or illegal name rejected in {}: {}", self.provider_name, e))
+            StorageError::InvalidPath(format!(
+                "Path traversal or illegal name rejected in {}: {}",
+                self.provider_name, e
+            ))
         })?;
         let resolved = if norm.is_empty() {
             self.root_dir.clone()
@@ -418,7 +421,9 @@ impl StorageBackend for LocalSimulation {
         if let Ok(meta) = tokio::fs::metadata(local_path).await {
             let size = meta.len();
             let modified = meta.modified().unwrap_or_else(|_| SystemTime::now());
-            return Ok(self.get_or_compute_checksum(local_path, size, modified).await);
+            return Ok(self
+                .get_or_compute_checksum(local_path, size, modified)
+                .await);
         }
         Ok(crate::checksum::compute_sha256(local_path).await.ok())
     }
@@ -537,7 +542,10 @@ mod tests {
 
         // Path traversal attempts must be rejected with InvalidPath
         assert!(sim.upload(&local_src, "../../escaped.txt").await.is_err());
-        assert!(sim.upload(&local_src, "foo/../../escaped.txt").await.is_err());
+        assert!(sim
+            .upload(&local_src, "foo/../../escaped.txt")
+            .await
+            .is_err());
         assert!(sim.upload(&local_src, "nul").await.is_err());
         assert!(sim.upload(&local_src, "file.txt:stream").await.is_err());
 

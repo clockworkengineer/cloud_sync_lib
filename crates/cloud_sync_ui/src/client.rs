@@ -174,7 +174,10 @@ mod tests {
         let e1 = DaemonClientError::ConnectionFailed("refused".into());
         assert!(format!("{}", e1).contains("refused"));
 
-        let e2 = DaemonClientError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "not found"));
+        let e2 = DaemonClientError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "not found",
+        ));
         assert!(format!("{}", e2).contains("not found"));
 
         let e3 = DaemonClientError::Serialization("bad json".into());

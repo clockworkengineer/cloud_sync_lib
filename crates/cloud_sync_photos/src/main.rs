@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let cat = library.catalog();
             let cat_lock = cat.read().await;
             let mut items: Vec<_> = cat_lock.items.values().collect();
-            items.sort_by(|a, b| b.date_taken.cmp(&a.date_taken));
+            items.sort_by_key(|a| std::cmp::Reverse(a.date_taken));
 
             println!("📋 Media Items (Showing up to {}):", list_args.limit);
             for item in items

@@ -466,12 +466,16 @@ mod tests {
         let config_path = temp.path().join("sub").join("new_config.toml");
 
         // 1. Loading non-existent config should create default template file
-        let cfg = load_or_create_config(config_path.to_str().unwrap()).await.unwrap();
+        let cfg = load_or_create_config(config_path.to_str().unwrap())
+            .await
+            .unwrap();
         assert!(config_path.exists());
         assert!(!cfg.watch_directory.as_os_str().is_empty());
 
         // 2. Loading existing config should read file directly
-        let loaded = load_or_create_config(config_path.to_str().unwrap()).await.unwrap();
+        let loaded = load_or_create_config(config_path.to_str().unwrap())
+            .await
+            .unwrap();
         assert_eq!(loaded.watch_directory, cfg.watch_directory);
 
         // 3. enabled_credentials on default should be empty or contain enabled items

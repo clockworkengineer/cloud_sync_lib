@@ -129,7 +129,7 @@ impl PhotoCatalog {
             .into_iter()
             .map(|((year, month), mut items)| {
                 // Sort items within each month newest first
-                items.sort_by(|a, b| b.date_taken.cmp(&a.date_taken));
+                items.sort_by_key(|a| std::cmp::Reverse(a.date_taken));
                 let group_key = format!("{:04}-{:02}", year, month);
                 let month_name = match month {
                     1 => "January",
@@ -250,7 +250,7 @@ impl PhotoCatalog {
         }
 
         // Sort results newest first
-        matches.sort_by(|a, b| b.date_taken.cmp(&a.date_taken));
+        matches.sort_by_key(|a| std::cmp::Reverse(a.date_taken));
         matches
     }
 
@@ -322,8 +322,7 @@ impl PhotoCatalog {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let serialized = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let serialized = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
 
         let temp_path = path.with_extension("tmp");
         std::fs::write(&temp_path, serialized.as_bytes())?;
@@ -466,8 +465,16 @@ mod tests {
 
         let added = cat.add_to_album(&album_id, &["item-1".to_string()]);
         assert!(added);
-        assert_eq!(cat.albums.get(&album_id).unwrap().cover_item_id, Some("item-1".to_string()));
-        assert!(cat.items.get("item-1").unwrap().album_ids.contains(&album_id));
+        assert_eq!(
+            cat.albums.get(&album_id).unwrap().cover_item_id,
+            Some("item-1".to_string())
+        );
+        assert!(cat
+            .items
+            .get("item-1")
+            .unwrap()
+            .album_ids
+            .contains(&album_id));
 
         // Non-existent album
         assert!(!cat.add_to_album("fake_album", &["item-1".to_string()]));
@@ -565,7 +572,7 @@ mod tests {
 
         // Disk roundtrip
         let tmp = NamedTempFile::new().unwrap();
-        let json_store = JsonPhotoCatalogStore::default();
+        let json_store = JsonPhotoCatalogStore;
         json_store.save(tmp.path(), &local).unwrap();
 
         let loaded = json_store.load(tmp.path()).unwrap();

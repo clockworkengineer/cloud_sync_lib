@@ -7,9 +7,9 @@
 //! - Supports incremental snapshot creation, listing, SHA-256-verified restoration, and
 //!   retention pruning with unreferenced blob garbage collection (`prune_snapshots`).
 
-use cloud_sync_core::NormalizedPath;
 use crate::providers::utils::TempFileGuard;
 use crate::traits::{StorageBackend, StorageError};
+use cloud_sync_core::NormalizedPath;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
@@ -248,7 +248,10 @@ pub async fn restore_snapshot(
     for entry in &manifest.files {
         // Enforce path traversal defense on relative_path
         let norm_path = NormalizedPath::new(&entry.relative_path).map_err(|e| {
-            StorageError::InvalidPath(format!("Malicious or invalid snapshot relative path '{}': {}", entry.relative_path, e))
+            StorageError::InvalidPath(format!(
+                "Malicious or invalid snapshot relative path '{}': {}",
+                entry.relative_path, e
+            ))
         })?;
 
         // Enforce valid SHA-256 hexadecimal hash formatting
@@ -425,17 +428,25 @@ mod tests {
                 relative_path: "../../evil.sh".to_string(),
                 size: 10,
                 modified_secs: 1000,
-                sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                    .to_string(),
             }],
         };
 
         let mf_bytes = serde_json::to_vec_pretty(&bad_manifest).unwrap();
-        let mf_path = temp_dir.path().join("_snapshots/manifests/fake_snap_01.json");
-        tokio::fs::create_dir_all(mf_path.parent().unwrap()).await.unwrap();
+        let mf_path = temp_dir
+            .path()
+            .join("_snapshots/manifests/fake_snap_01.json");
+        tokio::fs::create_dir_all(mf_path.parent().unwrap())
+            .await
+            .unwrap();
         tokio::fs::write(&mf_path, mf_bytes).await.unwrap();
 
         let res = restore_snapshot(&backend, "fake_snap_01", restore_dir.path()).await;
-        assert!(res.is_err(), "Restoring manifest with path traversal must be rejected");
+        assert!(
+            res.is_err(),
+            "Restoring manifest with path traversal must be rejected"
+        );
         let err_msg = res.unwrap_err().to_string();
         assert!(
             err_msg.contains("Invalid path") || err_msg.contains("traversal"),

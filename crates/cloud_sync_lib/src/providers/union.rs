@@ -193,7 +193,8 @@ impl StorageBackend for UnionBackend {
                 Ok(())
             } else {
                 Err(last_err.unwrap_or_else(|| StorageError::Provider {
-                    message: "Custom UnionRoutingStrategy selected no valid upstream targets".into(),
+                    message: "Custom UnionRoutingStrategy selected no valid upstream targets"
+                        .into(),
                     status: None,
                 }))
             };

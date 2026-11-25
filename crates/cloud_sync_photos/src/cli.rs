@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn test_cli_parsing_subcommands() {
         // Sync
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "cloud_sync_photos",
             "sync",
             "--source",
@@ -148,11 +148,11 @@ mod tests {
         }
 
         // Timeline
-        let cli = Cli::try_parse_from(&["cloud_sync_photos", "timeline"]).unwrap();
+        let cli = Cli::try_parse_from(["cloud_sync_photos", "timeline"]).unwrap();
         assert!(matches!(cli.command, Commands::Timeline));
 
         // List
-        let cli = Cli::try_parse_from(&["cloud_sync_photos", "list", "-l", "25", "-f"]).unwrap();
+        let cli = Cli::try_parse_from(["cloud_sync_photos", "list", "-l", "25", "-f"]).unwrap();
         match cli.command {
             Commands::List(args) => {
                 assert_eq!(args.limit, 25);
@@ -162,7 +162,7 @@ mod tests {
         }
 
         // Search
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "cloud_sync_photos",
             "search",
             "-q",
@@ -183,7 +183,7 @@ mod tests {
         }
 
         // Album Create & Add
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "cloud_sync_photos",
             "album",
             "create",
@@ -203,7 +203,7 @@ mod tests {
             _ => panic!("Expected Album command"),
         }
 
-        let cli = Cli::try_parse_from(&[
+        let cli = Cli::try_parse_from([
             "cloud_sync_photos",
             "album",
             "add",
@@ -214,10 +214,7 @@ mod tests {
         .unwrap();
         match cli.command {
             Commands::Album(args) => match args.action {
-                AlbumAction::Add {
-                    album_id,
-                    item_ids,
-                } => {
+                AlbumAction::Add { album_id, item_ids } => {
                     assert_eq!(album_id, "album_123");
                     assert_eq!(item_ids, vec!["item_1", "item_2"]);
                 }
@@ -228,23 +225,29 @@ mod tests {
 
         // Favorite, Stats, PullCatalog, PushCatalog, Download
         assert!(matches!(
-            Cli::try_parse_from(&["cloud_sync_photos", "favorite", "id123"]).unwrap().command,
+            Cli::try_parse_from(["cloud_sync_photos", "favorite", "id123"]).unwrap().command,
             Commands::Favorite { item_id } if item_id == "id123"
         ));
         assert!(matches!(
-            Cli::try_parse_from(&["cloud_sync_photos", "stats"]).unwrap().command,
+            Cli::try_parse_from(["cloud_sync_photos", "stats"])
+                .unwrap()
+                .command,
             Commands::Stats
         ));
         assert!(matches!(
-            Cli::try_parse_from(&["cloud_sync_photos", "pull-catalog"]).unwrap().command,
+            Cli::try_parse_from(["cloud_sync_photos", "pull-catalog"])
+                .unwrap()
+                .command,
             Commands::PullCatalog
         ));
         assert!(matches!(
-            Cli::try_parse_from(&["cloud_sync_photos", "push-catalog"]).unwrap().command,
+            Cli::try_parse_from(["cloud_sync_photos", "push-catalog"])
+                .unwrap()
+                .command,
             Commands::PushCatalog
         ));
         assert!(matches!(
-            Cli::try_parse_from(&["cloud_sync_photos", "download", "item456", "out.jpg"]).unwrap().command,
+            Cli::try_parse_from(["cloud_sync_photos", "download", "item456", "out.jpg"]).unwrap().command,
             Commands::Download { item_id, output } if item_id == "item456" && output == "out.jpg"
         ));
     }

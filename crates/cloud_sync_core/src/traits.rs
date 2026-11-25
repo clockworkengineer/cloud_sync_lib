@@ -667,9 +667,18 @@ impl SyncPolicy {
 #[serde(rename_all = "kebab-case")]
 pub enum ConflictPolicy {
     #[default]
-    #[serde(alias = "", alias = "RenameLocal", alias = "rename_local", alias = "rename-local")]
+    #[serde(
+        alias = "",
+        alias = "RenameLocal",
+        alias = "rename_local",
+        alias = "rename-local"
+    )]
     RenameLocal,
-    #[serde(alias = "RenameRemote", alias = "rename_remote", alias = "rename-remote")]
+    #[serde(
+        alias = "RenameRemote",
+        alias = "rename_remote",
+        alias = "rename-remote"
+    )]
     RenameRemote,
     #[serde(alias = "KeepNewer", alias = "keep_newer", alias = "keep-newer")]
     KeepNewer,
@@ -914,17 +923,30 @@ mod tests {
 
         let concrete = AdvancedBackend;
         assert_eq!(concrete.name(), "advanced");
-        assert!(concrete.capabilities().contains(StorageCapabilities::SERVER_SIDE_MOVE));
+        assert!(concrete
+            .capabilities()
+            .contains(StorageCapabilities::SERVER_SIDE_MOVE));
         assert!(concrete.delete("").await.is_ok());
 
         let boxed_adv: Box<dyn StorageBackend> = Box::new(AdvancedBackend);
         assert_eq!(boxed_adv.name(), "advanced");
-        assert!(boxed_adv.capabilities().contains(StorageCapabilities::SERVER_SIDE_MOVE));
+        assert!(boxed_adv
+            .capabilities()
+            .contains(StorageCapabilities::SERVER_SIDE_MOVE));
         assert!(boxed_adv.as_server_side_ops().is_some());
         assert!(boxed_adv.as_change_feed().is_some());
         assert!(boxed_adv.as_resumable_uploader().is_none());
         assert_eq!(boxed_adv.get_latest_cursor().await.unwrap(), None);
-        assert_eq!(boxed_adv.as_change_feed().unwrap().get_latest_cursor().await.unwrap().as_deref(), Some("cursor_123"));
+        assert_eq!(
+            boxed_adv
+                .as_change_feed()
+                .unwrap()
+                .get_latest_cursor()
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("cursor_123")
+        );
         assert!(boxed_adv.fetch_changes("").await.unwrap().is_none());
         assert!(!boxed_adv.is_simulated());
         assert_eq!(boxed_adv.simulation_reason(), None);
@@ -936,7 +958,16 @@ mod tests {
         assert!(arc_adv.as_change_feed().is_some());
         assert!(arc_adv.as_resumable_uploader().is_none());
         assert_eq!(arc_adv.get_latest_cursor().await.unwrap(), None);
-        assert_eq!(arc_adv.as_change_feed().unwrap().get_latest_cursor().await.unwrap().as_deref(), Some("cursor_123"));
+        assert_eq!(
+            arc_adv
+                .as_change_feed()
+                .unwrap()
+                .get_latest_cursor()
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("cursor_123")
+        );
         assert!(arc_adv.fetch_changes("").await.unwrap().is_none());
         assert!(!arc_adv.is_simulated());
         assert_eq!(arc_adv.simulation_reason(), None);
@@ -1002,7 +1033,10 @@ mod tests {
         assert!(err_retry.is_rate_limited());
         assert!(err_retry.is_transient());
         #[cfg(feature = "std")]
-        assert_eq!(err_retry.retry_after(), Some(std::time::Duration::from_secs(60)));
+        assert_eq!(
+            err_retry.retry_after(),
+            Some(std::time::Duration::from_secs(60))
+        );
 
         let err = StorageError::RateLimit {
             message: "slow down".to_string(),

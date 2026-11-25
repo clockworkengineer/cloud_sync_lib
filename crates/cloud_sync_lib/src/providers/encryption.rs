@@ -78,7 +78,7 @@ impl<B: StorageBackend> EncryptedBackend<B> {
         if let Ok(salt_arr) = <[u8; SALT_LEN]>::try_from(salt) {
             if let Ok(mut cache) = self.key_cache.write() {
                 if cache.len() >= MAX_CACHED_KEYS {
-                    for (_, v) in cache.iter_mut() {
+                    for v in cache.values_mut() {
                         v.zeroize();
                     }
                     cache.clear();
@@ -276,7 +276,9 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
                     let is_last = enc_file.read_u8().await.map_err(|e| {
                         if e.kind() == std::io::ErrorKind::UnexpectedEof {
                             StorageError::Provider {
-                                message: "Truncated encrypted file: unexpected EOF reading chunk header".to_string(),
+                                message:
+                                    "Truncated encrypted file: unexpected EOF reading chunk header"
+                                        .to_string(),
                                 status: None,
                             }
                         } else {
@@ -287,7 +289,9 @@ impl<B: StorageBackend> StorageBackend for EncryptedBackend<B> {
                     enc_file.read_exact(&mut cipher_buf).await.map_err(|e| {
                         if e.kind() == std::io::ErrorKind::UnexpectedEof {
                             StorageError::Provider {
-                                message: "Truncated encrypted file: unexpected EOF reading chunk payload".to_string(),
+                                message:
+                                    "Truncated encrypted file: unexpected EOF reading chunk payload"
+                                        .to_string(),
                                 status: None,
                             }
                         } else {
@@ -451,7 +455,7 @@ impl<B: StorageBackend> Drop for EncryptedBackend<B> {
         self.password.zeroize();
         self.legacy_key.as_mut_slice().zeroize();
         if let Ok(mut cache) = self.key_cache.write() {
-            for (_, v) in cache.iter_mut() {
+            for v in cache.values_mut() {
                 v.zeroize();
             }
             cache.clear();
@@ -695,6 +699,9 @@ mod tests {
             "Error must indicate truncated stream, got: {}",
             err_msg
         );
-        assert!(!dest.exists(), "Destination file must not be created on truncation failure");
+        assert!(
+            !dest.exists(),
+            "Destination file must not be created on truncation failure"
+        );
     }
 }

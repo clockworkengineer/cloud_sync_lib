@@ -11,9 +11,10 @@ pub trait PhotoPathOrganizer: Send + Sync {
 }
 
 /// Strategy used to determine remote directory hierarchy in cloud storage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum OrganizeStrategy {
     /// Organizes as `YYYY/MM/filename.ext` (e.g. `2024/11/IMG_001.jpg`).
+    #[default]
     YearMonth,
     /// Organizes as `YYYY/MM/DD/filename.ext` (e.g. `2024/11/18/IMG_001.jpg`).
     YearMonthDay,
@@ -21,12 +22,6 @@ pub enum OrganizeStrategy {
     ChronologicalHash,
     /// Keeps flat root: `filename.ext`.
     Flat,
-}
-
-impl Default for OrganizeStrategy {
-    fn default() -> Self {
-        Self::YearMonth
-    }
 }
 
 impl PhotoPathOrganizer for OrganizeStrategy {
@@ -48,7 +43,11 @@ pub fn generate_remote_path(item: &MediaItem, strategy: OrganizeStrategy) -> Str
         .unwrap_or_else(|| "image.jpg".to_string());
     let norm = cloud_sync_core::NormalizedPath::new(&raw_name)
         .unwrap_or_else(|_| cloud_sync_core::NormalizedPath::empty().join(&raw_name));
-    let clean_name = if norm.is_empty() { "image.jpg" } else { norm.as_str() };
+    let clean_name = if norm.is_empty() {
+        "image.jpg"
+    } else {
+        norm.as_str()
+    };
 
     match strategy {
         OrganizeStrategy::YearMonth => {
@@ -111,10 +110,7 @@ mod tests {
             OrganizeStrategy::ChronologicalHash.organize_path(&item),
             "2026/11/abcdef01_photo.jpg"
         );
-        assert_eq!(
-            OrganizeStrategy::Flat.organize_path(&item),
-            "photo.jpg"
-        );
+        assert_eq!(OrganizeStrategy::Flat.organize_path(&item), "photo.jpg");
         assert_eq!(OrganizeStrategy::default(), OrganizeStrategy::YearMonth);
 
         // Short hash fallback

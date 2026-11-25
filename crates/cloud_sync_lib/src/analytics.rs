@@ -126,7 +126,11 @@ pub async fn build_remote_tree(
     let name = if clean_path.is_empty() {
         "root".to_string()
     } else {
-        clean_path.split('/').last().unwrap_or("root").to_string()
+        clean_path
+            .split('/')
+            .next_back()
+            .unwrap_or("root")
+            .to_string()
     };
 
     build_tree_recursive(backend, &clean_path, name, 0, max_depth).await

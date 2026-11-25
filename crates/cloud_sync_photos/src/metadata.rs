@@ -351,16 +351,14 @@ fn parse_exif_tiff(data: &[u8]) -> ExifMetadata {
                             let c = data[entry_offset + 8] as char;
                             lon_ref = Some(c);
                         }
-                        0x0004 => {
+                        0x0004 if val_offset + 24 <= data.len() => {
                             // GPSLongitude (3 rationals: degrees, minutes, seconds)
-                            if val_offset + 24 <= data.len() {
-                                if let (Some(d), Some(m), Some(s)) = (
-                                    read_rational(val_offset),
-                                    read_rational(val_offset + 8),
-                                    read_rational(val_offset + 16),
-                                ) {
-                                    lon_deg = Some(d + (m / 60.0) + (s / 3600.0));
-                                }
+                            if let (Some(d), Some(m), Some(s)) = (
+                                read_rational(val_offset),
+                                read_rational(val_offset + 8),
+                                read_rational(val_offset + 16),
+                            ) {
+                                lon_deg = Some(d + (m / 60.0) + (s / 3600.0));
                             }
                         }
                         _ => {}
@@ -417,7 +415,11 @@ mod tests {
 
         for (filename, expected_media, expected_mime) in cases {
             let (media, mime) = detect_media_format(Path::new(filename));
-            assert_eq!(media, expected_media, "Media type mismatch for {}", filename);
+            assert_eq!(
+                media, expected_media,
+                "Media type mismatch for {}",
+                filename
+            );
             assert_eq!(mime, expected_mime, "MIME mismatch for {}", filename);
         }
     }

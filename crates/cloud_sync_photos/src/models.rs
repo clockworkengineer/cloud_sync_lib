@@ -222,11 +222,16 @@ mod tests {
         let io_err = PhotosError::from(std::io::Error::other("disk error"));
         assert!(io_err.to_string().contains("Photos I/O error"));
 
-        let storage_err = PhotosError::from(cloud_sync_core::StorageError::NotFound("lost".to_string()));
-        assert!(storage_err.to_string().contains("Photos cloud storage error"));
+        let storage_err =
+            PhotosError::from(cloud_sync_core::StorageError::NotFound("lost".to_string()));
+        assert!(storage_err
+            .to_string()
+            .contains("Photos cloud storage error"));
 
         let config_err = PhotosError::from("config syntax".to_string());
-        assert!(config_err.to_string().contains("Photos configuration error"));
+        assert!(config_err
+            .to_string()
+            .contains("Photos configuration error"));
 
         let path_err = PhotosError::InvalidPath("bad/path".to_string());
         assert!(path_err.to_string().contains("Invalid media path"));
@@ -247,14 +252,23 @@ mod tests {
 
         let photo_type = MediaType::Photo;
         let json = serde_json::to_string(&photo_type).unwrap();
-        assert_eq!(serde_json::from_str::<MediaType>(&json).unwrap(), MediaType::Photo);
+        assert_eq!(
+            serde_json::from_str::<MediaType>(&json).unwrap(),
+            MediaType::Photo
+        );
 
         let img_fmt = ImageFormat::Heic;
         let json_fmt = serde_json::to_string(&img_fmt).unwrap();
-        assert_eq!(serde_json::from_str::<ImageFormat>(&json_fmt).unwrap(), ImageFormat::Heic);
+        assert_eq!(
+            serde_json::from_str::<ImageFormat>(&json_fmt).unwrap(),
+            ImageFormat::Heic
+        );
 
         let vid_fmt = VideoFormat::Mp4;
         let json_vid = serde_json::to_string(&vid_fmt).unwrap();
-        assert_eq!(serde_json::from_str::<VideoFormat>(&json_vid).unwrap(), VideoFormat::Mp4);
+        assert_eq!(
+            serde_json::from_str::<VideoFormat>(&json_vid).unwrap(),
+            VideoFormat::Mp4
+        );
     }
 }

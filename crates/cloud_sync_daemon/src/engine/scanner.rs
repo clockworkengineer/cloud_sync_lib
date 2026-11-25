@@ -203,7 +203,9 @@ mod tests {
         let filter = FileFilter::new(&gitignore, None);
 
         // 1. Non-existent watch dir returns empty map
-        let empty = DirectoryScanner::scan_local(&watch_dir, &filter).await.unwrap();
+        let empty = DirectoryScanner::scan_local(&watch_dir, &filter)
+            .await
+            .unwrap();
         assert!(empty.is_empty());
 
         // 2. Create watch directory structure
@@ -218,7 +220,9 @@ mod tests {
         tokio::fs::write(&file2, b"world!").await.unwrap();
         tokio::fs::write(&state_file, b"state").await.unwrap();
 
-        let scanned = DirectoryScanner::scan_local(&watch_dir, &filter).await.unwrap();
+        let scanned = DirectoryScanner::scan_local(&watch_dir, &filter)
+            .await
+            .unwrap();
         assert!(scanned.contains_key("subfolder"));
         assert!(scanned.contains_key("file1.txt"));
         assert!(scanned.contains_key("subfolder/file2.txt"));
@@ -240,7 +244,9 @@ mod tests {
             items: vec![],
             fail_not_found: true,
         };
-        let res = DirectoryScanner::scan_remote(&not_found_backend, &filter).await.unwrap();
+        let res = DirectoryScanner::scan_remote(&not_found_backend, &filter)
+            .await
+            .unwrap();
         assert!(res.is_empty());
 
         // 2. Remote list returning folder and file
@@ -276,13 +282,19 @@ mod tests {
             fail_not_found: false,
         };
 
-        let remote_scanned = DirectoryScanner::scan_remote(&backend, &filter).await.unwrap();
+        let remote_scanned = DirectoryScanner::scan_remote(&backend, &filter)
+            .await
+            .unwrap();
         assert!(remote_scanned.contains_key("docs"));
         assert!(remote_scanned.contains_key("report.pdf"));
         assert!(!remote_scanned.contains_key(".sync_state_remote.bin"));
         assert_eq!(remote_scanned.get("report.pdf").unwrap().size, 1024);
         assert_eq!(
-            remote_scanned.get("report.pdf").unwrap().checksum.as_deref(),
+            remote_scanned
+                .get("report.pdf")
+                .unwrap()
+                .checksum
+                .as_deref(),
             Some("chk123")
         );
     }

@@ -434,7 +434,9 @@ mod tests {
         let album_id = lib
             .create_album("Family".to_string(), Some("Summer album".to_string()))
             .await;
-        let added = lib.add_to_album(&album_id, &[item1_id.clone()]).await;
+        let added = lib
+            .add_to_album(&album_id, std::slice::from_ref(&item1_id))
+            .await;
         assert!(added);
 
         // Download item
@@ -470,16 +472,11 @@ mod tests {
         let backend = Arc::new(LocalSimulation::new(remote_dir, "test_photos".to_string()));
         let store = Arc::new(crate::catalog::InMemoryPhotoCatalogStore::new());
 
-        let lib = PhotoLibrary::new(
-            backend,
-            "",
-            catalog_path,
-            OrganizeStrategy::Flat,
-        )
-        .await
-        .unwrap()
-        .with_catalog_store(store)
-        .with_custom_organizer(Arc::new(OrganizeStrategy::YearMonthDay));
+        let lib = PhotoLibrary::new(backend, "", catalog_path, OrganizeStrategy::Flat)
+            .await
+            .unwrap()
+            .with_catalog_store(store)
+            .with_custom_organizer(Arc::new(OrganizeStrategy::YearMonthDay));
 
         assert!(lib.catalog().read().await.items.is_empty());
     }

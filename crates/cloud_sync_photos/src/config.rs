@@ -121,10 +121,12 @@ mod tests {
         let temp = tempdir().unwrap();
         let config_file = temp.path().join("photos.toml");
 
-        let mut config = PhotosConfig::default();
-        config.source_folder = temp.path().join("Camera").to_string_lossy().to_string();
-        config.destination_provider = "local".to_string();
-        config.destination_folder = "Backup".to_string();
+        let config = PhotosConfig {
+            source_folder: temp.path().join("Camera").to_string_lossy().to_string(),
+            destination_provider: "local".to_string(),
+            destination_folder: "Backup".to_string(),
+            ..Default::default()
+        };
 
         assert!(config.save_to_file(&config_file).is_ok());
         assert!(config_file.exists());
@@ -137,7 +139,13 @@ mod tests {
         assert_eq!(loaded.sync_interval_mins, Some(60));
 
         let mut settings = HashMap::new();
-        settings.insert("path".to_string(), temp.path().join("local_target").to_string_lossy().to_string());
+        settings.insert(
+            "path".to_string(),
+            temp.path()
+                .join("local_target")
+                .to_string_lossy()
+                .to_string(),
+        );
         let backend = instantiate_backend("local", &settings).await;
         assert!(backend.is_ok());
     }

@@ -114,6 +114,8 @@ mod tests {
             .with_layer(EncryptionLayer::new("secret_password_123"));
 
         assert!(stacked.name().contains("Encrypted"));
-        assert!(stacked.capabilities().contains(cloud_sync_core::StorageCapabilities::NONE));
+        assert!(stacked
+            .capabilities()
+            .contains(cloud_sync_core::StorageCapabilities::NONE));
     }
 }

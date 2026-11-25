@@ -271,16 +271,27 @@ mod tests {
         struct FailAuthBackend;
         #[async_trait::async_trait]
         impl StorageBackend for FailAuthBackend {
-            fn name(&self) -> &str { "fail_auth" }
+            fn name(&self) -> &str {
+                "fail_auth"
+            }
             async fn upload(&self, _local: &Path, _remote: &str) -> Result<(), StorageError> {
                 Err(StorageError::Authentication("bad credentials".into()))
             }
-            async fn download(&self, _remote: &str, _local: &Path) -> Result<(), StorageError> { Ok(()) }
-            async fn delete(&self, _remote: &str) -> Result<(), StorageError> { Ok(()) }
-            async fn list(&self, _remote: &str) -> Result<Vec<StorageItem>, StorageError> { Ok(vec![]) }
+            async fn download(&self, _remote: &str, _local: &Path) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn delete(&self, _remote: &str) -> Result<(), StorageError> {
+                Ok(())
+            }
+            async fn list(&self, _remote: &str) -> Result<Vec<StorageItem>, StorageError> {
+                Ok(vec![])
+            }
         }
         let auth_layer = RetryLayer::default().layer(Arc::new(FailAuthBackend));
-        assert!(auth_layer.upload(Path::new("dummy"), "file.txt").await.is_err());
+        assert!(auth_layer
+            .upload(Path::new("dummy"), "file.txt")
+            .await
+            .is_err());
         assert_eq!(auth_layer.name(), "fail_auth");
         assert_eq!(auth_layer.capabilities(), StorageCapabilities::NONE);
         assert!(!auth_layer.is_simulated());
@@ -288,7 +299,10 @@ mod tests {
         assert!(auth_layer.as_server_side_ops().is_none());
         assert!(auth_layer.as_change_feed().is_none());
         assert!(auth_layer.as_resumable_uploader().is_none());
-        assert!(auth_layer.download("remote", Path::new("dummy")).await.is_ok());
+        assert!(auth_layer
+            .download("remote", Path::new("dummy"))
+            .await
+            .is_ok());
         assert!(auth_layer.delete("remote").await.is_ok());
         assert!(auth_layer.list("").await.unwrap().is_empty());
         assert!(auth_layer.create_folder("folder").await.is_ok());

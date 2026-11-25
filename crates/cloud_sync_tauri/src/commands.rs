@@ -352,13 +352,11 @@ fn sanitize_app_config_value(
 ) -> Result<cloud_sync_daemon::config::AppConfig, String> {
     if let serde_json::Value::Object(ref mut map) = val {
         // Merge defaults for missing fields
-        if let Ok(default_val) =
+        if let Ok(serde_json::Value::Object(def_map)) =
             serde_json::to_value(cloud_sync_daemon::config::AppConfig::default())
         {
-            if let serde_json::Value::Object(def_map) = default_val {
-                for (k, v) in def_map {
-                    map.entry(k).or_insert(v);
-                }
+            for (k, v) in def_map {
+                map.entry(k).or_insert(v);
             }
         }
 
@@ -509,7 +507,10 @@ pub async fn save_config(
         }
 
         if !fallback_success {
-            return Err(format!("Failed to save config file ({}): {}", config_file, e));
+            return Err(format!(
+                "Failed to save config file ({}): {}",
+                config_file, e
+            ));
         }
     }
 
@@ -1231,7 +1232,11 @@ mod tests {
             let sanitized = sanitize_app_config_value(val).expect("sanitization ok");
             let serialized = serde_json::to_string(&sanitized.conflict_policy).unwrap();
             let expected_quoted = format!("\"{}\"", expected);
-            assert_eq!(serialized, expected_quoted, "Failed for input: {}", input_policy);
+            assert_eq!(
+                serialized, expected_quoted,
+                "Failed for input: {}",
+                input_policy
+            );
         }
     }
 

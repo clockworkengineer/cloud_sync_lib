@@ -358,7 +358,8 @@ async fn perform_backup<S: StorageBackend + ?Sized, D: StorageBackend + ?Sized>(
                 println!("[Backup] Syncing file: {}", rel_path);
 
                 // Use RAII-guarded temporary staging file to guarantee cleanup even if download or upload fails
-                let temp_guard = cloud_sync_lib::providers::utils::TempFileGuard::new("backup_transfer");
+                let temp_guard =
+                    cloud_sync_lib::providers::utils::TempFileGuard::new("backup_transfer");
                 source.download(&rel_path, temp_guard.path()).await?;
                 let ft = filetime::FileTime::from_system_time(source_item.modified);
                 let _ = filetime::set_file_mtime(temp_guard.path(), ft);

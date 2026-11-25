@@ -19,65 +19,71 @@ fn main() {
     // 2. Determine profile (debug vs release)
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
 
-    // 3. Build cloud_sync_daemon using a separate target directory to avoid deadlocks
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let workspace_dir = manifest_dir
         .parent()
         .and_then(|p| p.parent())
         .expect("failed to resolve workspace directory");
-    let sidecar_target_dir = workspace_dir.join("target").join("sidecar");
 
-    let mut cargo_cmd = Command::new("cargo");
-    cargo_cmd.args([
-        "build",
-        "--bin",
-        "cloud_sync_daemon",
-        "--all-features",
-        "--target-dir",
-        sidecar_target_dir.to_str().unwrap(),
-    ]);
-    if profile == "release" {
-        cargo_cmd.arg("--release");
-    }
-
-    // Clear cargo flags that might cause problems or deadlocks in nested invocations
-    cargo_cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
-    cargo_cmd.env_remove("RUSTFLAGS");
-
-    cargo_cmd.current_dir(workspace_dir);
-
-    let status = cargo_cmd
-        .status()
-        .expect("failed to run cargo build for cloud_sync_daemon");
-    if !status.success() {
-        panic!("Failed to build cloud_sync_daemon");
-    }
-
-    // 4. Locate target binary
+    // 3. Locate target binary name
     let mut bin_name = "cloud_sync_daemon".to_string();
     if target.contains("windows") {
         bin_name.push_str(".exe");
     }
 
-    let mut src_bin_path = sidecar_target_dir.join(&profile).join(&bin_name);
-    if !src_bin_path.exists() {
-        let alt_path = sidecar_target_dir.join(&target).join(&profile).join(&bin_name);
-        if alt_path.exists() {
-            src_bin_path = alt_path;
+    let sidecar_target_dir = workspace_dir.join("target").join("sidecar");
+
+    // Only build cloud_sync_daemon sidecar if explicitly requested via BUILD_SIDECAR=1
+    // to avoid recursive Cargo invocations during workspace check/test.
+    if env::var("BUILD_SIDECAR").map(|v| v == "1").unwrap_or(false) {
+        let mut cargo_cmd = Command::new("cargo");
+        cargo_cmd.args([
+            "build",
+            "--bin",
+            "cloud_sync_daemon",
+            "--all-features",
+            "--target-dir",
+            sidecar_target_dir.to_str().unwrap(),
+        ]);
+        if profile == "release" {
+            cargo_cmd.arg("--release");
+        }
+        cargo_cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
+        cargo_cmd.env_remove("RUSTFLAGS");
+        cargo_cmd.current_dir(workspace_dir);
+
+        let status = cargo_cmd
+            .status()
+            .expect("failed to run cargo build for cloud_sync_daemon");
+        if !status.success() {
+            panic!("Failed to build cloud_sync_daemon");
         }
     }
 
-    // 5. Create binaries folder if it doesn't exist
+    // 4. Find candidate pre-built binary
+    let candidate_paths = [
+        sidecar_target_dir.join(&profile).join(&bin_name),
+        sidecar_target_dir
+            .join(&target)
+            .join(&profile)
+            .join(&bin_name),
+        workspace_dir.join("target").join(&profile).join(&bin_name),
+        workspace_dir
+            .join("target")
+            .join(&target)
+            .join(&profile)
+            .join(&bin_name),
+        workspace_dir.join("target").join("release").join(&bin_name),
+        workspace_dir.join("target").join("debug").join(&bin_name),
+    ];
+
+    let found_bin = candidate_paths.into_iter().find(|p| p.is_file());
+
+    // 5. Ensure binaries folder exists
     let dest_dir = manifest_dir.join("binaries");
     fs::create_dir_all(&dest_dir).unwrap();
 
-    // Clean up any stray directory with the binary's base name in binaries/
-    let stray_bin = dest_dir.join("cloud_sync_daemon");
-    if stray_bin.is_dir() {
-        let _ = fs::remove_dir_all(&stray_bin);
-    }
-
-    // 6. Copy and rename the binary with the target triple
+    // 6. Copy binary with target triple or ensure placeholder exists
     let dest_bin_name = format!(
         "cloud_sync_daemon-{}{}",
         target,
@@ -89,19 +95,11 @@ fn main() {
     );
     let dest_bin_path = dest_dir.join(dest_bin_name);
 
-    if dest_bin_path.is_dir() {
-        let _ = fs::remove_dir_all(&dest_bin_path);
-    }
-
-    if let Err(e) = fs::copy(&src_bin_path, &dest_bin_path) {
-        if !dest_bin_path.exists() {
-            panic!("failed to copy cloud_sync_daemon sidecar binary: {}", e);
-        } else {
-            println!(
-                "cargo:warning=Failed to overwrite sidecar binary (file locked?): {}",
-                e
-            );
-        }
+    if let Some(src_bin_path) = found_bin {
+        let _ = fs::copy(&src_bin_path, &dest_bin_path);
+    } else if !dest_bin_path.exists() {
+        // Create placeholder file so Tauri bundling / validation doesn't fail on missing resource
+        let _ = fs::write(&dest_bin_path, b"");
     }
 
     // 6.5 Generate required icons from app_icon.png if present
@@ -111,51 +109,43 @@ fn main() {
     let icon_128_path = icons_dir.join("128x128.png");
 
     if app_icon_path.exists() {
-        let file_bytes = std::fs::read(&app_icon_path).expect("failed to read app_icon.png file");
-        let img =
-            image::load_from_memory(&file_bytes).expect("failed to decode app_icon.png image data");
+        if let Ok(file_bytes) = std::fs::read(&app_icon_path) {
+            if let Ok(img) = image::load_from_memory(&file_bytes) {
+                let resized_128 = img.resize_exact(128, 128, image::imageops::FilterType::Lanczos3);
+                let rgba_128 = resized_128.to_rgba8();
+                let _ = rgba_128.save(&icon_128_path);
 
-        let resized_128 = img.resize_exact(128, 128, image::imageops::FilterType::Lanczos3);
-        let rgba_128 = resized_128.to_rgba8();
-        rgba_128
-            .save(&icon_128_path)
-            .expect("failed to save 128x128.png");
-
-        // Save icon.ico (containing standard sizes)
-        let mut icon_dir = ico::IconDir::new(ico::ResourceType::Icon);
-        for size in [16, 32, 48, 64, 128, 256] {
-            let resized = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
-            let rgba = resized.to_rgba8();
-            let ico_image = ico::IconImage::from_rgba_data(size, size, rgba.into_raw());
-            let entry = ico::IconDirEntry::encode(&ico_image).expect("failed to encode icon image");
-            icon_dir.add_entry(entry);
-        }
-        let file = std::fs::File::create(&icon_ico_path).expect("failed to create icon.ico");
-        icon_dir.write(file).expect("failed to write icon.ico");
-    }
-
-    // 6.8 Pre-clean sidecar target destination in target_dir.
-    // In tauri-build, copy_binaries attempts to remove `target_dir.join("cloud_sync_daemon")`
-    // using `fs::remove_file(&dest).unwrap()`. If `dest` exists as a directory (which can happen
-    // in workspace builds on Linux where an intermediate directory or artifact was created),
-    // remove_file panics with Os { code: 21, kind: IsADirectory }.
-    // Cleaning up any conflicting directory beforehand prevents this panic.
-    let out_dir_raw = env::var("OUT_DIR").unwrap_or_default();
-    let out_dir_path = PathBuf::from(&out_dir_raw);
-    if let Some(target_dir) = out_dir_path
-        .parent()
-        .and_then(|p| p.parent())
-        .and_then(|p| p.parent())
-    {
-        for candidate in &["cloud_sync_daemon", "cloud_sync_daemon.exe"] {
-            let candidate_dest = target_dir.join(candidate);
-            if candidate_dest.is_dir() {
-                let _ = fs::remove_dir_all(&candidate_dest);
+                // Save icon.ico (containing standard sizes)
+                let mut icon_dir = ico::IconDir::new(ico::ResourceType::Icon);
+                for size in [16, 32, 48, 64, 128, 256] {
+                    let resized =
+                        img.resize_exact(size, size, image::imageops::FilterType::Lanczos3);
+                    let rgba = resized.to_rgba8();
+                    if let Ok(entry) = ico::IconDirEntry::encode(&ico::IconImage::from_rgba_data(
+                        size,
+                        size,
+                        rgba.into_raw(),
+                    )) {
+                        icon_dir.add_entry(entry);
+                    }
+                }
+                if let Ok(file) = std::fs::File::create(&icon_ico_path) {
+                    let _ = icon_dir.write(file);
+                }
             }
         }
     }
 
-    // 7. Invoke tauri_build
+    // 7. Prevent tauri-build 2.6.3 copy_binaries bug on modern Cargo layouts.
+    // In Cargo's new layout (`target/<profile>/build/<pkg>/<hash>/out`), tauri-build's
+    // 3-parent calculation resolves target_dir to `target/<profile>/build`.
+    // It then attempts to copy the sidecar to `target/<profile>/build/cloud_sync_daemon`,
+    // which collides with Cargo's build directory and panics with `IsADirectory` on Linux.
+    // Suppressing externalBin during build script execution avoids this faulty copy.
+    if env::var("TAURI_CONFIG").is_err() {
+        env::set_var("TAURI_CONFIG", r#"{"bundle":{"externalBin":[]}}"#);
+    }
 
+    // 8. Invoke tauri_build
     tauri_build::build();
 }

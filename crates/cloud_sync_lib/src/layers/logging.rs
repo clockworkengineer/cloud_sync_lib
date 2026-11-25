@@ -253,9 +253,17 @@ mod tests {
         // Test create_folder, rename, copy, capabilities, server_side_ops
         assert!(wrapped.create_folder("new_folder").await.is_ok());
         assert!(wrapped.rename("new_folder", "renamed_folder").await.is_ok());
-        wrapped.upload(&file_path, "logs/file_to_copy.txt").await.unwrap();
-        assert!(wrapped.copy("logs/file_to_copy.txt", "logs/test_copy.txt").await.is_ok());
-        assert!(wrapped.capabilities().contains(cloud_sync_core::StorageCapabilities::NONE));
+        wrapped
+            .upload(&file_path, "logs/file_to_copy.txt")
+            .await
+            .unwrap();
+        assert!(wrapped
+            .copy("logs/file_to_copy.txt", "logs/test_copy.txt")
+            .await
+            .is_ok());
+        assert!(wrapped
+            .capabilities()
+            .contains(cloud_sync_core::StorageCapabilities::NONE));
         assert!(wrapped.is_simulated());
         assert!(wrapped.simulation_reason().is_some());
         assert!(wrapped.compute_local_checksum(&file_path).await.is_ok());

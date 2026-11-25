@@ -146,8 +146,13 @@ mod tests {
         }
 
         async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-            let data = tokio::fs::read(local_path).await.map_err(StorageError::Io)?;
-            self.files.lock().unwrap().insert(remote_path.to_string(), data);
+            let data = tokio::fs::read(local_path)
+                .await
+                .map_err(StorageError::Io)?;
+            self.files
+                .lock()
+                .unwrap()
+                .insert(remote_path.to_string(), data);
             Ok(())
         }
 
@@ -158,10 +163,15 @@ mod tests {
             };
             match data {
                 Some(bytes) => {
-                    tokio::fs::write(local_path, bytes).await.map_err(StorageError::Io)?;
+                    tokio::fs::write(local_path, bytes)
+                        .await
+                        .map_err(StorageError::Io)?;
                     Ok(())
                 }
-                None => Err(StorageError::NotFound(format!("File not found: {}", remote_path))),
+                None => Err(StorageError::NotFound(format!(
+                    "File not found: {}",
+                    remote_path
+                ))),
             }
         }
 
@@ -193,6 +203,8 @@ mod tests {
     async fn test_harness_compliance_verification() {
         let temp_dir = tempfile::tempdir().unwrap();
         let backend = InMemComplianceBackend::new();
-        assert!(verify_backend_compliance(&backend, temp_dir.path()).await.is_ok());
+        assert!(verify_backend_compliance(&backend, temp_dir.path())
+            .await
+            .is_ok());
     }
 }

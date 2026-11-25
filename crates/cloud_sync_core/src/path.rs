@@ -7,9 +7,7 @@ use alloc::string::ToString;
 /// - Unix forward slashes `/`
 /// - No leading slashes
 /// - Traversal segments (`..`, `./`) stripped or rejected
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub struct NormalizedPath(String);
 
 impl<'de> serde::Deserialize<'de> for NormalizedPath {

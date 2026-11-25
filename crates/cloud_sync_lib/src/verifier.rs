@@ -133,8 +133,10 @@ pub async fn verify_integrity(
         all_paths.insert(normalized);
     }
 
-    let mut report = VerificationReport::default();
-    report.total_files_checked = all_paths.len();
+    let mut report = VerificationReport {
+        total_files_checked: all_paths.len(),
+        ..Default::default()
+    };
 
     for rel_path in all_paths {
         let local_size = local_files.get(&rel_path).copied();

@@ -14,6 +14,8 @@ use cloud_sync_core::{
     DirectoryLister, FolderOps, NormalizedPath, StorageBackend, StorageCapabilities, StorageError,
     StorageItem, StorageReader, StorageWriter,
 };
+use cloud_sync_lib::analytics::compute_storage_analytics;
+use cloud_sync_lib::cloud_transfer::{transfer_between_backends, CloudTransferOptions};
 use cloud_sync_lib::layers::{
     CacheLayer, CircuitBreakerConfig, CircuitBreakerLayer, CompressionLayer, LayeredBackendExt,
     RetryConfig, RetryLayer, StorageLayer,
@@ -21,11 +23,7 @@ use cloud_sync_lib::layers::{
 use cloud_sync_lib::providers::chunker::ChunkerBackend;
 use cloud_sync_lib::providers::union::{UnionBackend, UnionPolicy};
 use cloud_sync_lib::snapshot::list_snapshots;
-use cloud_sync_lib::cloud_transfer::{transfer_between_backends, CloudTransferOptions};
-use cloud_sync_lib::analytics::compute_storage_analytics;
-use cloud_sync_lib::{
-    BackendFactory, BufferPool, CloudSyncClient, DynamicBackendRegistry,
-};
+use cloud_sync_lib::{BackendFactory, BufferPool, CloudSyncClient, DynamicBackendRegistry};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -54,8 +52,10 @@ impl Default for MemoryStorageBackend {
 #[async_trait]
 impl StorageReader for MemoryStorageBackend {
     async fn download(&self, remote_path: &str, local_path: &Path) -> Result<(), StorageError> {
-        let norm = NormalizedPath::new(remote_path)
-            .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+        let norm = NormalizedPath::new(remote_path).map_err(|e| StorageError::Provider {
+            message: e.to_string(),
+            status: None,
+        })?;
         let maybe_bytes = {
             let files = self.files.read().map_err(|_| StorageError::Provider {
                 message: "Lock poisoned".into(),
@@ -64,7 +64,9 @@ impl StorageReader for MemoryStorageBackend {
             files.get(norm.as_str()).cloned()
         };
         if let Some(bytes) = maybe_bytes {
-            tokio::fs::write(local_path, bytes).await.map_err(StorageError::Io)?;
+            tokio::fs::write(local_path, bytes)
+                .await
+                .map_err(StorageError::Io)?;
             Ok(())
         } else {
             Err(StorageError::NotFound(remote_path.to_string()))
@@ -75,9 +77,13 @@ impl StorageReader for MemoryStorageBackend {
 #[async_trait]
 impl StorageWriter for MemoryStorageBackend {
     async fn upload(&self, local_path: &Path, remote_path: &str) -> Result<(), StorageError> {
-        let norm = NormalizedPath::new(remote_path)
-            .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
-        let bytes = tokio::fs::read(local_path).await.map_err(StorageError::Io)?;
+        let norm = NormalizedPath::new(remote_path).map_err(|e| StorageError::Provider {
+            message: e.to_string(),
+            status: None,
+        })?;
+        let bytes = tokio::fs::read(local_path)
+            .await
+            .map_err(StorageError::Io)?;
         let mut files = self.files.write().map_err(|_| StorageError::Provider {
             message: "Lock poisoned".into(),
             status: None,
@@ -87,8 +93,10 @@ impl StorageWriter for MemoryStorageBackend {
     }
 
     async fn delete(&self, remote_path: &str) -> Result<(), StorageError> {
-        let norm = NormalizedPath::new(remote_path)
-            .map_err(|e| StorageError::Provider { message: e.to_string(), status: None })?;
+        let norm = NormalizedPath::new(remote_path).map_err(|e| StorageError::Provider {
+            message: e.to_string(),
+            status: None,
+        })?;
         let mut files = self.files.write().map_err(|_| StorageError::Provider {
             message: "Lock poisoned".into(),
             status: None,
@@ -300,7 +308,8 @@ async fn main() -> Result<(), StorageError> {
     // 3. Verify Dynamic Registry registration & custom provider
     let registry = Arc::new(DynamicBackendRegistry::new());
     registry.register(Box::new(MemoryFactory));
-    let custom_backend = registry.create_backend("memory", &serde_json::json!({}), PathBuf::from("/tmp"))?;
+    let custom_backend =
+        registry.create_backend("memory", &serde_json::json!({}), PathBuf::from("/tmp"))?;
     assert_eq!(custom_backend.name(), "in_memory");
 
     // 4. Verify Layer Wrapping
@@ -317,7 +326,11 @@ async fn main() -> Result<(), StorageError> {
     // 6. Verify UnionBackend snippet
     let b1 = Arc::new(MemoryStorageBackend::new());
     let b2 = Arc::new(MemoryStorageBackend::new());
-    let union_backend = Arc::new(UnionBackend::new("UnionRAID1", vec![b1.clone(), b2.clone()], UnionPolicy::MirrorAll));
+    let union_backend = Arc::new(UnionBackend::new(
+        "UnionRAID1",
+        vec![b1.clone(), b2.clone()],
+        UnionPolicy::MirrorAll,
+    ));
     assert_eq!(union_backend.name(), "UnionRAID1");
 
     // 7. Verify ChunkerBackend snippet
@@ -337,13 +350,9 @@ async fn main() -> Result<(), StorageError> {
         skip_matching: true,
         dry_run: true,
     };
-    let transfer_report = transfer_between_backends(
-        b1.as_ref(),
-        b2.as_ref(),
-        "source",
-        "dest",
-        transfer_options,
-    ).await?;
+    let transfer_report =
+        transfer_between_backends(b1.as_ref(), b2.as_ref(), "source", "dest", transfer_options)
+            .await?;
     assert_eq!(transfer_report.source_backend, "in_memory");
 
     // 10. Verify snapshot functions

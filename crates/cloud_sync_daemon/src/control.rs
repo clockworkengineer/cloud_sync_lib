@@ -222,9 +222,7 @@ async fn handle_lifecycle_command(
                             .to_lowercase()
                             .replace(" ", "_");
                         let state_file_path = crate::engine::resolve_state_file_path(
-                            &state_dir,
-                            &watch_dir,
-                            &safe_name,
+                            &state_dir, &watch_dir, &safe_name,
                         )
                         .await;
                         if let Err(e) = crate::engine::sync_bidirectional(
@@ -349,7 +347,10 @@ async fn handle_conflict_and_plan_command(
                     info!("Resolving conflict on '{}' with 'use_local'", rel_path);
                     for active in &backends {
                         if let Err(e) = active.backend.upload(&local_path, rel_path).await {
-                            error!("Failed to upload local file during conflict resolution: {}", e);
+                            error!(
+                                "Failed to upload local file during conflict resolution: {}",
+                                e
+                            );
                             return format!("Error: Failed to upload file: {}\n", e);
                         }
                     }
@@ -368,7 +369,10 @@ async fn handle_conflict_and_plan_command(
                     info!("Resolving conflict on '{}' with 'use_remote'", rel_path);
                     if let Some(active) = backends.first() {
                         if let Err(e) = active.backend.download(rel_path, &local_path).await {
-                            error!("Failed to download remote file during conflict resolution: {}", e);
+                            error!(
+                                "Failed to download remote file during conflict resolution: {}",
+                                e
+                            );
                             return format!("Error: Failed to download file: {}\n", e);
                         }
                     }
@@ -389,7 +393,10 @@ async fn handle_conflict_and_plan_command(
                     let conflict_local = watch_dir.join(&conflict_rel);
 
                     if let Err(e) = tokio::fs::rename(&local_path, &conflict_local).await {
-                        error!("Failed to rename local file during conflict resolution: {}", e);
+                        error!(
+                            "Failed to rename local file during conflict resolution: {}",
+                            e
+                        );
                         return format!("Error: Failed to rename local file: {}\n", e);
                     }
 
@@ -397,7 +404,8 @@ async fn handle_conflict_and_plan_command(
                         if let Err(e) = active.backend.download(rel_path, &local_path).await {
                             error!("Failed to download remote file during keep_both: {}", e);
                         }
-                        if let Err(e) = active.backend.upload(&conflict_local, &conflict_rel).await {
+                        if let Err(e) = active.backend.upload(&conflict_local, &conflict_rel).await
+                        {
                             error!("Failed to upload .local-conflict to remote: {}", e);
                         }
                     }
@@ -440,12 +448,9 @@ async fn handle_conflict_and_plan_command(
                     .name()
                     .to_lowercase()
                     .replace(' ', "_");
-                let state_file_path = crate::engine::resolve_state_file_path(
-                    &s.state_dir,
-                    &s.watch_dir,
-                    &safe_name,
-                )
-                .await;
+                let state_file_path =
+                    crate::engine::resolve_state_file_path(&s.state_dir, &s.watch_dir, &safe_name)
+                        .await;
                 let filter = crate::engine::FileFilter::new(
                     &s.gitignore,
                     active_backend.selective_sync.as_deref(),
@@ -625,7 +630,9 @@ async fn handle_storage_ops_command(parts: &[&str], state: &Arc<Mutex<DaemonStat
                 max_versions_per_file: 5,
             });
             match mgr.list_versions().await {
-                Ok(list) => serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string()) + "\n",
+                Ok(list) => {
+                    serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string()) + "\n"
+                }
                 Err(e) => format!("Error: Failed to list trash versions: {}\n", e),
             }
         }
@@ -647,14 +654,19 @@ async fn handle_storage_ops_command(parts: &[&str], state: &Arc<Mutex<DaemonStat
                 retention_days: 30,
                 max_versions_per_file: 5,
             });
-            match mgr.restore_version(archive_id, &watch_dir, custom_rel).await {
-                Ok(restored) => serde_json::json!({
-                    "status": "restored",
-                    "archive_id": archive_id,
-                    "restored_path": restored.to_string_lossy()
-                })
-                .to_string()
-                    + "\n",
+            match mgr
+                .restore_version(archive_id, &watch_dir, custom_rel)
+                .await
+            {
+                Ok(restored) => {
+                    serde_json::json!({
+                        "status": "restored",
+                        "archive_id": archive_id,
+                        "restored_path": restored.to_string_lossy()
+                    })
+                    .to_string()
+                        + "\n"
+                }
                 Err(e) => format!("Error: Failed to restore version '{}': {}\n", archive_id, e),
             }
         }
@@ -665,18 +677,20 @@ async fn handle_storage_ops_command(parts: &[&str], state: &Arc<Mutex<DaemonStat
             }
             let src_name = parts[1].to_lowercase();
             let dst_name = parts[2].to_lowercase();
-            let delete_extra = parts.iter().any(|&p| p == "--sync");
+            let delete_extra = parts.contains(&"--sync");
 
             let s = state.lock().await;
             let backends = s.backends.clone();
             drop(s);
 
-            let src_opt = backends
-                .iter()
-                .find(|b| b.backend.name().to_lowercase().replace(' ', "_") == src_name || b.backend.name().to_lowercase() == src_name);
-            let dst_opt = backends
-                .iter()
-                .find(|b| b.backend.name().to_lowercase().replace(' ', "_") == dst_name || b.backend.name().to_lowercase() == dst_name);
+            let src_opt = backends.iter().find(|b| {
+                b.backend.name().to_lowercase().replace(' ', "_") == src_name
+                    || b.backend.name().to_lowercase() == src_name
+            });
+            let dst_opt = backends.iter().find(|b| {
+                b.backend.name().to_lowercase().replace(' ', "_") == dst_name
+                    || b.backend.name().to_lowercase() == dst_name
+            });
 
             match (src_opt, dst_opt) {
                 (Some(src), Some(dst)) => {
@@ -694,7 +708,8 @@ async fn handle_storage_ops_command(parts: &[&str], state: &Arc<Mutex<DaemonStat
                     .await
                     {
                         Ok(report) => {
-                            serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string()) + "\n"
+                            serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string())
+                                + "\n"
                         }
                         Err(e) => format!("Error: Cloud transfer failed: {}\n", e),
                     }
@@ -767,7 +782,10 @@ async fn handle_storage_ops_command(parts: &[&str], state: &Arc<Mutex<DaemonStat
                     return serde_json::to_string(&rep).unwrap_or_else(|_| "{}".to_string()) + "\n";
                 }
             }
-            format!("Error: Snapshot '{}' not found on any active backend\n", snap_id)
+            format!(
+                "Error: Snapshot '{}' not found on any active backend\n",
+                snap_id
+            )
         }
         _ => unreachable!(),
     }
@@ -842,11 +860,11 @@ impl DaemonControlServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cloud_sync_lib::{
-        ConflictPolicy, StorageBackend, StorageCapabilities, StorageError, StorageItem,
-        SyncIgnore, SyncPolicy,
-    };
     use crate::ActiveBackend;
+    use cloud_sync_lib::{
+        ConflictPolicy, StorageBackend, StorageCapabilities, StorageError, StorageItem, SyncIgnore,
+        SyncPolicy,
+    };
     use std::collections::HashMap;
     use std::path::Path;
     use tempfile::tempdir;
@@ -894,7 +912,13 @@ mod tests {
         }
     }
 
-    fn create_test_state(temp_path: &Path) -> (Arc<Mutex<DaemonState>>, mpsc::Sender<()>, mpsc::Receiver<()>) {
+    fn create_test_state(
+        temp_path: &Path,
+    ) -> (
+        Arc<Mutex<DaemonState>>,
+        mpsc::Sender<()>,
+        mpsc::Receiver<()>,
+    ) {
         let (event_tx, _) = tokio::sync::broadcast::channel(16);
         let (shutdown_tx, shutdown_rx) = mpsc::channel(2);
 
@@ -958,7 +982,8 @@ mod tests {
         let resp_empty = handle_control_command("", &state, &shutdown_tx).await;
         assert!(resp_empty.contains("Error: Empty command"));
 
-        let resp_unknown = handle_control_command("invalid_command_xyz", &state, &shutdown_tx).await;
+        let resp_unknown =
+            handle_control_command("invalid_command_xyz", &state, &shutdown_tx).await;
         assert!(resp_unknown.contains("Error: Unknown command"));
     }
 
@@ -988,7 +1013,9 @@ mod tests {
         assert!(resp_log_missing.contains("Status: Error"));
 
         let log_file_path = state.lock().await.log_file.clone();
-        tokio::fs::write(&log_file_path, "Log line 1\nLog line 2").await.unwrap();
+        tokio::fs::write(&log_file_path, "Log line 1\nLog line 2")
+            .await
+            .unwrap();
         let resp_log = handle_control_command("log", &state, &shutdown_tx).await;
         assert!(resp_log.contains("Status: OK"));
         assert!(resp_log.contains("Log line 1"));
@@ -1001,7 +1028,8 @@ mod tests {
         let resp_clear_missing = handle_control_command("clear", &state, &shutdown_tx).await;
         assert!(resp_clear_missing.contains("Error: clear command requires a provider name"));
 
-        let resp_clear_unknown = handle_control_command("clear UnknownProvider", &state, &shutdown_tx).await;
+        let resp_clear_unknown =
+            handle_control_command("clear UnknownProvider", &state, &shutdown_tx).await;
         assert!(resp_clear_unknown.contains("Error: No enabled provider found"));
 
         let resp_clear_ok = handle_control_command("clear MockCloud", &state, &shutdown_tx).await;
@@ -1023,14 +1051,20 @@ mod tests {
         assert_eq!(resp_conflicts.trim(), "[]");
 
         // 2. Resolve conflict with missing args
-        let resp_res_missing = handle_control_command("resolve_conflict", &state, &shutdown_tx).await;
-        assert!(resp_res_missing.contains("Error: resolve_conflict requires <path> and <resolution>"));
+        let resp_res_missing =
+            handle_control_command("resolve_conflict", &state, &shutdown_tx).await;
+        assert!(
+            resp_res_missing.contains("Error: resolve_conflict requires <path> and <resolution>")
+        );
 
-        let resp_res_bad_res = handle_control_command("resolve_conflict test.txt bad_mode", &state, &shutdown_tx).await;
+        let resp_res_bad_res =
+            handle_control_command("resolve_conflict test.txt bad_mode", &state, &shutdown_tx)
+                .await;
         assert!(resp_res_bad_res.contains("Error: Unknown resolution"));
 
         // 3. Resolutions: skip, use_local, use_remote, keep_both
-        let resp_skip = handle_control_command("resolve_conflict file.txt skip", &state, &shutdown_tx).await;
+        let resp_skip =
+            handle_control_command("resolve_conflict file.txt skip", &state, &shutdown_tx).await;
         assert!(resp_skip.contains("Status: Conflict dismissed"));
 
         let watch_dir = state.lock().await.watch_dir.clone();
@@ -1038,13 +1072,19 @@ mod tests {
         let local_file = watch_dir.join("doc.txt");
         tokio::fs::write(&local_file, b"local data").await.unwrap();
 
-        let resp_use_local = handle_control_command("resolve_conflict doc.txt use_local", &state, &shutdown_tx).await;
+        let resp_use_local =
+            handle_control_command("resolve_conflict doc.txt use_local", &state, &shutdown_tx)
+                .await;
         assert!(resp_use_local.contains("Status: Conflict resolved (use_local)"));
 
-        let resp_use_remote = handle_control_command("resolve_conflict doc.txt use_remote", &state, &shutdown_tx).await;
+        let resp_use_remote =
+            handle_control_command("resolve_conflict doc.txt use_remote", &state, &shutdown_tx)
+                .await;
         assert!(resp_use_remote.contains("Status: Conflict resolved (use_remote)"));
 
-        let resp_keep_both = handle_control_command("resolve_conflict doc.txt keep_both", &state, &shutdown_tx).await;
+        let resp_keep_both =
+            handle_control_command("resolve_conflict doc.txt keep_both", &state, &shutdown_tx)
+                .await;
         assert!(resp_keep_both.contains("Status: Conflict resolved (keep_both)"));
 
         // 4. Plan commands
@@ -1077,20 +1117,26 @@ mod tests {
         let resp_trash = handle_control_command("trash", &state, &shutdown_tx).await;
         assert!(resp_trash.starts_with('['));
 
-        let resp_trash_restore_missing = handle_control_command("trash_restore", &state, &shutdown_tx).await;
+        let resp_trash_restore_missing =
+            handle_control_command("trash_restore", &state, &shutdown_tx).await;
         assert!(resp_trash_restore_missing.contains("Error: trash_restore requires <archive_id>"));
 
-        let resp_trash_restore_fail = handle_control_command("trash_restore bogus_id", &state, &shutdown_tx).await;
+        let resp_trash_restore_fail =
+            handle_control_command("trash_restore bogus_id", &state, &shutdown_tx).await;
         assert!(resp_trash_restore_fail.contains("Error: Failed to restore version"));
 
         // 6. Transfer command
         let resp_transfer_missing = handle_control_command("transfer", &state, &shutdown_tx).await;
-        assert!(resp_transfer_missing.contains("Error: transfer requires <source_backend> <dest_backend>"));
+        assert!(resp_transfer_missing
+            .contains("Error: transfer requires <source_backend> <dest_backend>"));
 
-        let resp_transfer_missing_backend = handle_control_command("transfer non_existent1 non_existent2", &state, &shutdown_tx).await;
+        let resp_transfer_missing_backend =
+            handle_control_command("transfer non_existent1 non_existent2", &state, &shutdown_tx)
+                .await;
         assert!(resp_transfer_missing_backend.contains("Error: Could not find active source"));
 
-        let resp_transfer_ok = handle_control_command("transfer mockcloud mocksim", &state, &shutdown_tx).await;
+        let resp_transfer_ok =
+            handle_control_command("transfer mockcloud mocksim", &state, &shutdown_tx).await;
         assert!(resp_transfer_ok.contains('{'));
 
         // 7. Snapshots
@@ -1100,11 +1146,18 @@ mod tests {
         let resp_snap_list = handle_control_command("snapshots", &state, &shutdown_tx).await;
         assert!(resp_snap_list.starts_with('['));
 
-        let resp_snap_restore_missing = handle_control_command("snapshot_restore", &state, &shutdown_tx).await;
-        assert!(resp_snap_restore_missing.contains("Error: snapshot_restore requires <snapshot_id>"));
+        let resp_snap_restore_missing =
+            handle_control_command("snapshot_restore", &state, &shutdown_tx).await;
+        assert!(
+            resp_snap_restore_missing.contains("Error: snapshot_restore requires <snapshot_id>")
+        );
 
-        let resp_snap_restore_not_found = handle_control_command("snapshot_restore non_existent_snap", &state, &shutdown_tx).await;
-        assert!(resp_snap_restore_not_found.contains("Error: Snapshot 'non_existent_snap' not found"));
+        let resp_snap_restore_not_found =
+            handle_control_command("snapshot_restore non_existent_snap", &state, &shutdown_tx)
+                .await;
+        assert!(
+            resp_snap_restore_not_found.contains("Error: Snapshot 'non_existent_snap' not found")
+        );
 
         // 8. Server constructor
         let server = DaemonControlServer::new("127.0.0.1:9099");

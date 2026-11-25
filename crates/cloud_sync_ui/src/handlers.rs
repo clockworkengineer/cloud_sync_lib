@@ -713,36 +713,82 @@ mod tests {
 
     #[tokio::test]
     async fn test_api_extended_endpoints() {
-        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| {
-            match cmd {
-                "verify" => Ok(r#"[{"status":"ok"}]"#.to_string()),
-                "dedupe" => Ok(r#"[{"group":"1"}]"#.to_string()),
-                "stats" => Ok(r#"{"total_files":42}"#.to_string()),
-                "tree" => Ok(r#"[{"name":"root"}]"#.to_string()),
-                "trash_list" => Ok(r#"[{"id":"trash_1"}]"#.to_string()),
-                c if c.starts_with("trash_restore ") => Ok(r#"{"restored":true}"#.to_string()),
-                "snapshot_list" => Ok(r#"[{"id":"snap_1"}]"#.to_string()),
-                c if c.starts_with("snapshot_create ") => Ok(r#"{"id":"snap_2"}]"#.to_string()),
-                _ => Err(crate::client::DaemonClientError::CommandFailed("unknown".into())),
-            }
+        let client: Arc<dyn DaemonClientPort> = Arc::new(MockDaemonClient::new(|cmd| match cmd {
+            "verify" => Ok(r#"[{"status":"ok"}]"#.to_string()),
+            "dedupe" => Ok(r#"[{"group":"1"}]"#.to_string()),
+            "stats" => Ok(r#"{"total_files":42}"#.to_string()),
+            "tree" => Ok(r#"[{"name":"root"}]"#.to_string()),
+            "trash_list" => Ok(r#"[{"id":"trash_1"}]"#.to_string()),
+            c if c.starts_with("trash_restore ") => Ok(r#"{"restored":true}"#.to_string()),
+            "snapshot_list" => Ok(r#"[{"id":"snap_1"}]"#.to_string()),
+            c if c.starts_with("snapshot_create ") => Ok(r#"{"id":"snap_2"}]"#.to_string()),
+            _ => Err(crate::client::DaemonClientError::CommandFailed(
+                "unknown".into(),
+            )),
         }));
 
-        assert_eq!(api_verify(State(client.clone())).await.into_response().status(), axum::http::StatusCode::OK);
-        assert_eq!(api_dedupe(State(client.clone())).await.into_response().status(), axum::http::StatusCode::OK);
-        assert_eq!(api_analytics(State(client.clone())).await.into_response().status(), axum::http::StatusCode::OK);
-        assert_eq!(api_tree(State(client.clone())).await.into_response().status(), axum::http::StatusCode::OK);
-        assert_eq!(api_trash_list(State(client.clone())).await.into_response().status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            api_verify(State(client.clone()))
+                .await
+                .into_response()
+                .status(),
+            axum::http::StatusCode::OK
+        );
+        assert_eq!(
+            api_dedupe(State(client.clone()))
+                .await
+                .into_response()
+                .status(),
+            axum::http::StatusCode::OK
+        );
+        assert_eq!(
+            api_analytics(State(client.clone()))
+                .await
+                .into_response()
+                .status(),
+            axum::http::StatusCode::OK
+        );
+        assert_eq!(
+            api_tree(State(client.clone()))
+                .await
+                .into_response()
+                .status(),
+            axum::http::StatusCode::OK
+        );
+        assert_eq!(
+            api_trash_list(State(client.clone()))
+                .await
+                .into_response()
+                .status(),
+            axum::http::StatusCode::OK
+        );
 
-        let restore_resp = api_trash_restore(State(client.clone()), axum::Json(RestoreTrashRequest { archive_id: "arch_1".into() }))
-            .await
-            .into_response();
+        let restore_resp = api_trash_restore(
+            State(client.clone()),
+            axum::Json(RestoreTrashRequest {
+                archive_id: "arch_1".into(),
+            }),
+        )
+        .await
+        .into_response();
         assert_eq!(restore_resp.status(), axum::http::StatusCode::OK);
 
-        assert_eq!(api_snapshots_list(State(client.clone())).await.into_response().status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            api_snapshots_list(State(client.clone()))
+                .await
+                .into_response()
+                .status(),
+            axum::http::StatusCode::OK
+        );
 
-        let snap_resp = api_snapshots_create(State(client), axum::Json(CreateSnapshotRequest { label: Some("test_snap".into()) }))
-            .await
-            .into_response();
+        let snap_resp = api_snapshots_create(
+            State(client),
+            axum::Json(CreateSnapshotRequest {
+                label: Some("test_snap".into()),
+            }),
+        )
+        .await
+        .into_response();
         assert_eq!(snap_resp.status(), axum::http::StatusCode::OK);
     }
 }

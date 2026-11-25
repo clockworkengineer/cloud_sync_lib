@@ -461,38 +461,42 @@ mod tests {
         ));
         let backend = sim.clone().with_layer(CompressionLayer::new());
 
-        assert!(CompressedBackend::is_precompressed_path("photos/IMG_001.JPG"));
+        assert!(CompressedBackend::is_precompressed_path(
+            "photos/IMG_001.JPG"
+        ));
         assert!(CompressedBackend::is_precompressed_path("videos/clip.mp4"));
         assert!(CompressedBackend::is_precompressed_path("archive.zip"));
-        assert!(!CompressedBackend::is_precompressed_path("notes/readme.txt"));
+        assert!(!CompressedBackend::is_precompressed_path(
+            "notes/readme.txt"
+        ));
 
         // Upload a .jpg file; it should bypass CLZ1 framing and have exact byte-for-byte size on remote
         let jpeg_payload = vec![0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         let src_jpg = local_dir.path().join("photo.jpg");
         tokio::fs::write(&src_jpg, &jpeg_payload).await.unwrap();
 
-        backend
-            .upload(&src_jpg, "photos/photo.jpg")
-            .await
-            .unwrap();
+        backend.upload(&src_jpg, "photos/photo.jpg").await.unwrap();
 
         let stored = sim.list("photos").await.unwrap();
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].size, jpeg_payload.len() as u64);
 
         let dl_jpg = local_dir.path().join("downloaded.jpg");
-        backend
-            .download("photos/photo.jpg", &dl_jpg)
-            .await
-            .unwrap();
+        backend.download("photos/photo.jpg", &dl_jpg).await.unwrap();
         assert_eq!(tokio::fs::read(&dl_jpg).await.unwrap(), jpeg_payload);
 
         // Test server side ops and delegations
         assert_eq!(backend.name(), "TestSim");
         assert!(backend.as_server_side_ops().is_some());
         let sso = backend.as_server_side_ops().unwrap();
-        assert!(sso.copy("photos/photo.jpg", "photos/photo_copy.jpg").await.is_ok());
-        assert!(sso.rename("photos/photo_copy.jpg", "photos/photo_renamed.jpg").await.is_ok());
+        assert!(sso
+            .copy("photos/photo.jpg", "photos/photo_copy.jpg")
+            .await
+            .is_ok());
+        assert!(sso
+            .rename("photos/photo_copy.jpg", "photos/photo_renamed.jpg")
+            .await
+            .is_ok());
         assert!(backend.delete("photos/photo_renamed.jpg").await.is_ok());
 
         // Test decompress errors
@@ -514,7 +518,10 @@ mod tests {
         bomb_frame.extend_from_slice(&[0x00, 0x41]); // 2 bytes payload
 
         let res = CompressedBackend::decompress_bytes(&bomb_frame);
-        assert!(res.is_err(), "Decompression bomb exceeding safety limit must be rejected");
+        assert!(
+            res.is_err(),
+            "Decompression bomb exceeding safety limit must be rejected"
+        );
         let err_msg = res.unwrap_err().to_string();
         assert!(
             err_msg.contains("exceeds safety threshold"),

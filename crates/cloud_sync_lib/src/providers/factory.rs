@@ -582,14 +582,26 @@ mod tests {
             registry.create_backend("local", &serde_json::json!({}), PathBuf::from("sim_dir"));
         assert!(res.is_ok());
 
-        assert_eq!(registry.create_backend("local", &serde_json::json!({}), PathBuf::from("sim_dir")).unwrap().name(), "local");
+        assert_eq!(
+            registry
+                .create_backend("local", &serde_json::json!({}), PathBuf::from("sim_dir"))
+                .unwrap()
+                .name(),
+            "local"
+        );
 
         // Test singleton accessor
         let global_reg = DynamicBackendRegistry::global();
-        assert!(global_reg.create_backend("local", &serde_json::json!({}), PathBuf::from("sim_dir")).is_ok());
+        assert!(global_reg
+            .create_backend("local", &serde_json::json!({}), PathBuf::from("sim_dir"))
+            .is_ok());
 
         // Test invalid configuration for local or unregistered
-        let bad = registry.create_backend("unknown_provider_xyz", &serde_json::json!({}), PathBuf::from("sim_dir"));
+        let bad = registry.create_backend(
+            "unknown_provider_xyz",
+            &serde_json::json!({}),
+            PathBuf::from("sim_dir"),
+        );
         assert!(bad.is_err());
 
         // Test each factory's provider instantiation through dynamic registry when compiled
@@ -611,7 +623,11 @@ mod tests {
         #[cfg(feature = "s3")]
         {
             assert!(registry.create_backend("s3", &serde_json::json!({ "bucket": "my-bucket", "region": "us-east-1", "access_key_id": "key", "secret_access_key": "sec" }), PathBuf::from("sim_dir")).is_ok());
-            let bad_s3 = registry.create_backend("s3", &serde_json::json!({ "bucket": 123 }), PathBuf::from("sim_dir"));
+            let bad_s3 = registry.create_backend(
+                "s3",
+                &serde_json::json!({ "bucket": 123 }),
+                PathBuf::from("sim_dir"),
+            );
             assert!(bad_s3.is_err());
         }
 
@@ -619,15 +635,39 @@ mod tests {
         assert!(registry.create_backend("nextcloud", &serde_json::json!({ "url": "http://localhost:8080", "username": "user", "app_password": "pwd" }), PathBuf::from("sim_dir")).is_ok());
 
         #[cfg(feature = "mega")]
-        assert!(registry.create_backend("mega", &serde_json::json!({ "email": "user@example.com", "password": "pwd" }), PathBuf::from("sim_dir")).is_ok());
+        assert!(registry
+            .create_backend(
+                "mega",
+                &serde_json::json!({ "email": "user@example.com", "password": "pwd" }),
+                PathBuf::from("sim_dir")
+            )
+            .is_ok());
 
         #[cfg(feature = "ftp")]
-        assert!(registry.create_backend("ftp", &serde_json::json!({ "host": "localhost", "username": "user" }), PathBuf::from("sim_dir")).is_ok());
+        assert!(registry
+            .create_backend(
+                "ftp",
+                &serde_json::json!({ "host": "localhost", "username": "user" }),
+                PathBuf::from("sim_dir")
+            )
+            .is_ok());
 
         #[cfg(feature = "http")]
-        assert!(registry.create_backend("http", &serde_json::json!({ "url": "http://localhost:8080" }), PathBuf::from("sim_dir")).is_ok());
+        assert!(registry
+            .create_backend(
+                "http",
+                &serde_json::json!({ "url": "http://localhost:8080" }),
+                PathBuf::from("sim_dir")
+            )
+            .is_ok());
 
         #[cfg(feature = "smb")]
-        assert!(registry.create_backend("smb", &serde_json::json!({ "server": "localhost", "share": "data" }), PathBuf::from("sim_dir")).is_ok());
+        assert!(registry
+            .create_backend(
+                "smb",
+                &serde_json::json!({ "server": "localhost", "share": "data" }),
+                PathBuf::from("sim_dir")
+            )
+            .is_ok());
     }
 }

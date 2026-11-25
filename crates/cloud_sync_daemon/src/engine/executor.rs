@@ -95,10 +95,7 @@ impl PlanExecutor {
                 let sem = semaphore.clone();
                 let backend_ref = backend.clone();
                 futures.push(async move {
-                    let _permit = match sem.acquire().await {
-                        Ok(p) => Some(p),
-                        Err(_) => None,
-                    };
+                    let _permit = sem.acquire().await.ok();
                     Self::execute_single_action(
                         backend_ref,
                         capabilities,
@@ -219,342 +216,342 @@ impl PlanExecutor {
         }
 
         match action {
-                SyncAction::Upload {
-                    local_path,
+            SyncAction::Upload {
+                local_path,
+                remote_path,
+                size,
+            } => {
+                info!(
+                    "[{}] Uploading '{}' ({} bytes)",
+                    backend.name(),
                     remote_path,
-                    size,
-                } => {
-                    info!(
-                        "[{}] Uploading '{}' ({} bytes)",
-                        backend.name(),
-                        remote_path,
-                        size
-                    );
+                    size
+                );
 
-                    // Use resumable upload session if backend supports it and file is >= 8MB
-                    let res = if capabilities.contains(StorageCapabilities::RESUMABLE_UPLOAD)
-                        && *size >= 8 * 1024 * 1024
+                // Use resumable upload session if backend supports it and file is >= 8MB
+                let res = if capabilities.contains(StorageCapabilities::RESUMABLE_UPLOAD)
+                    && *size >= 8 * 1024 * 1024
+                {
+                    match backend
+                        .start_resumable_upload(local_path, remote_path, 2 * 1024 * 1024)
+                        .await
                     {
-                        match backend
-                            .start_resumable_upload(local_path, remote_path, 2 * 1024 * 1024)
-                            .await
-                        {
-                            Ok(mut session) => {
-                                let mut session_err = None;
-                                while !session.is_complete() {
-                                    if let Err(e) = session.upload_next_chunk().await {
-                                        session_err = Some(e);
-                                        break;
-                                    }
-                                }
-                                if let Some(e) = session_err {
-                                    Err(e)
-                                } else {
-                                    session.finish().await.map(|_| ())
+                        Ok(mut session) => {
+                            let mut session_err = None;
+                            while !session.is_complete() {
+                                if let Err(e) = session.upload_next_chunk().await {
+                                    session_err = Some(e);
+                                    break;
                                 }
                             }
-                            Err(_) => backend.upload(local_path, remote_path).await,
+                            if let Some(e) = session_err {
+                                Err(e)
+                            } else {
+                                session.finish().await.map(|_| ())
+                            }
                         }
-                    } else {
-                        backend.upload(local_path, remote_path).await
-                    };
+                        Err(_) => backend.upload(local_path, remote_path).await,
+                    }
+                } else {
+                    backend.upload(local_path, remote_path).await
+                };
 
-                    match res {
-                        Ok(()) => {
-                            executed_actions += 1;
-                            bytes_uploaded += *size;
-                        }
-                        Err(e) => {
-                            error!(
-                                "[{}] Upload failed for '{}': {}",
-                                backend.name(),
-                                remote_path,
-                                e
-                            );
-                            failed_actions += 1;
-                        }
+                match res {
+                    Ok(()) => {
+                        executed_actions += 1;
+                        bytes_uploaded += *size;
+                    }
+                    Err(e) => {
+                        error!(
+                            "[{}] Upload failed for '{}': {}",
+                            backend.name(),
+                            remote_path,
+                            e
+                        );
+                        failed_actions += 1;
                     }
                 }
+            }
 
-                #[allow(unused_variables)]
-                SyncAction::Download {
+            #[allow(unused_variables)]
+            SyncAction::Download {
+                remote_path,
+                local_path,
+                size,
+                permissions,
+                ..
+            } => {
+                info!(
+                    "[{}] Downloading '{}' ({} bytes)",
+                    backend.name(),
                     remote_path,
-                    local_path,
-                    size,
-                    permissions,
-                    ..
-                } => {
-                    info!(
-                        "[{}] Downloading '{}' ({} bytes)",
-                        backend.name(),
-                        remote_path,
-                        size
-                    );
+                    size
+                );
 
-                    // Archive existing local file to trash before overwriting if enabled
-                    if let Some(tm) = trash_mgr {
-                        if local_path.exists() {
-                            let _ = tm.archive_file(local_path).await;
-                        }
-                    }
-
-                    if let Some(parent) = local_path.parent() {
-                        let _ = tokio::fs::create_dir_all(parent).await;
-                    }
-
-                    match backend.download(remote_path, local_path).await {
-                        Ok(()) => {
-                            executed_actions += 1;
-                            bytes_downloaded += *size;
-                            #[cfg(unix)]
-                            if let Some(mode) = permissions {
-                                use std::os::unix::fs::PermissionsExt;
-                                let _ = tokio::fs::set_permissions(
-                                    local_path,
-                                    std::fs::Permissions::from_mode(*mode),
-                                )
-                                .await;
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                "[{}] Download failed for '{}': {}",
-                                backend.name(),
-                                remote_path,
-                                e
-                            );
-                            failed_actions += 1;
-                        }
-                    }
-                }
-
-                SyncAction::ServerSideMove { from, to } => {
-                    info!(
-                        "[{}] Server-side moving '{}' -> '{}'",
-                        backend.name(),
-                        from,
-                        to
-                    );
-                    match backend.rename(from, to).await {
-                        Ok(()) => executed_actions += 1,
-                        Err(e) => {
-                            error!(
-                                "[{}] Server-side move failed '{}' -> '{}': {}",
-                                backend.name(),
-                                from,
-                                to,
-                                e
-                            );
-                            failed_actions += 1;
-                        }
-                    }
-                }
-
-                SyncAction::ServerSideCopy { from, to } => {
-                    info!(
-                        "[{}] Server-side copying '{}' -> '{}'",
-                        backend.name(),
-                        from,
-                        to
-                    );
-                    match backend.copy(from, to).await {
-                        Ok(()) => executed_actions += 1,
-                        Err(e) => {
-                            error!(
-                                "[{}] Server-side copy failed '{}' -> '{}': {}",
-                                backend.name(),
-                                from,
-                                to,
-                                e
-                            );
-                            failed_actions += 1;
-                        }
-                    }
-                }
-
-                SyncAction::DeleteLocal { local_path } => {
-                    info!(
-                        "[{}] Deleting local file '{}'",
-                        backend.name(),
-                        local_path.display()
-                    );
-                    if let Some(tm) = trash_mgr {
+                // Archive existing local file to trash before overwriting if enabled
+                if let Some(tm) = trash_mgr {
+                    if local_path.exists() {
                         let _ = tm.archive_file(local_path).await;
                     }
-                    let res = if local_path.is_dir() {
-                        tokio::fs::remove_dir_all(local_path).await
-                    } else {
-                        tokio::fs::remove_file(local_path).await
-                    };
-                    match res {
-                        Ok(()) => executed_actions += 1,
-                        Err(e) => {
-                            error!(
-                                "[{}] Delete local failed for '{}': {}",
-                                backend.name(),
-                                local_path.display(),
-                                e
-                            );
-                            failed_actions += 1;
-                        }
-                    }
                 }
 
-                SyncAction::DeleteRemote { remote_path } => {
-                    info!(
-                        "[{}] Deleting remote file '{}'",
-                        backend.name(),
-                        remote_path
-                    );
-                    match backend.delete(remote_path).await {
-                        Ok(()) => executed_actions += 1,
-                        Err(e) => {
-                            warn!(
-                                "[{}] Delete remote failed for '{}': {}",
-                                backend.name(),
-                                remote_path,
-                                e
-                            );
-                            failed_actions += 1;
-                        }
-                    }
+                if let Some(parent) = local_path.parent() {
+                    let _ = tokio::fs::create_dir_all(parent).await;
                 }
 
-                SyncAction::Conflict { rel_path, action } => {
-                    warn!(
-                        "[{}] Resolving conflict on '{}' with action: {:?}",
-                        backend.name(),
-                        rel_path,
-                        action
-                    );
-                    match action {
-                        ConflictResolutionAction::UploadLocal => {
-                            if let Some(wdir) = watch_dir {
-                                let local_path = wdir.join(rel_path);
-                                if let Err(e) = backend.upload(&local_path, rel_path).await {
-                                    error!(
-                                        "[{}] Conflict UploadLocal failed for '{}': {}",
-                                        backend.name(),
-                                        rel_path,
-                                        e
-                                    );
-                                    failed_actions += 1;
-                                } else {
-                                    executed_actions += 1;
-                                }
+                match backend.download(remote_path, local_path).await {
+                    Ok(()) => {
+                        executed_actions += 1;
+                        bytes_downloaded += *size;
+                        #[cfg(unix)]
+                        if let Some(mode) = permissions {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = tokio::fs::set_permissions(
+                                local_path,
+                                std::fs::Permissions::from_mode(*mode),
+                            )
+                            .await;
+                        }
+                    }
+                    Err(e) => {
+                        error!(
+                            "[{}] Download failed for '{}': {}",
+                            backend.name(),
+                            remote_path,
+                            e
+                        );
+                        failed_actions += 1;
+                    }
+                }
+            }
+
+            SyncAction::ServerSideMove { from, to } => {
+                info!(
+                    "[{}] Server-side moving '{}' -> '{}'",
+                    backend.name(),
+                    from,
+                    to
+                );
+                match backend.rename(from, to).await {
+                    Ok(()) => executed_actions += 1,
+                    Err(e) => {
+                        error!(
+                            "[{}] Server-side move failed '{}' -> '{}': {}",
+                            backend.name(),
+                            from,
+                            to,
+                            e
+                        );
+                        failed_actions += 1;
+                    }
+                }
+            }
+
+            SyncAction::ServerSideCopy { from, to } => {
+                info!(
+                    "[{}] Server-side copying '{}' -> '{}'",
+                    backend.name(),
+                    from,
+                    to
+                );
+                match backend.copy(from, to).await {
+                    Ok(()) => executed_actions += 1,
+                    Err(e) => {
+                        error!(
+                            "[{}] Server-side copy failed '{}' -> '{}': {}",
+                            backend.name(),
+                            from,
+                            to,
+                            e
+                        );
+                        failed_actions += 1;
+                    }
+                }
+            }
+
+            SyncAction::DeleteLocal { local_path } => {
+                info!(
+                    "[{}] Deleting local file '{}'",
+                    backend.name(),
+                    local_path.display()
+                );
+                if let Some(tm) = trash_mgr {
+                    let _ = tm.archive_file(local_path).await;
+                }
+                let res = if local_path.is_dir() {
+                    tokio::fs::remove_dir_all(local_path).await
+                } else {
+                    tokio::fs::remove_file(local_path).await
+                };
+                match res {
+                    Ok(()) => executed_actions += 1,
+                    Err(e) => {
+                        error!(
+                            "[{}] Delete local failed for '{}': {}",
+                            backend.name(),
+                            local_path.display(),
+                            e
+                        );
+                        failed_actions += 1;
+                    }
+                }
+            }
+
+            SyncAction::DeleteRemote { remote_path } => {
+                info!(
+                    "[{}] Deleting remote file '{}'",
+                    backend.name(),
+                    remote_path
+                );
+                match backend.delete(remote_path).await {
+                    Ok(()) => executed_actions += 1,
+                    Err(e) => {
+                        warn!(
+                            "[{}] Delete remote failed for '{}': {}",
+                            backend.name(),
+                            remote_path,
+                            e
+                        );
+                        failed_actions += 1;
+                    }
+                }
+            }
+
+            SyncAction::Conflict { rel_path, action } => {
+                warn!(
+                    "[{}] Resolving conflict on '{}' with action: {:?}",
+                    backend.name(),
+                    rel_path,
+                    action
+                );
+                match action {
+                    ConflictResolutionAction::UploadLocal => {
+                        if let Some(wdir) = watch_dir {
+                            let local_path = wdir.join(rel_path);
+                            if let Err(e) = backend.upload(&local_path, rel_path).await {
+                                error!(
+                                    "[{}] Conflict UploadLocal failed for '{}': {}",
+                                    backend.name(),
+                                    rel_path,
+                                    e
+                                );
+                                failed_actions += 1;
                             } else {
                                 executed_actions += 1;
                             }
+                        } else {
+                            executed_actions += 1;
                         }
-                        ConflictResolutionAction::DownloadRemote => {
-                            if let Some(wdir) = watch_dir {
-                                let local_path = wdir.join(rel_path);
-                                if let Some(tm) = trash_mgr {
-                                    let _ = tm.archive_file(&local_path).await;
-                                }
-                                if let Err(e) = backend.download(rel_path, &local_path).await {
-                                    error!(
-                                        "[{}] Conflict DownloadRemote failed for '{}': {}",
-                                        backend.name(),
-                                        rel_path,
-                                        e
-                                    );
-                                    failed_actions += 1;
-                                } else {
-                                    executed_actions += 1;
-                                }
+                    }
+                    ConflictResolutionAction::DownloadRemote => {
+                        if let Some(wdir) = watch_dir {
+                            let local_path = wdir.join(rel_path);
+                            if let Some(tm) = trash_mgr {
+                                let _ = tm.archive_file(&local_path).await;
+                            }
+                            if let Err(e) = backend.download(rel_path, &local_path).await {
+                                error!(
+                                    "[{}] Conflict DownloadRemote failed for '{}': {}",
+                                    backend.name(),
+                                    rel_path,
+                                    e
+                                );
+                                failed_actions += 1;
                             } else {
                                 executed_actions += 1;
                             }
+                        } else {
+                            executed_actions += 1;
                         }
-                        ConflictResolutionAction::RenameLocalAndDownloadRemote(new_local) => {
-                            let mut err_occurred = false;
-                            if let Some(wdir) = watch_dir {
-                                let orig_local = wdir.join(rel_path);
-                                let renamed_local = wdir.join(new_local);
-                                if orig_local.exists() {
-                                    let _ = tokio::fs::rename(&orig_local, &renamed_local).await;
-                                    let _ = backend.upload(&renamed_local, new_local).await;
-                                }
-                                if let Err(e) = backend.download(rel_path, &orig_local).await {
+                    }
+                    ConflictResolutionAction::RenameLocalAndDownloadRemote(new_local) => {
+                        let mut err_occurred = false;
+                        if let Some(wdir) = watch_dir {
+                            let orig_local = wdir.join(rel_path);
+                            let renamed_local = wdir.join(new_local);
+                            if orig_local.exists() {
+                                let _ = tokio::fs::rename(&orig_local, &renamed_local).await;
+                                let _ = backend.upload(&renamed_local, new_local).await;
+                            }
+                            if let Err(e) = backend.download(rel_path, &orig_local).await {
+                                error!(
+                                    "[{}] Conflict download after local rename failed for '{}': {}",
+                                    backend.name(),
+                                    rel_path,
+                                    e
+                                );
+                                failed_actions += 1;
+                                err_occurred = true;
+                            }
+                        }
+                        if !err_occurred {
+                            info!("Renamed local conflict to '{}'", new_local);
+                            executed_actions += 1;
+                        }
+                    }
+                    ConflictResolutionAction::RenameRemoteAndUploadLocal(new_remote) => {
+                        let mut err_occurred = false;
+                        let _ = backend.rename(rel_path, new_remote).await;
+                        if let Some(wdir) = watch_dir {
+                            let orig_local = wdir.join(rel_path);
+                            let renamed_local = wdir.join(new_remote);
+                            let _ = backend.download(new_remote, &renamed_local).await;
+                            if orig_local.exists() {
+                                if let Err(e) = backend.upload(&orig_local, rel_path).await {
                                     error!(
-                                        "[{}] Conflict download after local rename failed for '{}': {}",
-                                        backend.name(),
-                                        rel_path,
-                                        e
-                                    );
-                                    failed_actions += 1;
-                                    err_occurred = true;
-                                }
-                            }
-                            if !err_occurred {
-                                info!("Renamed local conflict to '{}'", new_local);
-                                executed_actions += 1;
-                            }
-                        }
-                        ConflictResolutionAction::RenameRemoteAndUploadLocal(new_remote) => {
-                            let mut err_occurred = false;
-                            let _ = backend.rename(rel_path, new_remote).await;
-                            if let Some(wdir) = watch_dir {
-                                let orig_local = wdir.join(rel_path);
-                                let renamed_local = wdir.join(new_remote);
-                                let _ = backend.download(new_remote, &renamed_local).await;
-                                if orig_local.exists() {
-                                    if let Err(e) = backend.upload(&orig_local, rel_path).await {
-                                        error!(
                                             "[{}] Conflict upload after remote rename failed for '{}': {}",
                                             backend.name(),
                                             rel_path,
                                             e
                                         );
-                                        failed_actions += 1;
-                                        err_occurred = true;
-                                    }
+                                    failed_actions += 1;
+                                    err_occurred = true;
                                 }
                             }
-                            if !err_occurred {
-                                info!("Renamed remote conflict to '{}'", new_remote);
-                                executed_actions += 1;
-                            }
                         }
-                        ConflictResolutionAction::Skip => {
-                            info!("Skipped conflicting file '{}'", rel_path);
+                        if !err_occurred {
+                            info!("Renamed remote conflict to '{}'", new_remote);
                             executed_actions += 1;
                         }
                     }
-                }
-
-                SyncAction::ConvergeState { .. } => {
-                    executed_actions += 1;
-                }
-
-                SyncAction::ArchiveToTrash { path, .. } => {
-                    if let Some(tm) = trash_mgr {
-                        let _ = tm.archive_file(path).await;
+                    ConflictResolutionAction::Skip => {
+                        info!("Skipped conflicting file '{}'", rel_path);
+                        executed_actions += 1;
                     }
-                    executed_actions += 1;
                 }
             }
 
-            if let Some(hook) = interceptor {
-                if failed_actions == 0 {
-                    hook.after_action(action, action_start.elapsed()).await;
-                } else {
-                    let err = StorageError::Provider {
-                        message: format!("SyncAction failed on {}", backend.name()),
-                        status: None,
-                    };
-                    hook.on_error(action, &err).await;
-                }
+            SyncAction::ConvergeState { .. } => {
+                executed_actions += 1;
             }
 
-            ExecutionResult {
-                executed_actions,
-                failed_actions,
-                bytes_uploaded,
-                bytes_downloaded,
+            SyncAction::ArchiveToTrash { path, .. } => {
+                if let Some(tm) = trash_mgr {
+                    let _ = tm.archive_file(path).await;
+                }
+                executed_actions += 1;
             }
         }
+
+        if let Some(hook) = interceptor {
+            if failed_actions == 0 {
+                hook.after_action(action, action_start.elapsed()).await;
+            } else {
+                let err = StorageError::Provider {
+                    message: format!("SyncAction failed on {}", backend.name()),
+                    status: None,
+                };
+                hook.on_error(action, &err).await;
+            }
+        }
+
+        ExecutionResult {
+            executed_actions,
+            failed_actions,
+            bytes_uploaded,
+            bytes_downloaded,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -628,13 +625,11 @@ mod tests {
 
         let download_dest = local_dir.path().join("downloaded.txt");
         let plan_transfer = SyncPlan {
-            actions: vec![
-                SyncAction::Upload {
-                    local_path: test_file.clone(),
-                    remote_path: "uploaded.txt".to_string(),
-                    size: 12,
-                },
-            ],
+            actions: vec![SyncAction::Upload {
+                local_path: test_file.clone(),
+                remote_path: "uploaded.txt".to_string(),
+                size: 12,
+            }],
             ..Default::default()
         };
 
@@ -651,15 +646,13 @@ mod tests {
         assert_eq!(res_up.bytes_uploaded, 12);
 
         let plan_down = SyncPlan {
-            actions: vec![
-                SyncAction::Download {
-                    remote_path: "uploaded.txt".to_string(),
-                    local_path: download_dest.clone(),
-                    size: 12,
-                    checksum: None,
-                    permissions: None,
-                },
-            ],
+            actions: vec![SyncAction::Download {
+                remote_path: "uploaded.txt".to_string(),
+                local_path: download_dest.clone(),
+                size: 12,
+                checksum: None,
+                permissions: None,
+            }],
             ..Default::default()
         };
         let res_down = PlanExecutor::execute(backend.clone(), &plan_down, None, false)
@@ -708,8 +701,13 @@ mod tests {
 
         // 4. Conflicts handling
         let conflict_file = local_dir.path().join("conflict.txt");
-        tokio::fs::write(&conflict_file, b"local conflict").await.unwrap();
-        backend.upload(&conflict_file, "conflict.txt").await.unwrap();
+        tokio::fs::write(&conflict_file, b"local conflict")
+            .await
+            .unwrap();
+        backend
+            .upload(&conflict_file, "conflict.txt")
+            .await
+            .unwrap();
 
         let plan_conflicts = SyncPlan {
             actions: vec![
@@ -751,13 +749,11 @@ mod tests {
 
         // 5. Dry run execution
         let dry_plan = SyncPlan {
-            actions: vec![
-                SyncAction::Upload {
-                    local_path: test_file.clone(),
-                    remote_path: "never_uploaded.txt".to_string(),
-                    size: 12,
-                },
-            ],
+            actions: vec![SyncAction::Upload {
+                local_path: test_file.clone(),
+                remote_path: "never_uploaded.txt".to_string(),
+                size: 12,
+            }],
             ..Default::default()
         };
         let res_dry = PlanExecutor::execute(backend.clone(), &dry_plan, None, true)

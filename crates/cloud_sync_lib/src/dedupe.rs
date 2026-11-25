@@ -107,7 +107,7 @@ pub async fn scan_duplicates(
         }
     }
 
-    duplicate_groups.sort_by(|a, b| b.size.cmp(&a.size));
+    duplicate_groups.sort_by_key(|a| std::cmp::Reverse(a.size));
     Ok(duplicate_groups)
 }
 
